@@ -1,0 +1,174 @@
+package com.jeiu.fashionproject.ui.screens
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.jeiu.fashionproject.ui.theme.*
+
+@Composable
+fun MyPageScreen(
+    onStyleAnalysis: () -> Unit,
+    onStyleSuggestion: () -> Unit,
+    onBodyAnalysis: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Cream)
+            .verticalScroll(rememberScrollState())
+    ) {
+        // 프로필 헤더
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(White)
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(CamelLight),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Filled.Person, contentDescription = null, tint = Camel, modifier = Modifier.size(44.dp))
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("나의 스타일", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                Text("style@fashion.ai", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            }
+            // 통계
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                listOf(Triple("12", "옷장", "벌"), Triple("8", "코디", "개"), Triple("24", "즐겨찾기", "개")).forEach { (count, label, unit) ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(count, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                        Text("$label $unit", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 내 스타일 정보
+        Column(
+            modifier = Modifier.background(White).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text("내 스타일 정보", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+
+            // 체형 배지
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Person, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
+                    Text("체형", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(CamelLight)
+                        .padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Text("모래시계형", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
+                }
+            }
+
+            // 취향 태그
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
+                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("미니멀", "캐주얼", "클래식").forEach { style ->
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(CreamDark)
+                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text(style, style = MaterialTheme.typography.labelLarge, color = Brown)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // AI 분석 메뉴
+        Column(
+            modifier = Modifier.background(White).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("AI 분석", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            MyMenuItem(icon = Icons.Filled.AutoAwesome, label = "스타일 분석 결과", onClick = onStyleAnalysis)
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Star, label = "체형 맞춤 스타일 제안", onClick = onStyleSuggestion)
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.CameraAlt, label = "체형 다시 분석하기", onClick = onBodyAnalysis)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // 설정 메뉴
+        Column(
+            modifier = Modifier.background(White).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("설정", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            MyMenuItem(icon = Icons.Filled.Notifications, label = "알림 설정", onClick = {})
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리방침", onClick = {})
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = {})
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = {})
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun MyMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(icon, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
+            Text(label, style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
+    }
+}

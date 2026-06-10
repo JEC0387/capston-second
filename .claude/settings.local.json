@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\youle\\\\OneDrive\\\\바탕 화면\\\\캡스톤\\\\projact1-main\" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match \"\\\\.\\(png|jpg|jpeg|webp\\)\" } | Select-Object FullName, Name)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\youle\" -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match \"ChatGPT Image 2026\" } | Select-Object FullName)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\youle\\\\AppData\\\\Local\\\\OpenAI\" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match \"mainscreen|2026\" -or $_.Extension -match \"\\\\.\\(png|jpg|jpeg|webp\\)\" } | Select-Object FullName, Name | Select-Object -First 30)"
+    ]
+  }
+}
