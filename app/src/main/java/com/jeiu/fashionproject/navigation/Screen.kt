@@ -11,4 +11,5 @@ sealed class Screen(val route: String) {
     object MyPage : Screen("my_page")
     object StyleAnalysis : Screen("style_analysis")
     object StyleSuggestion : Screen("style_suggestion")
+    object Camera : Screen("camera")
 }

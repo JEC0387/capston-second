@@ -2,6 +2,7 @@ package com.jeiu.fashionproject.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.R
 import com.jeiu.fashionproject.ui.theme.*
 
 private val colorOptions = listOf(
@@ -53,6 +55,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var selectedColor by remember { mutableStateOf("베이지") }
     var selectedSize by remember { mutableStateOf("M") }
+    var showShopSheet by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 상단 바
@@ -84,7 +87,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
                     .background(Color(0xFFEDE3D5))
             ) {
                 AsyncImage(
-                    model = "https://loremflickr.com/600/700/knit,sweater,fashion?lock=70",
+                    model = R.drawable.casual_daily_look,
                     contentDescription = "상품 이미지",
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
@@ -109,8 +112,8 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             ) {
                 // 브랜드 & 상품명
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("ZARA", style = MaterialTheme.typography.bodySmall, color = MediumGray, fontWeight = FontWeight.Medium)
-                    Text("오버사이즈 베이지 니트 스웨터", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                    Text("저스트메리드", style = MaterialTheme.typography.bodySmall, color = MediumGray, fontWeight = FontWeight.Medium)
+                    Text("아이보리 라이트 베이지 브이넥 니트 J19", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         repeat(5) { i ->
                             Icon(Icons.Filled.Star, contentDescription = null, tint = if (i < 4) Color(0xFFFFC107) else LightGray, modifier = Modifier.size(14.dp))
@@ -124,19 +127,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
 
                 // 가격
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("43,000원", style = MaterialTheme.typography.headlineMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("정가", style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                        Text("69,000원", style = MaterialTheme.typography.bodySmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(SalmonLight)
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text("38% 할인", style = MaterialTheme.typography.labelSmall, color = Color(0xFFB85C3A), fontWeight = FontWeight.SemiBold)
-                        }
-                    }
+                    Text("43,800원", style = MaterialTheme.typography.headlineMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 }
 
                 HorizontalDivider(color = LightGray)
@@ -227,7 +218,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "최저가: 43,000원 · 네이버쇼핑, 무신사, 29CM 등 비교",
+                "zigzag.kr · 저스트메리드 공식",
                 style = MaterialTheme.typography.bodySmall,
                 color = MediumGray
             )
@@ -241,17 +232,21 @@ fun ProductDetailScreen(onBack: () -> Unit) {
                     Icon(Icons.Filled.FavoriteBorder, contentDescription = null, modifier = Modifier.size(20.dp))
                 }
                 Button(
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://search.shopping.naver.com"))
-                        context.startActivity(intent)
-                    },
+                    onClick = { showShopSheet = true },
                     modifier = Modifier.weight(1f).height(52.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
                 ) {
-                    Text("최저가 구매하기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("쇼핑에서 찾기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
             }
         }
+    }
+
+    if (showShopSheet) {
+        ShopSearchSheet(
+            keyword = "아이보리 라이트 베이지 브이넥 니트",
+            onDismiss = { showShopSheet = false }
+        )
     }
 }

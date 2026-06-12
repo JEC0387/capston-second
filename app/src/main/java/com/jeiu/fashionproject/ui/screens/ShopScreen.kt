@@ -1,5 +1,8 @@
 package com.jeiu.fashionproject.ui.screens
 
+import android.content.Intent
+import android.net.Uri
+import com.jeiu.fashionproject.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -34,20 +38,25 @@ private data class Product(
     val reviewCount: Int,
     val color: Color,
     val tag: String? = null,
-    val imageUrl: String = ""
+    val imageUrl: String = "",
+    val purchaseUrl: String = "",
+    val imageRes: Int = 0
 )
 
 private val products = listOf(
-    Product("오버사이즈 베이지 니트", "ZARA", "43,000원", "69,000원", 4.8f, 284, Color(0xFFEDE3D5), "AI추천", "https://loremflickr.com/400/500/knit,sweater?lock=30"),
-    Product("린넨 와이드 팬츠", "H&M", "58,000원", "79,000원", 4.6f, 156, Color(0xFFD5CABD), null, "https://loremflickr.com/400/500/pants,linen?lock=31"),
-    Product("클래식 코튼 셔츠", "UNIQLO", "39,000원", "39,000원", 4.9f, 512, Color(0xFFF0EBE3), "베스트", "https://loremflickr.com/400/500/shirt,cotton?lock=32"),
-    Product("미디 플리츠 스커트", "COS", "79,000원", "99,000원", 4.5f, 98, Color(0xFFE0D5CC), null, "https://loremflickr.com/400/500/skirt,fashion?lock=33"),
-    Product("카멜 울 코트", "MANGO", "159,000원", "229,000원", 4.7f, 203, Color(0xFFD5C8B8), "AI추천", "https://loremflickr.com/400/500/coat,fashion?lock=34"),
-    Product("데님 스트레이트 팬츠", "LEVIS", "89,000원", "119,000원", 4.4f, 341, Color(0xFFC8C0B5), null, "https://loremflickr.com/400/500/denim,jeans?lock=35"),
+    Product("CKS 스탠다드 슬림핏 반팔 셔츠 네이비", "CHICKS", "39,000원", "39,000원", 4.7f, 184, Color(0xFFD5E0EC), "AI추천", "", "https://www.musinsa.com/products/6405693", R.drawable.shop_cks_shirt),
+    Product("사이드 핀턱 빈티지 워싱 벌룬핏 데님 팬츠", "미스터제이슨", "8,522원", "22,000원", 4.5f, 231, Color(0xFFA8B8C8), null, "https://d3ha2047wt6x28.cloudfront.net/hEmVfMXLFDQ/pr:GOODS_DETAIL/czM6Ly9hYmx5LWltYWdlLWxlZ2FjeS9kYXRhL2dvb2RzLzIwMjYwMjI2XzE3NzIwNjgyMzQ2NTQ5NjRtLmpwZw", "https://4910.kr/desktop/goods/51479882"),
+    Product("[made]썸머크루즈가디건", "어텀", "26,560원", "35,000원", 4.6f, 98, Color(0xFFEDE3D5), "AI추천", "https://cf.product-image.s.zigzag.kr/original/c/17/026/333/170263336-3421640085957955899.jpeg?width=400&height=400&quality=80&format=webp", "https://zigzag.kr/catalog/products/170263336"),
+    Product("아치스 조리샌들_블랙", "ARCHIES", "35,000원", "35,000원", 4.8f, 342, Color(0xFF3A3A3A), "베스트", "", "https://www.musinsa.com/products/3142059", R.drawable.shop_archies_sandal),
+    Product("백 사틴 오피서 팬츠 [블랙]", "무신사스탠다드", "59,900원", "59,900원", 4.8f, 512, Color(0xFF4A4A4A), null, "", "https://www.musinsa.com/products/3304653", R.drawable.shop_officer_pants),
+    Product("[MADE]러블린셔링블라우스 - 4color", "Ni:some", "32,200원", "42,900원", 4.9f, 284, Color(0xFFF5EEE8), "AI추천", "https://cf.product-image.s.zigzag.kr/original/d/2026/4/27/5875_202604271053470543_53810.jpeg?width=400&height=400&quality=80&format=webp", "https://zigzag.kr/catalog/products/161164288"),
+    Product("바이오워싱 크롭 데님 반팔 셔츠", "DIMITRI BLACK", "49,000원", "49,000원", 4.4f, 156, Color(0xFFA8C0D0), null, "", "https://www.musinsa.com/products/6317950", R.drawable.shop_denim_shirt),
+    Product("8부 원턱 버뮤다 스웨트 팬츠 3color", "NANDE", "49,000원", "49,000원", 4.5f, 203, Color(0xFFD5D0C8), null, "", "https://www.musinsa.com/products/6068184", R.drawable.shop_sweat_pants),
 )
 
 @Composable
 fun ShopScreen(onProductClick: () -> Unit) {
+    val context = LocalContext.current
     val likedSet = remember { mutableStateListOf<String>() }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -98,7 +107,12 @@ fun ShopScreen(onProductClick: () -> Unit) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onProductClick),
+                        .clickable {
+                            if (product.purchaseUrl.isNotEmpty())
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
+                            else
+                                onProductClick()
+                        },
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = White),
                     elevation = CardDefaults.cardElevation(1.dp)
@@ -111,7 +125,7 @@ fun ShopScreen(onProductClick: () -> Unit) {
                                 .background(product.color)
                         ) {
                             AsyncImage(
-                                model = product.imageUrl,
+                                model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
                                 contentDescription = product.name,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

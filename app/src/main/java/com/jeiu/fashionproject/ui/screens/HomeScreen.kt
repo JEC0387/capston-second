@@ -1,47 +1,79 @@
 package com.jeiu.fashionproject.ui.screens
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import com.jeiu.fashionproject.R
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.WeatherOutfits
+import com.jeiu.fashionproject.data.advice
+import com.jeiu.fashionproject.data.isRainy
+import com.jeiu.fashionproject.data.isCloudy
 import com.jeiu.fashionproject.ui.theme.*
+import com.jeiu.fashionproject.ui.viewmodel.WeatherUiState
+import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 
-private data class OutfitCard(val title: String, val desc: String, val bgColor: Color, val imageUrl: String)
-private data class PopularItem(val name: String, val price: String, val bgColor: Color, val imageUrl: String)
-
-private val outfitCards = listOf(
-    OutfitCard("캐주얼 데일리룩", "베이지 니트 + 와이드 팬츠", Color(0xFFEDE3D5), "https://loremflickr.com/400/500/fashion,casual?lock=10"),
-    OutfitCard("미니멀 오피스룩", "화이트 블라우스 + 슬랙스", Color(0xFFE8E0D8), "https://loremflickr.com/400/500/fashion,office?lock=11"),
-    OutfitCard("스트릿 캐주얼", "후드집업 + 카고 팬츠", Color(0xFFDDD5C8), "https://loremflickr.com/400/500/streetwear,fashion?lock=12"),
-)
+private data class PopularItem(val name: String, val price: String, val bgColor: Color, val imageRes: Int, val purchaseUrl: String)
 
 private val popularItems = listOf(
-    PopularItem("오버사이즈 니트", "43,000원", Color(0xFFF0E8DC), "https://loremflickr.com/300/380/knit,sweater?lock=20"),
-    PopularItem("린넨 와이드 팬츠", "58,000원", Color(0xFFE8DDD0), "https://loremflickr.com/300/380/pants,fashion?lock=21"),
-    PopularItem("베이직 코튼 티", "22,000원", Color(0xFFEDE5D8), "https://loremflickr.com/300/380/tshirt,clothing?lock=22"),
-    PopularItem("데님 자켓", "89,000원", Color(0xFFDDD5C8), "https://loremflickr.com/300/380/denim,jacket?lock=23"),
+    PopularItem("워셔블 케이블 반팔 니트 - 16 COLOR", "43,000원", Color(0xFFF0E8DC), R.drawable.popular_knit_cable, "https://www.musinsa.com/products/3927583"),
+    PopularItem("[크롭] 스트라이프 레이어드 헨리넥 반팔 티셔츠_차콜", "22,000원", Color(0xFFE8DDD0), R.drawable.popular_stripe_tshirt, "https://www.musinsa.com/products/6154823"),
+    PopularItem("Side Big Cargo Pants_8Colors", "58,000원", Color(0xFFEDE5D8), R.drawable.popular_cargo_pants, "https://4910.kr/desktop/goods/39666985"),
+    PopularItem("Kangaroo Pocket Bermuda Wide Sweat Shorts BLACK", "49,000원", Color(0xFFDDD5C8), R.drawable.popular_sweat_shorts, "https://4910.kr/desktop/goods/69121270"),
+    PopularItem("[크롭] 배색 롤업 크롭 반팔 티셔츠_버건디", "22,000원", Color(0xFFE8E0D8), R.drawable.popular_crop_tshirt, "https://www.musinsa.com/products/6154816"),
+    PopularItem("린넨 라이크 세미 와이드 밴딩 팬츠 - 10 COLOR", "39,000원", Color(0xFFEDE8E0), R.drawable.popular_linen_pants, "https://www.musinsa.com/products/1924274"),
 )
 
 @Composable
-fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
+fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, weatherViewModel: WeatherViewModel) {
+    val weatherState by weatherViewModel.state.collectAsState()
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) weatherViewModel.fetchWeather() }
+
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+            == PackageManager.PERMISSION_GRANTED
+        ) weatherViewModel.fetchWeather()
+        else permissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
+    }
+
+    val outfitCards = WeatherOutfits.cardsFor(
+        (weatherState as? WeatherUiState.Success)?.info
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -106,11 +138,25 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Icon(Icons.Filled.WbSunny, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
-                        Text("맑음 · 23°C", style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold)
+                        val weatherIcon = when (val s = weatherState) {
+                            is WeatherUiState.Success -> if (s.info.isRainy() || s.info.isCloudy()) Icons.Filled.Cloud else Icons.Filled.WbSunny
+                            else -> Icons.Filled.WbSunny
+                        }
+                        Icon(weatherIcon, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
+                        Text(
+                            when (val s = weatherState) {
+                                is WeatherUiState.Success -> "${s.info.condition} · ${s.info.temp}°C"
+                                is WeatherUiState.Loading -> "날씨 불러오는 중..."
+                                is WeatherUiState.Error -> s.message
+                            },
+                            style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold
+                        )
                     }
                     Text(
-                        "오늘 날씨에 맞는 코디를 추천해드려요",
+                        when (val s = weatherState) {
+                            is WeatherUiState.Success -> s.info.advice()
+                            else -> "오늘 날씨에 맞는 코디를 추천해드려요"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = White.copy(alpha = 0.85f)
                     )
@@ -148,11 +194,17 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(outfitCards) { card ->
+            itemsIndexed(outfitCards) { index, card ->
                 Card(
                     modifier = Modifier
                         .width(160.dp)
-                        .clickable(onClick = onWeatherOutfitClick),
+                        .clickable {
+                            when {
+                                card.purchaseUrl.isNotEmpty() -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(card.purchaseUrl)))
+                                index == 0 -> onProductClick()
+                                else -> onWeatherOutfitClick()
+                            }
+                        },
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = card.bgColor),
                     elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
@@ -164,7 +216,7 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
                                 .height(140.dp)
                         ) {
                             AsyncImage(
-                                model = card.imageUrl,
+                                model = card.imageSource,
                                 contentDescription = card.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -205,7 +257,9 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
                 Card(
                     modifier = Modifier
                         .width(140.dp)
-                        .clickable(onClick = onProductClick),
+                        .clickable {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(item.purchaseUrl)))
+                        },
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = White),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -218,7 +272,7 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit) {
                                 .background(item.bgColor)
                         ) {
                             AsyncImage(
-                                model = item.imageUrl,
+                                model = item.imageRes,
                                 contentDescription = item.name,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()

@@ -23,8 +23,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.viewModel
+import android.net.Uri
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import com.jeiu.fashionproject.ui.screens.*
 import com.jeiu.fashionproject.ui.theme.Camel
+import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
+import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 import com.jeiu.fashionproject.ui.theme.CharcoalBlack
 import com.jeiu.fashionproject.ui.theme.LightGray
 import com.jeiu.fashionproject.ui.theme.MediumGray
@@ -56,6 +63,8 @@ private val bottomNavRoutes = setOf(
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val weatherViewModel: WeatherViewModel = viewModel()
+    val bodyAnalysisViewModel: BodyAnalysisViewModel = viewModel()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavRoutes
@@ -111,7 +120,8 @@ fun AppNavigation() {
             composable(Screen.Home.route) {
                 HomeScreen(
                     onWeatherOutfitClick = { navController.navigate(Screen.WeatherOutfit.route) },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) }
+                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    weatherViewModel = weatherViewModel
                 )
             }
             composable(Screen.Wardrobe.route) {
@@ -120,13 +130,37 @@ fun AppNavigation() {
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(
                     onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) }
+                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    weatherViewModel = weatherViewModel
                 )
             }
-            composable(Screen.BodyAnalysis.route) {
+            composable(Screen.BodyAnalysis.route) { entry ->
+                val context = LocalContext.current
+                val photoUriStr by entry.savedStateHandle
+                    .getStateFlow<String?>("photo_uri", null)
+                    .collectAsState()
+                androidx.compose.runtime.LaunchedEffect(photoUriStr) {
+                    photoUriStr?.let { uriStr ->
+                        bodyAnalysisViewModel.analyzeImage(context, Uri.parse(uriStr))
+                        entry.savedStateHandle.remove<String>("photo_uri")
+                    }
+                }
                 BodyAnalysisScreen(
                     onBack = { navController.popBackStack() },
-                    onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) }
+                    onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
+                    onCameraClick = { navController.navigate(Screen.Camera.route) },
+                    viewModel = bodyAnalysisViewModel
+                )
+            }
+            composable(Screen.Camera.route) {
+                CameraPreviewScreen(
+                    onPhotoCaptured = { uri ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("photo_uri", uri.toString())
+                        navController.popBackStack()
+                    },
+                    onDismiss = { navController.popBackStack() }
                 )
             }
             composable(Screen.Shop.route) {
