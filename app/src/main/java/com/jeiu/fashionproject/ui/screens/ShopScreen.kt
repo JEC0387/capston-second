@@ -58,6 +58,13 @@ private val products = listOf(
 fun ShopScreen(onProductClick: () -> Unit) {
     val context = LocalContext.current
     val likedSet = remember { mutableStateListOf<String>() }
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredProducts = remember(searchQuery) {
+        if (searchQuery.isBlank()) products
+        else products.filter {
+            it.name.contains(searchQuery, ignoreCase = true) || it.brand.contains(searchQuery, ignoreCase = true)
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 헤더
@@ -65,11 +72,11 @@ fun ShopScreen(onProductClick: () -> Unit) {
             Text("추천 쇼핑", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
             OutlinedTextField(
-                value = "",
-                onValueChange = {},
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
                 placeholder = { Text("상품 검색", color = MediumGray) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MediumGray) },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = LightGray,
@@ -102,7 +109,7 @@ fun ShopScreen(onProductClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(products) { product ->
+            items(filteredProducts) { product ->
                 val isLiked = product.name in likedSet
                 Card(
                     modifier = Modifier

@@ -26,6 +26,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -73,6 +76,7 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, wea
     val outfitCards = WeatherOutfits.cardsFor(
         (weatherState as? WeatherUiState.Success)?.info
     )
+    var showNotifDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -101,7 +105,7 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, wea
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = {}) {
+                IconButton(onClick = { showNotifDialog = true }) {
                     Icon(Icons.Filled.Notifications, contentDescription = "알림", tint = CharcoalBlack)
                 }
                 Box(
@@ -288,5 +292,16 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, wea
         }
 
         Spacer(modifier = Modifier.height(28.dp))
+    }
+
+    if (showNotifDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotifDialog = false },
+            title = { Text("알림", fontWeight = FontWeight.Bold) },
+            text = { Text("새로운 알림이 없습니다.") },
+            confirmButton = {
+                TextButton(onClick = { showNotifDialog = false }) { Text("확인", color = Camel) }
+            }
+        )
     }
 }

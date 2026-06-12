@@ -169,7 +169,7 @@ fun WeatherOutfitScreen(onBack: () -> Unit, onProductClick: () -> Unit, weatherV
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            listOf(outfit.top, outfit.bottom, outfit.shoes).forEach { item ->
+                            listOfNotNull(outfit.top, outfit.bottom, outfit.shoes).forEach { item ->
                                 Column(
                                     modifier = Modifier.weight(1f),
                                     horizontalAlignment = Alignment.CenterHorizontally,

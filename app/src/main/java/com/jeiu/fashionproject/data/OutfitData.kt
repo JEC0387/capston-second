@@ -11,7 +11,7 @@ data class OutfitCardData(
     val purchaseUrl: String = ""
 )
 data class OutfitItemData(val label: String, val color: Color, val imageRes: Int = 0, val purchaseUrl: String = "")
-data class OutfitSetData(val title: String, val tag: String, val top: OutfitItemData, val bottom: OutfitItemData, val shoes: OutfitItemData, val imageSource: Any = 0)
+data class OutfitSetData(val title: String, val tag: String, val top: OutfitItemData, val bottom: OutfitItemData, val shoes: OutfitItemData? = null, val imageSource: Any = 0)
 
 object WeatherOutfits {
 
@@ -139,15 +139,13 @@ object WeatherOutfits {
     )
     private fun warmSets() = listOf(
         OutfitSetData("청순 블라우스 코디", "날씨 최적",
-            OutfitItemData("일체형 블라우스", Color(0xFFEDE3D5)),
+            OutfitItemData("일체형 블라우스", Color(0xFFEDE3D5), R.drawable.summer_blouse),
             OutfitItemData("린넨 팬츠",      Color(0xFFD5CABD), R.drawable.outfit_linen_pants, "https://zigzag.kr/catalog/products/162619955"),
-            OutfitItemData("스니커즈",       Color(0xFFF0EBE3)),
-            R.drawable.summer_blouse),
+            imageSource = R.drawable.summer_blouse),
         OutfitSetData("썸머 라인 셔츠코디", "내 스타일",
-            OutfitItemData("린넨 셔츠",      Color(0xFFE8E8E0)),
-            OutfitItemData("와이드팬츠",      Color(0xFFD0CEC8)),
-            OutfitItemData("슬리퍼",         Color(0xFFC8C0B4)),
-            R.drawable.half_sleeve_shirt),
+            OutfitItemData("라인 셔츠",       Color(0xFFE8E8E0), R.drawable.half_sleeve_shirt),
+            OutfitItemData("포스트 와이드 팬츠", Color(0xFFD0CEC8), R.drawable.post_wide_pants),
+            imageSource = R.drawable.half_sleeve_shirt),
         OutfitSetData("여름 데일리 셔츠코디",  "트렌디",
             OutfitItemData("그래픽 티",      Color(0xFFDDD5C8)),
             OutfitItemData("쇼츠",           Color(0xFFCFC8C0)),

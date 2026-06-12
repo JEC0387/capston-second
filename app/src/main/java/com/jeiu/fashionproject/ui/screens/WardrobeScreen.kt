@@ -1,5 +1,8 @@
 package com.jeiu.fashionproject.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -45,8 +48,19 @@ fun WardrobeScreen(onProductClick: () -> Unit) {
     val categories = listOf("전체", "상의", "하의", "아우터", "신발", "액세서리")
     var selectedCategory by remember { mutableStateOf("전체") }
     val favoriteSet = remember { mutableStateListOf<String>() }
+    val customClothes = remember { mutableStateListOf<ClothingItem>() }
+    val allDisplayed = allClothes + customClothes
 
-    val filtered = if (selectedCategory == "전체") allClothes else allClothes.filter { it.category == selectedCategory }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+    var newItemName by remember { mutableStateOf("") }
+    var newItemCategory by remember { mutableStateOf("상의") }
+
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { pendingUri = it; newItemName = ""; showAddDialog = true }
+    }
+
+    val filtered = if (selectedCategory == "전체") allDisplayed else allDisplayed.filter { it.category == selectedCategory }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 헤더
@@ -56,7 +70,7 @@ fun WardrobeScreen(onProductClick: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("내 옷장", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-            Text("${allClothes.size}개", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+            Text("${allDisplayed.size}개", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
         }
 
         // 카테고리 탭
@@ -163,7 +177,7 @@ fun WardrobeScreen(onProductClick: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 OutlinedButton(
-                    onClick = {},
+                    onClick = { imagePicker.launch("image/*") },
                     modifier = Modifier.weight(1f).height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel)
@@ -182,5 +196,49 @@ fun WardrobeScreen(onProductClick: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (showAddDialog) {
+        val catOptions = listOf("상의", "하의", "아우터", "신발", "액세서리")
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; pendingUri = null },
+            title = { Text("의류 추가", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = newItemName,
+                        onValueChange = { newItemName = it },
+                        label = { Text("이름") },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Camel, focusedLabelColor = Camel)
+                    )
+                    Text("카테고리", style = MaterialTheme.typography.labelLarge, color = CharcoalBlack)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        catOptions.forEach { cat ->
+                            FilterChip(
+                                selected = newItemCategory == cat,
+                                onClick = { newItemCategory = cat },
+                                label = { Text(cat, style = MaterialTheme.typography.labelSmall) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = Camel,
+                                    selectedLabelColor = White
+                                )
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingUri?.let { uri ->
+                        customClothes.add(ClothingItem(newItemName.ifBlank { "새 의류" }, newItemCategory, Color(0xFFEDE3D5), uri.toString()))
+                    }
+                    showAddDialog = false; pendingUri = null
+                }) { Text("추가", color = Camel) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false; pendingUri = null }) { Text("취소", color = MediumGray) }
+            }
+        )
     }
 }

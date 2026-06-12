@@ -1,5 +1,7 @@
 package com.jeiu.fashionproject.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,10 +13,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.ui.theme.*
@@ -23,8 +30,14 @@ import com.jeiu.fashionproject.ui.theme.*
 fun MyPageScreen(
     onStyleAnalysis: () -> Unit,
     onStyleSuggestion: () -> Unit,
-    onBodyAnalysis: () -> Unit
+    onBodyAnalysis: () -> Unit,
+    onLogout: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var showNotifDialog by remember { mutableStateOf(false) }
+    var showVersionDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -142,16 +155,62 @@ fun MyPageScreen(
         ) {
             Text("설정", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
-            MyMenuItem(icon = Icons.Filled.Notifications, label = "알림 설정", onClick = {})
+            MyMenuItem(icon = Icons.Filled.Notifications, label = "알림 설정", onClick = { showNotifDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리방침", onClick = {})
+            MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리방침", onClick = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://policies.google.com/privacy?hl=ko")))
+            })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = {})
+            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = {})
+            MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showNotifDialog) {
+        AlertDialog(
+            onDismissRequest = { showNotifDialog = false },
+            title = { Text("알림 설정", fontWeight = FontWeight.Bold) },
+            text = { Text("현재 모든 알림이 활성화되어 있습니다.\n시스템 설정에서 알림을 관리할 수 있습니다.") },
+            confirmButton = {
+                TextButton(onClick = { showNotifDialog = false }) { Text("확인", color = Camel) }
+            }
+        )
+    }
+
+    if (showVersionDialog) {
+        AlertDialog(
+            onDismissRequest = { showVersionDialog = false },
+            title = { Text("앱 정보", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("FashionAI")
+                    Text("버전: 1.0.0", color = MediumGray)
+                    Text("AI 기반 패션 스타일링 앱", color = MediumGray)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showVersionDialog = false }) { Text("확인", color = Camel) }
+            }
+        )
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("로그아웃", fontWeight = FontWeight.Bold) },
+            text = { Text("로그아웃 하시겠습니까?") },
+            confirmButton = {
+                TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
+                    Text("로그아웃", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) { Text("취소", color = MediumGray) }
+            }
+        )
     }
 }
 

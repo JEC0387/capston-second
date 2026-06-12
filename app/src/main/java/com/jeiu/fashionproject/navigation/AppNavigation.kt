@@ -173,7 +173,12 @@ fun AppNavigation() {
                 MyPageScreen(
                     onStyleAnalysis = { navController.navigate(Screen.StyleAnalysis.route) },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
-                    onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) }
+                    onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) },
+                    onLogout = {
+                        navController.navigate(Screen.Onboarding.route) {
+                            popUpTo(0) { inclusive = true }
+                        }
+                    }
                 )
             }
             composable(Screen.StyleAnalysis.route) {

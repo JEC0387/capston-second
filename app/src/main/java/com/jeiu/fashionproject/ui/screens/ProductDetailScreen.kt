@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -56,6 +57,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
     var selectedColor by remember { mutableStateOf("베이지") }
     var selectedSize by remember { mutableStateOf("M") }
     var showShopSheet by remember { mutableStateOf(false) }
+    var isFavorited by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 상단 바
@@ -69,8 +71,20 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             }
             Text("상품 상세", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
             Row {
-                IconButton(onClick = {}) { Icon(Icons.Filled.FavoriteBorder, contentDescription = "찜", tint = CharcoalBlack) }
-                IconButton(onClick = {}) { Icon(Icons.Filled.Share, contentDescription = "공유", tint = CharcoalBlack) }
+                IconButton(onClick = { isFavorited = !isFavorited }) {
+                    Icon(
+                        if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = "찜",
+                        tint = if (isFavorited) Camel else CharcoalBlack
+                    )
+                }
+                IconButton(onClick = {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, "아이보리 라이트 베이지 브이넥 니트 J19\nhttps://zigzag.kr/catalog/products/170263336")
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "공유하기"))
+                }) { Icon(Icons.Filled.Share, contentDescription = "공유", tint = CharcoalBlack) }
             }
         }
 
@@ -224,12 +238,16 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
-                    onClick = {},
+                    onClick = { isFavorited = !isFavorited },
                     modifier = Modifier.height(52.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isFavorited) Camel else CharcoalBlack)
                 ) {
-                    Icon(Icons.Filled.FavoriteBorder, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Icon(
+                        if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
                 Button(
                     onClick = { showShopSheet = true },
