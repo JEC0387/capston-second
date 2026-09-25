@@ -1,0 +1,14 @@
+여기에 MediaPipe 세그멘테이션 모델 파일을 넣어주세요.
+
+[필요 파일]
+  selfie_segmenter.tflite
+
+[다운로드 위치]
+  https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite
+
+[넣을 위치]
+  app/src/main/assets/selfie_segmenter.tflite
+  (이 PUT_MODEL_HERE.txt 와 같은 폴더)
+
+파일 이름은 정확히 selfie_segmenter.tflite 여야 합니다.
+모델이 없으면 앱은 자동으로 기존 포즈 기반 추정으로 동작합니다(크래시 없음).

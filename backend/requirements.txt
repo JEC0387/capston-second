@@ -1,0 +1,9 @@
+fastapi==0.115.8
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# 객체 탐지 (YOLOv8) — object_detect 프로젝트 통합
+ultralytics
+opencv-python-headless
+Pillow
+numpy
