@@ -5,9 +5,24 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.graphics.Matrix
+import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.viewModelScope
+import com.jeiu.fashionproject.ui.camera.GuidePoint
+import com.jeiu.fashionproject.ui.camera.Joint
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseDetection
@@ -25,7 +40,10 @@ data class BodyAnalysisResult(
     val characteristics: List<String>,
     val styleAdvice: List<String>,
     val confidence: Int = 0,              // 분석 신뢰도 (0~100%)
-    val shoulderToHip: Float = 1f         // 어깨:힙 비율 (디버그/표시용)
+    val shoulderToHip: Float = 1f,        // 기존 어깨:힙 비율 유지
+    val waistToHip: Float = 1f,
+    val measurements: BodyMeasurements? = null,
+    val measurementIssue: String? = null
 )
 
 sealed class BodyAnalysisUiState {
@@ -35,89 +53,157 @@ sealed class BodyAnalysisUiState {
     data class Error(val message: String) : BodyAnalysisUiState()
 }
 
-class BodyAnalysisViewModel(application: Application) : AndroidViewModel(application) {
+class BodyAnalysisViewModel(application: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<BodyAnalysisUiState>(BodyAnalysisUiState.Idle)
     val state: StateFlow<BodyAnalysisUiState> = _state
 
-    // 세그멘테이션 측정기 (모델 없으면 isAvailable=false → 포즈 추정 폴백)
-    private val segmenter: BodySegmenter by lazy { BodySegmenter(getApplication()) }
+    // SavedStateHandle survives camera navigation/configuration changes and system state restoration.
+    // No profile/DB write: the user can edit this on each new analysis.
+    val heightInput: StateFlow<String> = savedStateHandle.getStateFlow("body_height_cm", "")
+    fun updateHeightInput(text: String) {
+        if (BodyMeasurementCalculator.acceptsHeightInput(text)) savedStateHandle["body_height_cm"] = text
+    }
+    private val segmenterDelegate = lazy { BodySegmenter(getApplication()) }
+    private val segmenter by segmenterDelegate
+    private var analysisJob: Job? = null
+    @Volatile private var cleared = false
 
     fun analyzeImage(context: Context, uri: Uri) {
+        analysisJob?.cancel()
+        val heightCm = BodyMeasurementCalculator.parseHeight(heightInput.value)
+        if (heightCm == null) {
+            _state.value = BodyAnalysisUiState.Error("키를 100~230 cm 범위의 숫자로 입력한 뒤 다시 시도해주세요.")
+            return
+        }
         _state.value = BodyAnalysisUiState.Analyzing
-        try {
-            val image = InputImage.fromFilePath(context, uri)
-            val options = AccuratePoseDetectorOptions.Builder()
-                .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE)
-                .build()
-            val detector = PoseDetection.getClient(options)
-
-            detector.process(image)
-                .addOnSuccessListener { pose ->
-                    when (validatePose(pose)) {
-                        PoseQuality.NO_PERSON ->
-                            _state.value = BodyAnalysisUiState.Error("사람을 감지하지 못했어요.\n정면 전신 사진을 업로드해 주세요.")
-                        PoseQuality.NOT_FULL_BODY ->
-                            _state.value = BodyAnalysisUiState.Error("전신이 모두 보이지 않아요.\n머리부터 발목까지 나오게 촬영해 주세요.")
-                        PoseQuality.NOT_FRONT ->
-                            _state.value = BodyAnalysisUiState.Error("정면 자세가 아니에요.\n카메라를 정면으로 보고 똑바로 서서 촬영해 주세요.")
-                        PoseQuality.OK -> {
-                            // 세그멘테이션용 비트맵 로딩 후 실제 폭 측정 시도
-                            val widths = runCatching {
-                                if (segmenter.isAvailable) {
-                                    val bmp = loadBitmap(context, uri)
-                                    measureRealWidths(pose, bmp)
-                                } else null
-                            }.getOrNull()
-                            _state.value = BodyAnalysisUiState.Success(calculateBodyType(pose, widths), uri)
+        analysisJob = viewModelScope.launch {
+            var bitmap: Bitmap? = null
+            try {
+                val analysisBitmap = withContext(Dispatchers.IO) { loadBitmap(context, uri) }
+                bitmap = analysisBitmap
+                // Exactly the same EXIF-normalized bitmap for BOTH models; no PreviewView coordinates.
+                val pose = detectPose(analysisBitmap)
+                ensureActive()
+                when (validatePose(pose)) {
+                    PoseQuality.NO_PERSON -> _state.value = BodyAnalysisUiState.Error("사람을 감지하지 못했어요.\n정면 전신 사진을 업로드해 주세요.")
+                    PoseQuality.NOT_FULL_BODY -> _state.value = BodyAnalysisUiState.Error("전신이 모두 보이지 않아요.\n머리부터 발끝까지 나오게 촬영해 주세요.")
+                    PoseQuality.NOT_FRONT -> _state.value = BodyAnalysisUiState.Error("정면 자세가 아니에요.\n카메라를 정면으로 보고 똑바로 서서 촬영해 주세요.")
+                    PoseQuality.OK -> {
+                        val widths = withContext(Dispatchers.Default) {
+                            if (segmenter.isAvailable) measureRealWidths(pose, analysisBitmap) else null
                         }
+                        val cm = BodyMeasurementCalculator.calculate(heightCm, widths, System.currentTimeMillis())
+                        // Keep the existing classification/fallback even when cm evidence is insufficient.
+                        val result = calculateBodyType(pose, widths).copy(
+                            measurements = cm,
+                            measurementIssue = if (cm == null)
+                                "cm 측정에 필요한 전신 경계를 확인하지 못했어요. 머리와 발끝에 여유를 두고, 정면에서 팔을 몸과 떨어뜨려 다시 촬영해주세요."
+                                else null
+                        )
+                        _state.value = BodyAnalysisUiState.Success(result, uri)
                     }
                 }
-                .addOnFailureListener {
-                    _state.value = BodyAnalysisUiState.Error("분석 중 오류가 발생했어요.")
-                }
-        } catch (e: Exception) {
-            _state.value = BodyAnalysisUiState.Error("이미지를 불러오지 못했어요.")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _state.value = BodyAnalysisUiState.Error("이미지 분석에 실패했어요. 다른 전신 사진으로 다시 시도해주세요.")
+            } finally {
+                bitmap?.recycle()
+                // Also closes an older cancelled job that was still initializing the native segmenter.
+                if (cleared && segmenterDelegate.isInitialized()) segmenter.close()
+            }
         }
     }
 
-    fun reset() {
-        _state.value = BodyAnalysisUiState.Idle
+    // Wait for the native task to release its input before recycling, even after job cancellation.
+    private suspend fun detectPose(bitmap: Bitmap): Pose = suspendCoroutine { continuation ->
+        val detector = PoseDetection.getClient(AccuratePoseDetectorOptions.Builder()
+            .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE).build())
+        try {
+            detector.process(InputImage.fromBitmap(bitmap, 0)).addOnCompleteListener { task ->
+                detector.close()
+                if (task.isSuccessful) continuation.resume(task.result)
+                else continuation.resumeWithException(task.exception ?: IllegalStateException("Pose detection failed"))
+            }
+        } catch (exception: Exception) {
+            detector.close()
+            continuation.resumeWithException(exception)
+        }
     }
 
+    fun reset() { analysisJob?.cancel(); _state.value = BodyAnalysisUiState.Idle }
+
     override fun onCleared() {
+        cleared = true
         super.onCleared()
-        runCatching { segmenter.close() }
+        analysisJob?.cancel()
+        val job = analysisJob
+        if (job != null) job.invokeOnCompletion { if (segmenterDelegate.isInitialized()) segmenter.close() }
+        else if (segmenterDelegate.isInitialized()) segmenter.close()
     }
 
     private fun loadBitmap(context: Context, uri: Uri): Bitmap {
         val raw = if (Build.VERSION.SDK_INT >= 28) {
             val src = ImageDecoder.createSource(context.contentResolver, uri)
-            ImageDecoder.decodeBitmap(src) { d, _, _ -> d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE }
+            ImageDecoder.decodeBitmap(src) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val longest = maxOf(info.size.width, info.size.height)
+                decoder.setTargetSampleSize(((longest + 2047) / 2048).coerceAtLeast(1))
+            } // ImageDecoder applies EXIF rotation and reflection.
         } else {
-            context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it) }
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it, null, bounds) }
+            require(bounds.outWidth > 0 && bounds.outHeight > 0)
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+            val decoded = context.contentResolver.openInputStream(uri)!!.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            } ?: error("Cannot decode image")
+            try {
+                val orientation = context.contentResolver.openInputStream(uri)!!.use {
+                    ExifInterface(it).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+                }
+                val matrix = Matrix().apply {
+                    when (orientation) {
+                        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> setScale(-1f, 1f)
+                        ExifInterface.ORIENTATION_ROTATE_180 -> setRotate(180f)
+                        ExifInterface.ORIENTATION_FLIP_VERTICAL -> setScale(1f, -1f)
+                        ExifInterface.ORIENTATION_TRANSPOSE -> { setRotate(90f); postScale(-1f, 1f) }
+                        ExifInterface.ORIENTATION_ROTATE_90 -> setRotate(90f)
+                        ExifInterface.ORIENTATION_TRANSVERSE -> { setRotate(270f); postScale(-1f, 1f) }
+                        ExifInterface.ORIENTATION_ROTATE_270 -> setRotate(270f)
+                    }
+                }
+                Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true).also {
+                    if (it !== decoded) decoded.recycle()
+                }
+            } catch (exception: Exception) { decoded.recycle(); throw exception }
         }
-        // ARGB_8888 보장 (MediaPipe 입력 요건)
-        return if (raw.config != Bitmap.Config.ARGB_8888)
-            raw.copy(Bitmap.Config.ARGB_8888, false) else raw
+        return if (raw.config == Bitmap.Config.ARGB_8888) raw else {
+            val converted = raw.copy(Bitmap.Config.ARGB_8888, false)
+            raw.recycle()
+            converted
+        }
     }
 
-    /** 포즈로 어깨/허리/힙의 '높이'를 잡고, 세그멘테이션 마스크에서 그 높이의 실제 폭을 측정 */
     private fun measureRealWidths(pose: Pose, bitmap: Bitmap): BodyWidths? {
-        val ls = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER) ?: return null
-        val rs = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER) ?: return null
-        val lh = pose.getPoseLandmark(PoseLandmark.LEFT_HIP) ?: return null
-        val rh = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP) ?: return null
-
-        val imgH = bitmap.height.toFloat().coerceAtLeast(1f)
-        val shoulderY = ((ls.position.y + rs.position.y) / 2f) / imgH
-        val hipY = ((lh.position.y + rh.position.y) / 2f) / imgH
-        // 허리는 어깨~힙 사이 약 60% 지점(배꼽 근처)으로 잡음
-        val waistY = shoulderY + (hipY - shoulderY) * 0.6f
-
-        return segmenter.measureWidths(bitmap, shoulderY, waistY, hipY)
+        val types = mapOf(
+            Joint.NOSE to PoseLandmark.NOSE,
+            Joint.LEFT_EYE to PoseLandmark.LEFT_EYE, Joint.RIGHT_EYE to PoseLandmark.RIGHT_EYE,
+            Joint.LEFT_SHOULDER to PoseLandmark.LEFT_SHOULDER, Joint.RIGHT_SHOULDER to PoseLandmark.RIGHT_SHOULDER,
+            Joint.LEFT_ELBOW to PoseLandmark.LEFT_ELBOW, Joint.RIGHT_ELBOW to PoseLandmark.RIGHT_ELBOW,
+            Joint.LEFT_WRIST to PoseLandmark.LEFT_WRIST, Joint.RIGHT_WRIST to PoseLandmark.RIGHT_WRIST,
+            Joint.LEFT_HIP to PoseLandmark.LEFT_HIP, Joint.RIGHT_HIP to PoseLandmark.RIGHT_HIP,
+            Joint.LEFT_KNEE to PoseLandmark.LEFT_KNEE, Joint.RIGHT_KNEE to PoseLandmark.RIGHT_KNEE,
+            Joint.LEFT_ANKLE to PoseLandmark.LEFT_ANKLE, Joint.RIGHT_ANKLE to PoseLandmark.RIGHT_ANKLE,
+            Joint.LEFT_FOOT to PoseLandmark.LEFT_FOOT_INDEX, Joint.RIGHT_FOOT to PoseLandmark.RIGHT_FOOT_INDEX
+        )
+        val points = types.mapNotNull { (joint, type) -> pose.getPoseLandmark(type)?.let {
+            joint to GuidePoint(it.position.x, it.position.y, it.inFrameLikelihood)
+        } }.toMap()
+        return segmenter.measureWidths(bitmap, points)
     }
-
     private enum class PoseQuality { NO_PERSON, NOT_FULL_BODY, NOT_FRONT, OK }
 
     // 체형 판별에 꼭 필요한 핵심 랜드마크
@@ -130,6 +216,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
     /** 사진이 체형 분석에 적합한지(전신·정면·신뢰도) 검증한다. */
     private fun validatePose(pose: Pose): PoseQuality {
         if (pose.allPoseLandmarks.isEmpty()) return PoseQuality.NO_PERSON
+        if (pose.allPoseLandmarks.any { !it.position.x.isFinite() || !it.position.y.isFinite() || !it.inFrameLikelihood.isFinite() }) return PoseQuality.NOT_FULL_BODY
 
         // 1) 핵심 랜드마크가 모두 충분한 신뢰도로 잡혔는지 (전신 여부)
         for (type in requiredLandmarks) {
@@ -309,7 +396,11 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
             characteristics = finalCharacteristics,
             styleAdvice = styleAdvice,
             confidence = confidence,
-            shoulderToHip = shToHip
+            shoulderToHip = shToHip,
+            waistToHip = waistWidth / hipWidth
         )
     }
 }
+
+
+
