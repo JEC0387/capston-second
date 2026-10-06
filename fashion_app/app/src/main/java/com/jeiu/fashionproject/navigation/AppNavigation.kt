@@ -18,6 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -119,20 +121,45 @@ fun AppNavigation() {
             }
             composable(Screen.Home.route) {
                 HomeScreen(
-                    onWeatherOutfitClick = { navController.navigate(Screen.WeatherOutfit.route) },
+                    onOutfitRecommendClick = { navController.navigate(Screen.OutfitRecommend.route()) },
+                    onForecastClick = { navController.navigate(Screen.OutfitRecommend.route(tab = 1)) },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     weatherViewModel = weatherViewModel
                 )
             }
             composable(Screen.Wardrobe.route) {
                 WardrobeScreen(
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
-                    onAddClothing = { navController.navigate(Screen.AddClothing.route) },
-                    onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) }
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
+                    onEditClothing = { id -> navController.navigate(Screen.AddClothing.route(id)) },
+                    onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
+                    onWearLog = { navController.navigate(Screen.WearLog.route()) },
+                    onWearCalendar = { navController.navigate(Screen.WearCalendar.route) }
                 )
             }
-            composable(Screen.AddClothing.route) {
+            composable(
+                Screen.WearLog.route,
+                arguments = listOf(navArgument("date") { type = NavType.StringType; nullable = true })
+            ) { entry ->
+                WearLogScreen(
+                    initialDate = entry.arguments?.getString("date"),
+                    onBack = { navController.popBackStack() },
+                    onSaved = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.WearCalendar.route) {
+                WearCalendarScreen(
+                    onBack = { navController.popBackStack() },
+                    onRecord = { date -> navController.navigate(Screen.WearLog.route(date)) }
+                )
+            }
+            composable(
+                Screen.AddClothing.route,
+                arguments = listOf(navArgument("edit") { type = NavType.StringType; nullable = true })
+            ) { entry ->
                 AddClothingScreen(
+                    editItemId = entry.arguments?.getString("edit"),
                     onBack = { navController.popBackStack() },
                     onDone = { navController.popBackStack() }
                 )
@@ -143,10 +170,14 @@ fun AppNavigation() {
             composable(Screen.VirtualFitting.route) {
                 VirtualFittingScreen(onBack = { navController.popBackStack() })
             }
-            composable(Screen.WeatherOutfit.route) {
-                WeatherOutfitScreen(
+            composable(
+                Screen.OutfitRecommend.route,
+                arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })
+            ) { entry ->
+                OutfitRecommendScreen(
+                    initialTab = entry.arguments?.getInt("tab") ?: 0,
                     onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     weatherViewModel = weatherViewModel
                 )
             }

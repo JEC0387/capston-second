@@ -55,6 +55,7 @@ OWM_API_KEY=발급받은_키 uvicorn main:app --host 0.0.0.0 --port 8000 --reloa
 | StylePreferenceScreen | POST | `/api/style-preference/rate` | 코디 좋아요/싫어요 평가 |
 | VirtualFittingScreen | GET | `/api/virtual-fitting/items` | 가상 피팅 후보 의류 |
 | BodyAnalysisScreen | POST | `/api/body-analysis` | 전신 사진 업로드 → 체형 분석 |
+| AddClothingScreen | POST | `/api/clothing/classify` | 옷 사진 → DeepFashion2 옷 종류 분류 + 윤곽 |
 | (객체 탐지) | POST | `/api/object-detection` | 이미지 업로드 → YOLOv8 객체 탐지 |
 | StyleSuggestionScreen | GET | `/api/style-suggestions` | 체형별 추천/회피 스타일 |
 | StyleAnalysisScreen | GET | `/api/style-analysis` | 스타일 분포 + 키워드 + AI 코멘트 |
@@ -110,6 +111,8 @@ OWM_API_KEY=발급받은_키 uvicorn main:app --host 0.0.0.0 --port 8000 --reloa
 backend/
 ├── main.py          # FastAPI 앱 + 엔드포인트 (화면별로 주석 구분)
 ├── detection.py     # YOLOv8 객체 탐지 모듈 (object_detect 프로젝트 통합)
+├── fashion_detection.py  # DeepFashion2 옷 종류 분류 + COCO 가방류 합치기
+├── models/          # deepfashion2_yolov8s-seg.pt (처음 요청 때 자동 다운로드, git에는 넣지 않음)
 ├── schemas.py       # 응답/요청 JSON 스키마 (앱 data class와 1:1)
 ├── data.py          # 인메모리 모의 DB (앱 더미 데이터를 그대로 이전)
 └── requirements.txt
@@ -141,6 +144,55 @@ backend/
   `http://<서버주소>:8000/uploads/...`로 바로 접근할 수 있습니다.
 - 최초 요청 시 `yolov8n.pt` 모델이 자동 다운로드되며, 이후에는 캐시에서 재사용됩니다.
 - 추론은 CPU에서 동작하며, 입력 이미지는 최대 960px로 리사이즈 후 처리됩니다.
+
+## 옷 종류 분류 API (DeepFashion2)
+
+AI 옷 등록 화면(AddClothingScreen)이 사용합니다. `POST /api/clothing/classify`
+
+- 두 모델을 함께 실행하고 결과를 합칩니다 (`fashion_detection.py`)
+  - **DeepFashion2 YOLOv8-seg**: 옷 13종류 + 옷 윤곽(마스크)
+  - **COCO YOLOv8** (`yolov8n.pt`, 기존 객체 탐지 모델): 가방류(handbag/backpack/suitcase)만 사용
+- 같은 옷에 이름이 겹쳐 잡히면(박스 IoU ≥ 0.7) 확신도가 높은 쪽만 남기고, 크게 잡힌 순서로 반환합니다.
+- 요청: `multipart/form-data` — `photo`, `conf_threshold`(선택, 기본 0.3)
+- 응답 예시 (`mask`는 이미지와 같은 크기의 흑백 PNG를 base64로 인코딩한 값, 흰색 = 옷):
+
+```json
+{
+  "imageWidth": 720, "imageHeight": 900,
+  "candidates": [
+    {"label": "short_sleeved_shirt", "source": "deepfashion2", "confidence": 0.81,
+     "bbox": [90, 120, 610, 520], "area": 0.43, "mask": "iVBORw0KGgo..."},
+    {"label": "trousers", "source": "deepfashion2", "confidence": 0.88,
+     "bbox": [120, 480, 590, 900], "area": 0.23, "mask": "iVBORw0KGgo..."}
+  ]
+}
+```
+
+### 모델 파일 (자동 다운로드)
+
+모델 파일(약 24MB)은 용량과 라이선스 때문에 저장소에 넣지 않습니다(`.gitignore`의 `backend/models/`).
+서버에서 옷 분류를 **처음 요청할 때** `backend/models/`에 파일이 없으면 허깅페이스에서 자동으로 내려받습니다.
+(첫 요청은 다운로드 때문에 조금 느리고, 인터넷이 필요합니다.)
+
+자동 다운로드가 안 되는 환경이면 직접 받아 주세요.
+
+```bash
+mkdir models
+curl -L -o models/deepfashion2_yolov8s-seg.pt https://huggingface.co/Bingsu/adetailer/resolve/main/deepfashion2_yolov8s-seg.pt
+```
+
+- 출처: [Bingsu/adetailer](https://huggingface.co/Bingsu/adetailer) (저장소 라이선스 Apache-2.0, mAP50 0.849)
+- 학습 데이터 [DeepFashion2](https://github.com/switchablenorms/DeepFashion2)는 **비상업 연구용** → 캡스톤 시연 용도로만 사용
+- 파일이 없고 자동 다운로드에도 실패하면 이 API는 503 오류를 돌려주고, 앱은 사용자가 종류를 직접 고르는 방식으로 동작합니다.
+
+### ultralytics 설치 시 주의 (Windows)
+
+`ultralytics`는 `opencv-python`을 함께 설치하려 하는데, 이미 설치된 `opencv-python-headless`와
+같은 `cv2` 폴더를 써서 충돌합니다(서버가 켜져 있으면 "액세스 거부" 오류). 이럴 때는 cv2를 건드리지 않고 설치하세요.
+
+```bash
+pip install --no-deps ultralytics ultralytics-thop polars cloudpickle
+```
 
 ## 다음 단계 (확장 포인트)
 

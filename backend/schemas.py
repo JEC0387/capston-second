@@ -117,6 +117,23 @@ class ObjectDetectionResponse(BaseModel):
     resultImageUrl: str              # 바운딩 박스가 그려진 결과 이미지 URL
 
 
+# ---------- 옷 종류 분류 (DeepFashion2 + COCO 가방류) ----------
+
+class ClothingCandidate(BaseModel):
+    label: str               # DeepFashion2 종류(예: "trousers") 또는 COCO 가방(예: "handbag")
+    source: str              # "deepfashion2" / "coco"
+    confidence: float        # 0.0 ~ 1.0
+    bbox: list[int]          # [x1, y1, x2, y2] (전처리된 이미지 좌표 기준)
+    area: float              # 박스 면적 / 이미지 면적 (0~1)
+    mask: Optional[str] = None  # 옷 윤곽 흑백 PNG(base64), 이미지 크기와 같음 (COCO는 없음)
+
+
+class ClothingClassifyResponse(BaseModel):
+    imageWidth: int                      # 전처리된 이미지 크기 (마스크 크기와 같음)
+    imageHeight: int
+    candidates: list[ClothingCandidate]  # 크게 잡힌 순서
+
+
 # ---------- 체형별 스타일 제안 ----------
 
 class StyleCard(BaseModel):

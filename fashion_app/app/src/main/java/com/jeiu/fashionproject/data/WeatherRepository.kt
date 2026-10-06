@@ -1,9 +1,15 @@
 package com.jeiu.fashionproject.data
 
+import com.jeiu.fashionproject.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.roundToInt
 
 data class WeatherInfo(
     val condition: String,
@@ -63,8 +69,82 @@ fun WeatherInfo.advice(): String {
     return base + humidityNote
 }
 
+/**
+ * 하루 예보 요약 (계획 4 — 3단계).
+ * OpenWeatherMap 무료 예보는 3시간 간격이라, 같은 날짜끼리 묶어서 하루 요약을 만든다.
+ */
+data class DayForecast(
+    val date: String,        // "2026-09-30"
+    val minTemp: Int,
+    val maxTemp: Int,
+    val dayTemp: Int,        // 낮(9~18시) 평균 기온 — 코디는 이 기온으로 짠다
+    val rainChance: Int,     // 비·눈 올 확률 (0~100, 그날 가장 높은 값)
+    val humidity: Int,
+    val conditionId: Int,    // 대표 날씨
+    val condition: String
+) {
+    /** 코디 엔진에 넣을 날씨. 비 올 확률이 60% 이상이면 비 오는 날로 본다. */
+    fun toWeatherInfo(): WeatherInfo =
+        if (rainChance >= RAINY_CHANCE && conditionId !in 200..699) WeatherInfo("비 소식", dayTemp, humidity, 500)
+        else WeatherInfo(condition, dayTemp, humidity, conditionId)
+
+    companion object {
+        const val RAINY_CHANCE = 60
+    }
+}
+
 object WeatherRepository {
-    private const val API_KEY = "e422ab80d71dbbe764957743657f398f"
+    // 키는 local.properties의 OWM_API_KEY에서 build.gradle.kts가 꺼내 넣는다 (코드에 적지 않음)
+    private val API_KEY = BuildConfig.OWM_API_KEY
+
+    /** 5일 예보를 날짜별 요약으로 받는다. 키가 없거나 실패하면 예외. */
+    suspend fun fetchForecast(lat: Double, lon: Double): List<DayForecast> = withContext(Dispatchers.IO) {
+        check(API_KEY.isNotBlank()) { "local.properties에 OWM_API_KEY가 없어요" }
+        val url = "https://api.openweathermap.org/data/2.5/forecast?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=kr"
+        parseForecast(JSONObject(URL(url).readText()))
+    }
+
+    private class Slot(val hour: Int, val temp: Double, val humidity: Int, val pop: Double, val id: Int, val desc: String)
+
+    /** 3시간 간격 40개 → 날짜별로 묶어 최대 5일 */
+    fun parseForecast(json: JSONObject): List<DayForecast> {
+        // 시간은 그 지역 시간으로 계산한다 (city.timezone = UTC와의 차이, 초)
+        val offsetMs = json.optJSONObject("city")?.optLong("timezone", 9 * 3600L)?.times(1000) ?: (9 * 3600_000L)
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val hourFmt = SimpleDateFormat("H", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val list = json.getJSONArray("list")
+        val byDate = linkedMapOf<String, MutableList<Slot>>()
+        for (i in 0 until list.length()) {
+            val o = list.getJSONObject(i)
+            val local = Date(o.getLong("dt") * 1000 + offsetMs)
+            val main = o.getJSONObject("main")
+            val w = o.getJSONArray("weather").getJSONObject(0)
+            byDate.getOrPut(dateFmt.format(local)) { mutableListOf() } += Slot(
+                hour = hourFmt.format(local).toInt(),
+                temp = main.getDouble("temp"),
+                humidity = main.getInt("humidity"),
+                pop = o.optDouble("pop", 0.0),
+                id = w.getInt("id"),
+                desc = w.getString("description")
+            )
+        }
+        return byDate.map { (date, slots) ->
+            val daytime = slots.filter { it.hour in 9..18 }.ifEmpty { slots }
+            // 대표 날씨: 비·눈 확률이 높은 시간이 있으면 그 날씨, 아니면 낮 시간에 가장 많이 나온 날씨
+            val wet = slots.filter { it.id in 200..699 && it.pop * 100 >= DayForecast.RAINY_CHANCE }.maxByOrNull { it.pop }
+            val rep = wet ?: daytime.groupBy { it.id }.maxBy { it.value.size }.value.first()
+            DayForecast(
+                date = date,
+                minTemp = slots.minOf { it.temp }.roundToInt(),
+                maxTemp = slots.maxOf { it.temp }.roundToInt(),
+                dayTemp = daytime.map { it.temp }.average().roundToInt(),
+                rainChance = (slots.maxOf { it.pop } * 100).roundToInt(),
+                humidity = slots.map { it.humidity }.average().roundToInt(),
+                conditionId = rep.id,
+                condition = rep.desc
+            )
+        }.take(5)
+    }
 
     suspend fun fetch(lat: Double, lon: Double): WeatherInfo = withContext(Dispatchers.IO) {
         val url = "https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=kr"
