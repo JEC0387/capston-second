@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.advice
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.isCloudy
 import com.jeiu.fashionproject.data.isRainy
 import com.jeiu.fashionproject.data.WeatherOutfits
@@ -36,11 +37,17 @@ import com.jeiu.fashionproject.ui.viewmodel.WeatherUiState
 import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 
 @Composable
-fun WeatherOutfitScreen(onBack: () -> Unit, onProductClick: () -> Unit, weatherViewModel: WeatherViewModel) {
+fun WeatherOutfitScreen(
+    onBack: () -> Unit,
+    onProductClick: () -> Unit,
+    weatherViewModel: WeatherViewModel,
+    gender: Gender? = null
+) {
     val context = LocalContext.current
     val weatherState by weatherViewModel.state.collectAsState()
     val outfits = WeatherOutfits.setsFor(
-        (weatherState as? WeatherUiState.Success)?.info
+        (weatherState as? WeatherUiState.Success)?.info,
+        gender
     )
     var selectedIndex by remember { mutableIntStateOf(0) }
     var searchKeyword by remember { mutableStateOf<String?>(null) }

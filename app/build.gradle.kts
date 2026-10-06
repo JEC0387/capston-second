@@ -1,6 +1,16 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// NAVER API HUB(NCP) 인증키는 git에 올라가는 소스에 두지 않고, gitignore된
+// local.properties에서만 읽어온다. (local.properties에 NAVER_API_KEY_ID /
+// NAVER_API_KEY 두 줄을 추가해야 쇼핑 탭 검색 · 쇼핑인사이트가 동작한다.)
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) load(file.inputStream())
 }
 
 android {
@@ -14,6 +24,17 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // NAVER API HUB(NCP) — 데이터랩 쇼핑인사이트 + 이미지 검색이 같은 키를 쓴다.
+        // (옛 developers.naver.com 쇼핑 검색 API는 종료되어 더 못 쓴다.)
+        buildConfigField(
+            "String", "NAVER_API_KEY_ID",
+            "\"${localProperties.getProperty("NAVER_API_KEY_ID", "")}\""
+        )
+        buildConfigField(
+            "String", "NAVER_API_KEY",
+            "\"${localProperties.getProperty("NAVER_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -31,6 +52,12 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
@@ -54,6 +81,11 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+    // Force a 16KB-page-aligned release; the version transitively pulled in by
+    // compose-ui (1.0.1) ships an unaligned libandroidx.graphics.path.so.
+    implementation(libs.androidx.graphics.path)
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.converter.gson)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)

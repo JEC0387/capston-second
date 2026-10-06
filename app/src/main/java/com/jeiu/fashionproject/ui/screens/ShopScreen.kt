@@ -1,8 +1,5 @@
 package com.jeiu.fashionproject.ui.screens
 
-import android.content.Intent
-import android.net.Uri
-import com.jeiu.fashionproject.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,59 +8,39 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.data.ShopImageResult
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
 import com.jeiu.fashionproject.ui.theme.*
-
-private data class Product(
-    val name: String,
-    val brand: String,
-    val price: String,
-    val originalPrice: String,
-    val rating: Float,
-    val reviewCount: Int,
-    val color: Color,
-    val tag: String? = null,
-    val imageUrl: String = "",
-    val purchaseUrl: String = "",
-    val imageRes: Int = 0
-)
-
-private val products = listOf(
-    Product("CKS 스탠다드 슬림핏 반팔 셔츠 네이비", "CHICKS", "39,000원", "39,000원", 4.7f, 184, Color(0xFFD5E0EC), "AI추천", "", "https://www.musinsa.com/products/6405693", R.drawable.shop_cks_shirt),
-    Product("사이드 핀턱 빈티지 워싱 벌룬핏 데님 팬츠", "미스터제이슨", "8,522원", "22,000원", 4.5f, 231, Color(0xFFA8B8C8), null, "https://d3ha2047wt6x28.cloudfront.net/hEmVfMXLFDQ/pr:GOODS_DETAIL/czM6Ly9hYmx5LWltYWdlLWxlZ2FjeS9kYXRhL2dvb2RzLzIwMjYwMjI2XzE3NzIwNjgyMzQ2NTQ5NjRtLmpwZw", "https://4910.kr/desktop/goods/51479882"),
-    Product("[made]썸머크루즈가디건", "어텀", "26,560원", "35,000원", 4.6f, 98, Color(0xFFEDE3D5), "AI추천", "https://cf.product-image.s.zigzag.kr/original/c/17/026/333/170263336-3421640085957955899.jpeg?width=400&height=400&quality=80&format=webp", "https://zigzag.kr/catalog/products/170263336"),
-    Product("아치스 조리샌들_블랙", "ARCHIES", "35,000원", "35,000원", 4.8f, 342, Color(0xFF3A3A3A), "베스트", "", "https://www.musinsa.com/products/3142059", R.drawable.shop_archies_sandal),
-    Product("백 사틴 오피서 팬츠 [블랙]", "무신사스탠다드", "59,900원", "59,900원", 4.8f, 512, Color(0xFF4A4A4A), null, "", "https://www.musinsa.com/products/3304653", R.drawable.shop_officer_pants),
-    Product("[MADE]러블린셔링블라우스 - 4color", "Ni:some", "32,200원", "42,900원", 4.9f, 284, Color(0xFFF5EEE8), "AI추천", "https://cf.product-image.s.zigzag.kr/original/d/2026/4/27/5875_202604271053470543_53810.jpeg?width=400&height=400&quality=80&format=webp", "https://zigzag.kr/catalog/products/161164288"),
-    Product("바이오워싱 크롭 데님 반팔 셔츠", "DIMITRI BLACK", "49,000원", "49,000원", 4.4f, 156, Color(0xFFA8C0D0), null, "", "https://www.musinsa.com/products/6317950", R.drawable.shop_denim_shirt),
-    Product("8부 원턱 버뮤다 스웨트 팬츠 3color", "NANDE", "49,000원", "49,000원", 4.5f, 203, Color(0xFFD5D0C8), null, "", "https://www.musinsa.com/products/6068184", R.drawable.shop_sweat_pants),
-)
+import com.jeiu.fashionproject.ui.viewmodel.ShopUiState
+import com.jeiu.fashionproject.ui.viewmodel.ShopViewModel
+import kotlinx.coroutines.delay
 
 @Composable
-fun ShopScreen(onProductClick: () -> Unit) {
-    val context = LocalContext.current
-    val likedSet = remember { mutableStateListOf<String>() }
+fun ShopScreen(
+    gender: Gender? = null,
+    viewModel: ShopViewModel
+) {
+    val state by viewModel.state.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
-    val filteredProducts = remember(searchQuery) {
-        if (searchQuery.isBlank()) products
-        else products.filter {
-            it.name.contains(searchQuery, ignoreCase = true) || it.brand.contains(searchQuery, ignoreCase = true)
-        }
+    var searchKeyword by remember { mutableStateOf<String?>(null) }
+
+    // 입력 멈춘 지 400ms 지나면 검색 — 매 키입력마다 API 호출하지 않게 디바운스
+    LaunchedEffect(searchQuery, gender) {
+        delay(400)
+        viewModel.search(searchQuery, gender)
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -86,7 +63,7 @@ fun ShopScreen(onProductClick: () -> Unit) {
             )
         }
 
-        // AI 추천 배너
+        // 안내 배너
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -96,86 +73,90 @@ fun ShopScreen(onProductClick: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
             Text(
-                "AI가 내 체형·취향을 분석해 추천한 상품이에요",
+                if (gender != null) "네이버 이미지 검색에서 ${gender.label} 맞춤 스타일을 가져왔어요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
+                else "네이버 이미지 검색 결과예요. 탭하면 쇼핑몰에서 검색해볼 수 있어요",
                 style = MaterialTheme.typography.bodySmall,
                 color = Brown,
                 fontWeight = FontWeight.Medium
             )
         }
 
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            items(filteredProducts) { product ->
-                val isLiked = product.name in likedSet
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            if (product.purchaseUrl.isNotEmpty())
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
-                            else
-                                onProductClick()
-                        },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = White),
-                    elevation = CardDefaults.cardElevation(1.dp)
+        when (val s = state) {
+            is ShopUiState.Loading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Camel)
+                }
+            }
+            is ShopUiState.Error -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(32.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(160.dp)
-                                .background(product.color)
-                        ) {
-                            AsyncImage(
-                                model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
-                                contentDescription = product.name,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = MediumGray, modifier = Modifier.size(40.dp))
+                        Text(s.message, style = MaterialTheme.typography.bodyMedium, color = MediumGray, textAlign = TextAlign.Center)
+                    }
+                }
+            }
+            is ShopUiState.Success -> {
+                if (s.results.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("검색 결과가 없어요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        items(s.results) { result ->
+                            ImageResultCard(
+                                result = result,
+                                onClick = { searchKeyword = result.title }
                             )
-                            product.tag?.let {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopStart)
-                                        .padding(8.dp)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(Camel)
-                                        .padding(horizontal = 8.dp, vertical = 3.dp)
-                                ) {
-                                    Text(it, style = MaterialTheme.typography.labelSmall, color = White)
-                                }
-                            }
-                            IconButton(
-                                onClick = { if (isLiked) likedSet.remove(product.name) else likedSet.add(product.name) },
-                                modifier = Modifier.align(Alignment.TopEnd)
-                            ) {
-                                Icon(
-                                    if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                    contentDescription = null,
-                                    tint = if (isLiked) Camel else White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(product.brand, style = MaterialTheme.typography.labelSmall, color = MediumGray)
-                            Text(product.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium, maxLines = 2)
-                            if (product.originalPrice != product.price) {
-                                Text(product.originalPrice, style = MaterialTheme.typography.labelSmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
-                            }
-                            Text(product.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC107), modifier = Modifier.size(12.dp))
-                                Text("${product.rating}", style = MaterialTheme.typography.labelSmall, color = CharcoalBlack)
-                                Text("(${product.reviewCount})", style = MaterialTheme.typography.labelSmall, color = MediumGray)
-                            }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    searchKeyword?.let { keyword ->
+        ShopSearchSheet(keyword = keyword, onDismiss = { searchKeyword = null })
+    }
+}
+
+@Composable
+private fun ImageResultCard(result: ShopImageResult, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .background(CreamDark)
+            ) {
+                AsyncImage(
+                    model = result.thumbnailUrl,
+                    contentDescription = result.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            Column(modifier = Modifier.padding(10.dp)) {
+                Text(
+                    result.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = CharcoalBlack,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2
+                )
             }
         }
     }

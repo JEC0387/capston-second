@@ -129,7 +129,11 @@ class BodyAnalysisViewModel : ViewModel() {
                     "밝은 색 상의 활용"
                 )
             }
-            waistToShoulder < 0.75f -> {
+            // ML Kit Pose에는 허리 랜드마크가 없어 waistWidth는 (어깨+힙)/2*0.8로 추정한 값이다.
+            // 이 식 때문에 shToHip이 0.9~1.1인 구간에서 waistToShoulder는 항상 0.76~0.84 범위로만
+            // 나오므로, 기존 0.75f 기준은 수학적으로 영원히 거짓이 되는 죽은 분기였다(모래시계형이
+            // 절대 안 나옴). 그 구간의 중간값(0.8f)으로 재조정해 두 분류가 실제로 나뉘어 나오게 한다.
+            waistToShoulder < 0.80f -> {
                 bodyTypeKo = "모래시계형"
                 characteristics = listOf(
                     "어깨와 힙의 너비가 비슷해요",

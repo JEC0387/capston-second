@@ -8,14 +8,30 @@ data class OutfitCardData(
     val desc: String,
     val bgColor: Color,
     val imageSource: Any,   // R.drawable.xxx (Int) 또는 URL String
-    val purchaseUrl: String = ""
+    val purchaseUrl: String = "",
+    // null = 성별 구분 없이 추천(유니섹스). 지정돼 있으면 그 성별을 선택했을 때만 노출된다.
+    val targetGender: Gender? = null
 )
 data class OutfitItemData(val label: String, val color: Color, val imageRes: Int = 0, val purchaseUrl: String = "")
-data class OutfitSetData(val title: String, val tag: String, val top: OutfitItemData, val bottom: OutfitItemData, val shoes: OutfitItemData? = null, val imageSource: Any = 0)
+data class OutfitSetData(
+    val title: String,
+    val tag: String,
+    val top: OutfitItemData,
+    val bottom: OutfitItemData,
+    val shoes: OutfitItemData? = null,
+    val imageSource: Any = 0,
+    val targetGender: Gender? = null
+)
 
 object WeatherOutfits {
 
-    fun cardsFor(info: WeatherInfo?): List<OutfitCardData> = when {
+    fun cardsFor(info: WeatherInfo?, gender: Gender? = null): List<OutfitCardData> = rawCardsFor(info)
+        .filter { it.targetGender == null || it.targetGender == gender }
+
+    fun setsFor(info: WeatherInfo?, gender: Gender? = null): List<OutfitSetData> = rawSetsFor(info)
+        .filter { it.targetGender == null || it.targetGender == gender }
+
+    private fun rawCardsFor(info: WeatherInfo?): List<OutfitCardData> = when {
         info == null          -> coolCards()
         info.isRainy()        -> rainyCards()
         info.isCloudy()       -> cloudyCards()
@@ -25,7 +41,7 @@ object WeatherOutfits {
         else                  -> hotCards()
     }
 
-    fun setsFor(info: WeatherInfo?): List<OutfitSetData> = when {
+    private fun rawSetsFor(info: WeatherInfo?): List<OutfitSetData> = when {
         info == null          -> coolSets()
         info.isRainy()        -> rainySets()
         info.isCloudy()       -> cloudySets()
@@ -62,7 +78,7 @@ object WeatherOutfits {
     // ── 흐림 (conditionId 801~899) ──────────────────────────────────────────
     private fun cloudyCards() = listOf(
         OutfitCardData("레이어드 캐주얼", "가디건 + 슬랙스",        Color(0xFFE0D8CC), R.drawable.casual_daily_look),
-        OutfitCardData("모던 오피스룩",   "블라우스 + 와이드팬츠",  Color(0xFFE8E0D8), R.drawable.casual_daily_look),
+        OutfitCardData("모던 오피스룩",   "블라우스 + 와이드팬츠",  Color(0xFFE8E0D8), R.drawable.casual_daily_look, targetGender = Gender.FEMALE),
         OutfitCardData("스트릿 무드",    "후드티 + 데님팬츠",       Color(0xFFDDD5C8), R.drawable.casual_daily_look),
     )
     private fun cloudySets() = listOf(
@@ -75,7 +91,7 @@ object WeatherOutfits {
             OutfitItemData("블라우스",   Color(0xFFE8E0D8)),
             OutfitItemData("와이드팬츠", Color(0xFFD5CABD)),
             OutfitItemData("로퍼",       Color(0xFFB8A898)),
-            R.drawable.summer_blouse),
+            R.drawable.summer_blouse, targetGender = Gender.FEMALE),
         OutfitSetData("스트릿 무드",    "트렌디",
             OutfitItemData("후드티",     Color(0xFFDDD5C8)),
             OutfitItemData("데님팬츠",   Color(0xFFA8B8C8)),
@@ -110,7 +126,7 @@ object WeatherOutfits {
     // ── 쌀쌀 (10~19°C) ──────────────────────────────────────────────────────
     private fun coolCards() = listOf(
         OutfitCardData("캐주얼 데일리룩", "베이지 니트 + 와이드팬츠", Color(0xFFEDE3D5), R.drawable.casual_daily_look),
-        OutfitCardData("미니멀 오피스룩", "화이트 블라우스 + 슬랙스", Color(0xFFE8E0D8), R.drawable.casual_daily_look),
+        OutfitCardData("미니멀 오피스룩", "화이트 블라우스 + 슬랙스", Color(0xFFE8E0D8), R.drawable.casual_daily_look, targetGender = Gender.FEMALE),
         OutfitCardData("스트릿 캐주얼",  "후드집업 + 카고팬츠",       Color(0xFFDDD5C8), R.drawable.casual_daily_look),
     )
     private fun coolSets() = listOf(
@@ -123,7 +139,7 @@ object WeatherOutfits {
             OutfitItemData("화이트 블라우스", Color(0xFFF5F2EE)),
             OutfitItemData("슬랙스",       Color(0xFFCDC5BC)),
             OutfitItemData("로퍼",         Color(0xFFB8A898)),
-            R.drawable.summer_blouse),
+            R.drawable.summer_blouse, targetGender = Gender.FEMALE),
         OutfitSetData("스트릿 캐주얼",  "트렌디",
             OutfitItemData("후드집업",     Color(0xFFE8DDD0)),
             OutfitItemData("카고팬츠",     Color(0xFFCFCAC0)),
@@ -133,7 +149,7 @@ object WeatherOutfits {
 
     // ── 따뜻 (20~27°C) ──────────────────────────────────────────────────────
     private fun warmCards() = listOf(
-        OutfitCardData("청순 블라우스 코디", "일체형 블라우스+린넨 팬츠",  Color(0xFFEDE3D5), R.drawable.summer_blouse, "https://zigzag.kr/catalog/products/163193045"),
+        OutfitCardData("청순 블라우스 코디", "일체형 블라우스+린넨 팬츠",  Color(0xFFEDE3D5), R.drawable.summer_blouse, "https://zigzag.kr/catalog/products/163193045", targetGender = Gender.FEMALE),
         OutfitCardData("썸머 라인 셔츠코디", "린넨 셔츠 + 와이드팬츠",     Color(0xFFE8E8E0), R.drawable.half_sleeve_shirt, "https://zigzag.kr/catalog/products/145426176"),
         OutfitCardData("여름 데일리 셔츠코디",  "썸머 긴팔셔츠+ 썸머 팬츠",           Color(0xFFDDD5C8), R.drawable.street_cool, "https://zigzag.kr/catalog/products/169754357"),
     )
@@ -141,7 +157,7 @@ object WeatherOutfits {
         OutfitSetData("청순 블라우스 코디", "날씨 최적",
             OutfitItemData("일체형 블라우스", Color(0xFFEDE3D5), R.drawable.summer_blouse),
             OutfitItemData("린넨 팬츠",      Color(0xFFD5CABD), R.drawable.outfit_linen_pants, "https://zigzag.kr/catalog/products/162619955"),
-            imageSource = R.drawable.summer_blouse),
+            imageSource = R.drawable.summer_blouse, targetGender = Gender.FEMALE),
         OutfitSetData("썸머 라인 셔츠코디", "내 스타일",
             OutfitItemData("라인 셔츠",       Color(0xFFE8E8E0), R.drawable.half_sleeve_shirt),
             OutfitItemData("포스트 와이드 팬츠", Color(0xFFD0CEC8), R.drawable.post_wide_pants),

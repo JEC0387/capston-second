@@ -39,6 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.WeatherOutfits
 import com.jeiu.fashionproject.data.advice
 import com.jeiu.fashionproject.data.isRainy
@@ -59,7 +60,12 @@ private val popularItems = listOf(
 )
 
 @Composable
-fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, weatherViewModel: WeatherViewModel) {
+fun HomeScreen(
+    onWeatherOutfitClick: () -> Unit,
+    onProductClick: () -> Unit,
+    weatherViewModel: WeatherViewModel,
+    gender: Gender? = null
+) {
     val weatherState by weatherViewModel.state.collectAsState()
     val context = LocalContext.current
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -74,7 +80,8 @@ fun HomeScreen(onWeatherOutfitClick: () -> Unit, onProductClick: () -> Unit, wea
     }
 
     val outfitCards = WeatherOutfits.cardsFor(
-        (weatherState as? WeatherUiState.Success)?.info
+        (weatherState as? WeatherUiState.Success)?.info,
+        gender
     )
     var showNotifDialog by remember { mutableStateOf(false) }
 

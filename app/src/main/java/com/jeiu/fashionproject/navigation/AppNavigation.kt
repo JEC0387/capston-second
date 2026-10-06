@@ -30,7 +30,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import com.jeiu.fashionproject.ui.screens.*
 import com.jeiu.fashionproject.ui.theme.Camel
+import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
+import com.jeiu.fashionproject.ui.viewmodel.ShopViewModel
+import com.jeiu.fashionproject.ui.viewmodel.UserPreferencesViewModel
 import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 import com.jeiu.fashionproject.ui.theme.CharcoalBlack
 import com.jeiu.fashionproject.ui.theme.LightGray
@@ -63,8 +66,15 @@ private val bottomNavRoutes = setOf(
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val context = LocalContext.current
     val weatherViewModel: WeatherViewModel = viewModel()
     val bodyAnalysisViewModel: BodyAnalysisViewModel = viewModel()
+    val bodyAnalysisState by bodyAnalysisViewModel.state.collectAsState()
+    val analyzedBodyTypeKo = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.result?.bodyTypeKo
+    val shopViewModel: ShopViewModel = viewModel()
+    val userPreferencesViewModel: UserPreferencesViewModel = viewModel()
+    val gender by userPreferencesViewModel.gender.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(Unit) { userPreferencesViewModel.loadIfNeeded(context) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavRoutes
@@ -121,7 +131,8 @@ fun AppNavigation() {
                 HomeScreen(
                     onWeatherOutfitClick = { navController.navigate(Screen.WeatherOutfit.route) },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
-                    weatherViewModel = weatherViewModel
+                    weatherViewModel = weatherViewModel,
+                    gender = gender
                 )
             }
             composable(Screen.Wardrobe.route) {
@@ -131,11 +142,11 @@ fun AppNavigation() {
                 WeatherOutfitScreen(
                     onBack = { navController.popBackStack() },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
-                    weatherViewModel = weatherViewModel
+                    weatherViewModel = weatherViewModel,
+                    gender = gender
                 )
             }
             composable(Screen.BodyAnalysis.route) { entry ->
-                val context = LocalContext.current
                 val photoUriStr by entry.savedStateHandle
                     .getStateFlow<String?>("photo_uri", null)
                     .collectAsState()
@@ -164,13 +175,19 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.Shop.route) {
-                ShopScreen(onProductClick = { navController.navigate(Screen.ProductDetail.route) })
+                ShopScreen(
+                    gender = gender,
+                    viewModel = shopViewModel
+                )
             }
             composable(Screen.ProductDetail.route) {
                 ProductDetailScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.MyPage.route) {
                 MyPageScreen(
+                    bodyTypeKo = analyzedBodyTypeKo,
+                    gender = gender,
+                    onGenderSelected = { userPreferencesViewModel.setGender(context, it) },
                     onStyleAnalysis = { navController.navigate(Screen.StyleAnalysis.route) },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
                     onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) },
