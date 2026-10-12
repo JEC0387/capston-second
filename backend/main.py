@@ -11,7 +11,8 @@ WardrobeScreen       → GET  /api/wardrobe
                        POST /api/wardrobe
                        POST /api/wardrobe/{id}/favorite
                        DELETE /api/wardrobe/{id}
-AddClothingScreen    → POST /api/object-detection    (YOLOv8 자동 태깅)
+AddClothingScreen    → POST /api/clothing/classify   (DeepFashion2 옷 종류 분류)
+                       POST /api/object-detection    (YOLOv8 COCO 객체 탐지, 기존)
 BodyAnalysisScreen   → POST /api/body-analysis        (전신 사진 업로드)
 StylePreferenceScreen→ GET  /api/style-preference
                        POST /api/style-preference/rate (좋아요/싫어요)
@@ -41,9 +42,10 @@ from PIL import Image
 
 import data
 import detection
+import fashion_detection
 import weather
 from schemas import (
-    AddClothingRequest, BodyAnalysisResult, ClothingItem, HomeResponse,
+    AddClothingRequest, BodyAnalysisResult, ClothingClassifyResponse, ClothingItem, HomeResponse,
     ObjectDetectionResponse, Product, ProductDetail, Profile,
     RatePreferenceRequest, ShopResponse, StyleAnalysisResponse, StyleScore,
     StylePreferenceResponse, StyleSuggestionResponse, UpdateStylesRequest,
@@ -230,6 +232,36 @@ async def detect_objects(
         "counts": counts,
         "resultImageUrl": f"/uploads/{result_name}",
     }
+
+
+@app.post("/api/clothing/classify", response_model=ClothingClassifyResponse, tags=["AI 분석"])
+async def classify_clothing(
+    photo: UploadFile = File(...),
+    conf_threshold: float = Form(0.3),
+):
+    """
+    옷 사진 업로드 → 옷 종류 후보 목록 (크게 잡힌 순서).
+
+    - DeepFashion2 YOLOv8-seg: 옷 13종류 + 옷 윤곽 마스크(흑백 PNG, base64)
+    - COCO YOLOv8: 가방류(handbag / backpack / suitcase)만 추가
+    - multipart/form-data, 필드명 `photo`
+    앱은 누끼 결과를 흰 배경으로 채워서 보낸다.
+    """
+    if photo.content_type not in ("image/jpeg", "image/png", "image/webp", "image/bmp"):
+        raise HTTPException(400, "jpg/png/webp/bmp 이미지만 업로드할 수 있습니다")
+    if not 0.1 <= conf_threshold <= 0.9:
+        raise HTTPException(400, "conf_threshold는 0.1 ~ 0.9 사이여야 합니다")
+
+    try:
+        image = Image.open(io.BytesIO(await photo.read()))
+        image.load()
+    except Exception:
+        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다")
+
+    try:
+        return fashion_detection.classify_clothing(image, conf_threshold=conf_threshold)
+    except FileNotFoundError as e:
+        raise HTTPException(503, str(e))
 
 
 @app.get("/api/style-suggestions", response_model=StyleSuggestionResponse, tags=["AI 분석"])

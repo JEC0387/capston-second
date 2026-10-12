@@ -1,6 +1,14 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// 날씨 API 키는 Git에 올라가지 않는 local.properties에서 읽는다 (예: OWM_API_KEY=abcd1234)
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -14,6 +22,7 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "OWM_API_KEY", "\"${localProperties.getProperty("OWM_API_KEY", "")}\"")
     }
 
     buildTypes {
@@ -31,6 +40,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     androidResources {
         // .tflite 모델은 압축되면 MediaPipe가 로딩하지 못하므로 압축 제외
@@ -54,6 +64,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.play.services.location)
     implementation(libs.mlkit.pose.detection.accurate)
+    implementation(libs.mlkit.subject.segmentation)
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)
