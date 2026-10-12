@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checkroom
@@ -31,10 +33,13 @@ import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
 import com.jeiu.fashionproject.data.WearLogStore
+import com.jeiu.fashionproject.recommend.MissingItemFinder
 import com.jeiu.fashionproject.ui.components.ClothingThumb
 import com.jeiu.fashionproject.ui.components.UnwornAlertCard
 import com.jeiu.fashionproject.ui.viewmodel.WearAnalyzer
 import com.jeiu.fashionproject.ui.theme.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun WardrobeScreen(
@@ -43,7 +48,8 @@ fun WardrobeScreen(
     onVirtualFitting: () -> Unit = {},
     onWearLog: () -> Unit = {},          // 오늘 입은 옷 기록
     onWearCalendar: () -> Unit = {},     // 착용 기록 달력
-    onEditClothing: (id: String) -> Unit = {}   // 옷 정보 수정
+    onEditClothing: (id: String) -> Unit = {},  // 옷 정보 수정
+    onMissingItem: () -> Unit = {}              // "이것만 사면" 화면
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
@@ -107,6 +113,15 @@ fun WardrobeScreen(
             onKeep = { WardrobeStore.keep(context, it.id) },
             modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)
         )
+
+        // "이것만 사면 코디 완성" 요약 (계획 4 — 5단계). 계산은 화면이 멈추지 않게 따로 한다
+        var missingReport by remember { mutableStateOf<MissingItemFinder.Report?>(null) }
+        LaunchedEffect(allDisplayed) {
+            missingReport = withContext(Dispatchers.Default) { MissingItemFinder.analyze(allDisplayed) }
+        }
+        missingReport?.let { r ->
+            BuyThisCard(r, onClick = onMissingItem, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
+        }
 
         // 카테고리 탭
         ScrollableTabRow(
@@ -411,5 +426,39 @@ private fun ClothingDetailSheet(
                 TextButton(onClick = { confirmDelete = false }) { Text("취소", color = MediumGray) }
             }
         )
+    }
+}
+
+/** 옷장 위 "이것만 사면" 한 줄 카드 — 누르면 자세히 보기. 추천도 외톨이 옷도 없으면 그리지 않는다 */
+@Composable
+private fun BuyThisCard(report: MissingItemFinder.Report, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val top = report.suggestions.firstOrNull()
+    if (top == null && report.orphans.isEmpty()) return
+    Card(
+        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CamelLight),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(20.dp))
+            Column(Modifier.weight(1f)) {
+                top?.let {
+                    Text(
+                        "${it.item.name} 하나만 사면 코디 ${it.gain}개가 더 생겨요",
+                        style = MaterialTheme.typography.bodyMedium, color = BrownDark, fontWeight = FontWeight.SemiBold
+                    )
+                }
+                if (report.orphans.isNotEmpty()) {
+                    Text("어울리는 짝이 없는 옷 ${report.orphans.size}벌", style = MaterialTheme.typography.bodySmall, color = Brown)
+                }
+            }
+            Text("자세히", style = MaterialTheme.typography.labelLarge, color = Camel)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Camel, modifier = Modifier.size(18.dp))
+        }
     }
 }

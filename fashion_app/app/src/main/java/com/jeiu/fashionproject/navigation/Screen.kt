@@ -26,4 +26,6 @@ sealed class Screen(val route: String) {
         fun route(date: String? = null) = if (date == null) "wear_log" else "wear_log?date=$date"
     }
     object WearCalendar : Screen("wear_calendar")
+    /** "이것만 사면 코디 완성" — 계획 4 (5단계) */
+    object MissingItem : Screen("missing_item")
 }

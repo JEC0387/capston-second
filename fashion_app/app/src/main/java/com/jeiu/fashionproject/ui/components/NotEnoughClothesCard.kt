@@ -16,9 +16,16 @@ import com.jeiu.fashionproject.ui.theme.*
 /**
  * 옷이 부족해 코디를 만들 수 없을 때 보여주는 안내 카드 (계획 4 — 추천).
  * 고정 코디로 대신하지 않고, 무엇이 모자란지 알려주고 옷 등록으로 이어준다.
+ * [suggestion]이 있으면 "흰 셔츠가 있으면 면접 코디를 만들 수 있어요"처럼 살 옷을 알려주고 [쇼핑에서 찾기]를 단다 (5단계).
  */
 @Composable
-fun NotEnoughClothesCard(message: String, onAddClothing: () -> Unit, modifier: Modifier = Modifier) {
+fun NotEnoughClothesCard(
+    message: String,
+    onAddClothing: () -> Unit,
+    modifier: Modifier = Modifier,
+    suggestion: String? = null,
+    onSearch: (() -> Unit)? = null
+) {
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -33,11 +40,19 @@ fun NotEnoughClothesCard(message: String, onAddClothing: () -> Unit, modifier: M
             Icon(Icons.Filled.Checkroom, contentDescription = null, tint = Camel, modifier = Modifier.size(32.dp))
             Text("아직 코디를 만들 옷이 부족해요", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
             Text(message, style = MaterialTheme.typography.bodySmall, color = MediumGray, textAlign = TextAlign.Center)
-            Button(
-                onClick = onAddClothing,
-                colors = ButtonDefaults.buttonColors(containerColor = Camel),
-                shape = RoundedCornerShape(12.dp)
-            ) { Text("옷 등록하기") }
+            suggestion?.let {
+                Text("🛍 $it", style = MaterialTheme.typography.bodyMedium, color = Brown, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onAddClothing,
+                    colors = ButtonDefaults.buttonColors(containerColor = Camel),
+                    shape = RoundedCornerShape(12.dp)
+                ) { Text("옷 등록하기") }
+                onSearch?.let {
+                    OutlinedButton(onClick = it, shape = RoundedCornerShape(12.dp)) { Text("쇼핑에서 찾기", color = Brown) }
+                }
+            }
         }
     }
 }

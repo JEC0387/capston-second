@@ -135,7 +135,8 @@ fun AppNavigation() {
                     onEditClothing = { id -> navController.navigate(Screen.AddClothing.route(id)) },
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onWearLog = { navController.navigate(Screen.WearLog.route()) },
-                    onWearCalendar = { navController.navigate(Screen.WearCalendar.route) }
+                    onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
+                    onMissingItem = { navController.navigate(Screen.MissingItem.route) }
                 )
             }
             composable(
@@ -163,6 +164,9 @@ fun AppNavigation() {
                     onBack = { navController.popBackStack() },
                     onDone = { navController.popBackStack() }
                 )
+            }
+            composable(Screen.MissingItem.route) {
+                MissingItemScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.StylePreference.route) {
                 StylePreferenceScreen(onBack = { navController.popBackStack() })
