@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
@@ -24,11 +25,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
+import java.util.Locale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
+import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurementCalculator
 
 @Composable
 fun BodyAnalysisScreen(
@@ -39,6 +43,8 @@ fun BodyAnalysisScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
+    val heightInput by viewModel.heightInput.collectAsState()
+    val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -71,6 +77,17 @@ fun BodyAnalysisScreen(
         ) {
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
+                    OutlinedTextField(
+                        value = heightInput,
+                        onValueChange = viewModel::updateHeightInput,
+                        label = { Text("키 (cm)") },
+                        placeholder = { Text("예: 170 또는 170.5") },
+                        supportingText = { Text("키를 먼저 입력해주세요. 지원 범위 100~230 cm, 소수점 첫째 자리까지") },
+                        isError = heightInput.isNotEmpty() && !validHeight,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -78,7 +95,7 @@ fun BodyAnalysisScreen(
                             .clip(RoundedCornerShape(20.dp))
                             .border(1.5.dp, LightGray, RoundedCornerShape(20.dp))
                             .background(White)
-                            .clickable { imagePicker.launch("image/*") },
+                            .clickable(enabled = validHeight) { imagePicker.launch("image/*") },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -153,6 +170,7 @@ fun BodyAnalysisScreen(
 
                     Button(
                         onClick = onCameraClick,
+                        enabled = validHeight,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
@@ -168,6 +186,7 @@ fun BodyAnalysisScreen(
 
                     OutlinedButton(
                         onClick = { imagePicker.launch("image/*") },
+                        enabled = validHeight,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel),
@@ -207,7 +226,7 @@ fun BodyAnalysisScreen(
                     val result = s.result
                     val proportions = listOf(
                         "어깨 너비" to result.shoulderRatio,
-                        "허리 라인" to result.waistRatio,
+                        "허리 너비" to result.waistRatio,
                         "힙 너비" to result.hipRatio,
                         "다리 길이" to result.legRatio,
                     )
@@ -302,6 +321,42 @@ fun BodyAnalysisScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = White)
+                    ) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("측정 결과 · 키 기준 cm 추정", style = MaterialTheme.typography.titleMedium,
+                                color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
+                            val cm = result.measurements
+                            if (cm != null) {
+                                listOf(
+                                    "입력 키" to cm.heightCm,
+                                    "어깨 너비" to cm.shoulderWidthCm,
+                                    "허리 너비" to cm.waistWidthCm,
+                                    "엉덩이 너비" to cm.hipWidthCm,
+                                    "다리 길이 (힙~발목)" to cm.legLengthCm,
+                                    "상체 길이 (어깨~힙)" to cm.torsoLengthCm
+                                ).forEach { (label, value) ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text(label, color = CharcoalBlack, style = MaterialTheme.typography.bodyMedium)
+                                        Text(formatMeasurement(value, 1, " cm"), color = Camel)
+                                    }
+                                }
+                                Text("정면 사진과 입력 키로 환산한 추정값이에요. 허리·엉덩이는 둘레가 아닌 너비이며, 옷·자세·카메라 각도에 따라 실측과 차이가 있어요.",
+                                    color = MediumGray, style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                Text(result.measurementIssue ?: "cm 측정을 완료하지 못했어요. 다시 촬영해주세요.",
+                                    color = MediumGray, style = MaterialTheme.typography.bodyMedium)
+                                OutlinedButton(onClick = { viewModel.reset() }) { Text("다시 시도하기") }
+                            }
+                            HorizontalDivider(color = LightGray)
+                            Text("어깨/엉덩이 비율  ${formatMeasurement(result.shoulderToHip, 2)}", color = CharcoalBlack)
+                            Text("허리/엉덩이 비율  ${formatMeasurement(result.waistToHip, 2)}", color = CharcoalBlack)
                         }
                     }
 
@@ -440,3 +495,8 @@ fun BodyAnalysisScreen(
         }
     }
 }
+
+// Defensive display boundary: never render NaN/Infinity/negative values, even for malformed model data.
+private fun formatMeasurement(value: Float?, decimals: Int, suffix: String = ""): String =
+    if (value != null && value.isFinite() && value > 0f)
+        String.format(Locale.getDefault(), "%.${decimals}f", value) + suffix else "측정 불가"
