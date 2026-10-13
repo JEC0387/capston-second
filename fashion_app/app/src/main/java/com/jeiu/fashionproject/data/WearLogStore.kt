@@ -53,11 +53,17 @@ object WearLogStore {
 
     fun logFor(date: String): WearLog? = _logs.value.find { it.date == date }
 
-    /** 그날 기록을 새로 쓰거나 고친다. 옷을 하나도 안 고르면 그날 기록을 지운다. */
+    /**
+     * 그날 기록을 새로 쓰거나 고친다. 옷을 하나도 안 고르면 그날 기록을 지운다.
+     * 새로 추가된 옷만 "입었다 = 약한 좋아요(+1)"로 취향 학습한다. (같은 날 다시 저장해도 두 번 세지 않음)
+     */
     fun save(context: Context, log: WearLog) {
+        val before = logFor(log.date)?.itemIds.orEmpty().toSet()
         val others = _logs.value.filterNot { it.date == log.date }
         _logs.value = (if (log.itemIds.isEmpty()) others else others + log).sortedBy { it.date }
         persist(context)
+        val added = log.itemIds.filter { it !in before }.toSet()
+        TastePreferenceStore.learnWorn(context, WardrobeStore.items.value.filter { it.id in added }, log.date)
     }
 
     fun delete(context: Context, date: String) {

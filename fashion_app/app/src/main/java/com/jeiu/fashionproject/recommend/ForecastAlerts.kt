@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.recommend
 
 import com.jeiu.fashionproject.data.DayForecast
+import com.jeiu.fashionproject.data.TasteScores
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WearDates
 import java.util.Calendar
@@ -53,13 +54,14 @@ object ForecastAlerts {
         styleScores: Map<String, Int>,
         situation: Situation? = null,
         count: Int = 4,
-        today: String = WearDates.today()
+        today: String = WearDates.today(),
+        taste: TasteScores = TasteScores()
     ): DayPlan {
         val day = days[index]
         // 일교차가 크면 "겉옷을 챙기세요" 알림과 맞도록 코디에도 겉옷을 더한다
         val result = OutfitEngine.recommend(
             items, day.toWeatherInfo(), logs, styleScores, situation,
-            today = day.date, count = count, needOuter = day.maxTemp - day.minTemp >= BIG_RANGE
+            today = day.date, count = count, needOuter = day.maxTemp - day.minTemp >= BIG_RANGE, taste = taste
         )
         val prevDay = days.getOrNull(index - 1)
         val previousTemp = when {

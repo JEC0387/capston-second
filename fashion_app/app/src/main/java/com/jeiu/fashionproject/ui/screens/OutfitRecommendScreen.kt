@@ -20,16 +20,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.DayForecast
 import com.jeiu.fashionproject.data.StylePreferenceStore
+import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
 import com.jeiu.fashionproject.data.WearLogStore
 import com.jeiu.fashionproject.data.advice
 import com.jeiu.fashionproject.recommend.ForecastAlerts
+import com.jeiu.fashionproject.recommend.MissingItemFinder
 import com.jeiu.fashionproject.recommend.OutfitEngine
+import com.jeiu.fashionproject.recommend.josa
 import com.jeiu.fashionproject.recommend.Situation
 import com.jeiu.fashionproject.ui.components.ForecastStrip
 import com.jeiu.fashionproject.ui.components.NotEnoughClothesCard
 import com.jeiu.fashionproject.ui.components.OutfitCard
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
+import com.jeiu.fashionproject.ui.components.rememberWearToday
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.ForecastUiState
 import com.jeiu.fashionproject.ui.viewmodel.WeatherUiState
@@ -53,6 +58,7 @@ fun OutfitRecommendScreen(
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
         WearLogStore.load(context)
+        TastePreferenceStore.load(context)
     }
     val weatherState by weatherViewModel.state.collectAsState()
     val forecastState by weatherViewModel.forecast.collectAsState()
@@ -77,23 +83,39 @@ fun OutfitRecommendScreen(
     var travelPick by rememberSaveable { mutableIntStateOf(0) }
     val travelDay = travelDays.getOrNull(travelPick)
 
-    // 👍👎를 눌러도 카드가 바로 바뀌지 않도록 취향 점수는 계산할 때의 값만 쓴다
+    // 👍👎·[오늘 이거 입었어요]를 눌러도 카드가 바로 바뀌지 않도록
+    // 취향 점수는 계산할 때의 값만 쓰고, 오늘 코디는 오늘 착용 기록을 빼고 계산한다
     val scores = StylePreferenceStore.scores.value
-    val dayPlan = remember(wardrobe, wearLogs, forecastDays, forecastIndex, weatherInfo) {
+    val taste = TastePreferenceStore.scores.value
+    val pastLogs = wearLogs.filter { it.date != today }
+    val dayPlanLogs = if (forecastDays.getOrNull(forecastIndex)?.date == today) pastLogs else wearLogs
+    val dayPlan = remember(wardrobe, dayPlanLogs, forecastDays, forecastIndex, weatherInfo) {
         if (forecastIndex < 0) null
-        else ForecastAlerts.plan(forecastDays, forecastIndex, weatherInfo?.temp, wardrobe, wearLogs, scores)
+        else ForecastAlerts.plan(forecastDays, forecastIndex, weatherInfo?.temp, wardrobe, dayPlanLogs, scores, taste = taste)
     }
-    val recommendation: OutfitEngine.Result? = remember(wardrobe, wearLogs, weatherInfo, tab, situation, travelDay, dayPlan) {
+    val recommendation: OutfitEngine.Result? = remember(wardrobe, pastLogs, wearLogs, weatherInfo, tab, situation, travelDay, dayPlan) {
         when (tab) {
-            0 -> OutfitEngine.recommend(wardrobe, weatherInfo, wearLogs, scores)
+            0 -> OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, scores, taste = taste)
             1 -> dayPlan?.result
             else -> {
                 val day = if (situation == Situation.TRAVEL) travelDay else null
-                if (day == null) OutfitEngine.recommend(wardrobe, weatherInfo, wearLogs, scores, situation)
-                else OutfitEngine.recommend(wardrobe, day.toWeatherInfo(), wearLogs, scores, situation, today = day.date)
+                if (day == null) OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, scores, situation, taste = taste)
+                else OutfitEngine.recommend(wardrobe, day.toWeatherInfo(), wearLogs, scores, situation, today = day.date, taste = taste)
             }
         }
     }
+    // 보고 있는 코디가 오늘 코디일 때만 [오늘 이거 입었어요]를 보여준다
+    val recommendDate = when (tab) {
+        0 -> today
+        1 -> dayPlan?.day?.date
+        else -> if (situation == Situation.TRAVEL) travelDay?.date ?: today else today
+    }
+    val wearToday = rememberWearToday(wearLogs)
+    // 상황별 탭에서 옷이 부족할 때 "이것만 사면" 계산 (5단계)
+    val situationNeed = remember(wardrobe, situation, tab) {
+        if (tab == 2) MissingItemFinder.situationNeed(wardrobe, situation) else null
+    }
+    var searchKeyword by remember { mutableStateOf<String?>(null) }
     var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -200,7 +222,16 @@ fun OutfitRecommendScreen(
             when (val r = recommendation) {
                 null -> Unit
                 is OutfitEngine.Result.NotEnough -> item {
-                    NotEnoughClothesCard(message = r.message, onAddClothing = onAddClothing)
+                    // 상황별 탭이면 무엇을 사면 되는지도 알려준다 (5단계)
+                    val need = situationNeed?.takeIf { tab == 2 && it.items.isNotEmpty() }
+                    NotEnoughClothesCard(
+                        message = r.message,
+                        onAddClothing = onAddClothing,
+                        suggestion = need?.let {
+                            "${josa(it.items.joinToString(" + ") { item -> item.name }, "이", "가")} 있으면 ${it.situation.label} 코디를 만들 수 있어요"
+                        },
+                        onSearch = need?.let { n -> { searchKeyword = n.items.first().name } }
+                    )
                 }
                 is OutfitEngine.Result.Ok -> {
                     r.notice?.let { notice -> item { Text(notice, style = MaterialTheme.typography.bodySmall, color = Brown) } }
@@ -210,16 +241,19 @@ fun OutfitRecommendScreen(
                             rated = ratings[outfit.id],
                             onRate = { like ->
                                 ratings = ratings + (outfit.id to like)
-                                StylePreferenceStore.rate(context, outfit.style, like)
+                                TastePreferenceStore.rateOutfit(context, outfit, like)
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            photoHeight = 300.dp
+                            photoHeight = 300.dp,
+                            wear = wearToday.takeIf { recommendDate == today }
                         )
                     }
                 }
             }
         }
     }
+    wearToday.Dialog()
+    searchKeyword?.let { keyword -> ShopSearchSheet(keyword = keyword, onDismiss = { searchKeyword = null }) }
 }
 
 /** 고른 날의 날씨 요약 + 알림 문구 */

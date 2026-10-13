@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.jeiu.fashionproject.data.StylePreferenceStore
+import com.jeiu.fashionproject.data.TastePreferenceStore
+import com.jeiu.fashionproject.ui.components.TasteReportCard
 import com.jeiu.fashionproject.ui.theme.*
 
 @Composable
@@ -43,7 +47,12 @@ fun MyPageScreen(
 
     // 서버 프로필 (없으면 기본값 폴백)
     var profile by remember { mutableStateOf<com.jeiu.fashionproject.data.ServerProfile?>(null) }
+    val styleScores by StylePreferenceStore.scores.collectAsState()
+    val styleRatedCount by StylePreferenceStore.ratedCount.collectAsState()
+    val taste by TastePreferenceStore.scores.collectAsState()
     LaunchedEffect(Unit) {
+        StylePreferenceStore.load(context)
+        TastePreferenceStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val nickname = profile?.nickname ?: "나의 스타일"
@@ -123,24 +132,13 @@ fun MyPageScreen(
                 }
             }
 
-            // 취향 태그
+            // 내 취향 리포트 (계획 4 — 4단계) — 예전에는 "미니멀 · 캐주얼 · 클래식"이 고정으로 적혀 있었다
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
-                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Text("내 취향 리포트", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("미니멀", "캐주얼", "클래식").forEach { style ->
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(CreamDark)
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(style, style = MaterialTheme.typography.labelLarge, color = Brown)
-                        }
-                    }
-                }
+                TasteReportCard(styleScores = styleScores, styleRatedCount = styleRatedCount, taste = taste)
             }
         }
 

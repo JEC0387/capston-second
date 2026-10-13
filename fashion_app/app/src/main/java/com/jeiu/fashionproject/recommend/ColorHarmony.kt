@@ -74,7 +74,11 @@ object ColorHarmony {
         return if (d > 180f) 360f - d else d
     }
 
-    data class Result(val score: Double, val reasons: List<String>)
+    /** 색 조합 방식 — 취향 학습에 쓰는 이름 (계획 4 — 4단계) */
+    val patterns = listOf("무채색 조합", "톤온톤", "포인트 컬러")
+
+    /** @param pattern 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러, 해당 없으면 null) */
+    data class Result(val score: Double, val reasons: List<String>, val pattern: String? = null)
 
     /**
      * 코디 색 점수.
@@ -85,6 +89,7 @@ object ColorHarmony {
     fun evaluate(main: WardrobeItem, bottom: WardrobeItem?, all: List<WardrobeItem>): Result {
         var score = 0.0
         val reasons = mutableListOf<String>()
+        var pattern: String? = null
 
         // 1) 뉴트럴이 아닌 색이 몇 계열인지
         val colored = all.filterNot { isNeutral(it) }
@@ -109,14 +114,24 @@ object ColorHarmony {
             }
             colored.isEmpty() -> {
                 score += SCORE_ALL_NEUTRAL
+                pattern = "무채색 조합"
                 reasons += "${josa(colorPair(main, bottom, all), "은", "는")} 어디든 어울리는 차분한 조합이에요"
+            }
+            // 색 있는 옷이 하나인데 베이지처럼 같은 계열 뉴트럴 옷이 있으면(베이지 + 브라운) 포인트가 아니라 톤온톤
+            families.size == 1 && colored.size == 1 && sameFamilyNeutral(colored.first(), all) != null -> {
+                score += SCORE_TONE_ON_TONE
+                pattern = "톤온톤"
+                val partner = sameFamilyNeutral(colored.first(), all)!!
+                reasons += "${partner.colorName}·${colored.first().colorName} 같은 계열로 맞춘 톤온톤이에요"
             }
             families.size == 1 && colored.size == 1 -> {
                 score += SCORE_POINT_COLOR
+                pattern = "포인트 컬러"
                 reasons += "뉴트럴 옷에 ${colored.first().colorName} 하나로 포인트를 줬어요"
             }
             families.size == 1 -> {
                 score += SCORE_TONE_ON_TONE
+                pattern = "톤온톤"
                 reasons += "${colored.map { it.colorName }.distinct().joinToString("·")} 같은 계열로 맞춘 톤온톤이에요"
             }
             // 2계열이면 가산·감점 없음
@@ -131,7 +146,10 @@ object ColorHarmony {
                         abs(hsv(a.colorValue).v - hsv(b.colorValue).v) >= 0.1f
                 }
             }
-            if (toneOnTone) score += SCORE_NEUTRAL_TONE_ON_TONE
+            if (toneOnTone) {
+                score += SCORE_NEUTRAL_TONE_ON_TONE
+                pattern = "톤온톤"
+            }
         }
 
         // 3) 상의·하의 밝기 대비
@@ -145,7 +163,17 @@ object ColorHarmony {
                 dv < 0.1f -> score += SCORE_FLAT
             }
         }
-        return Result(score, reasons)
+        return Result(score, reasons, pattern)
+    }
+
+    /** [item]과 색상 계열이 같은 옅은 색 뉴트럴 옷 (베이지 · 카멜처럼 색이 조금 도는 것만) */
+    private fun sameFamilyNeutral(item: WardrobeItem, all: List<WardrobeItem>): WardrobeItem? {
+        val h = hsv(item.colorValue).h
+        return all.firstOrNull { other ->
+            val c = hsv(other.colorValue)
+            other !== item && isNeutral(other) && c.s >= 0.12f && c.v >= DARK_MAX_BRIGHTNESS &&
+                other.colorName != item.colorName && hueDistance(c.h, h) < SAME_FAMILY_HUE
+        }
     }
 
     /** "블랙 + 베이지" — 상의·하의(없으면 다른 옷) 색 이름 */
