@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,6 +30,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import java.util.Locale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.PrivacyConsent
+import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
+import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
@@ -39,7 +43,8 @@ fun BodyAnalysisScreen(
     onBack: () -> Unit,
     onStyleSuggestion: () -> Unit,
     onCameraClick: () -> Unit,
-    viewModel: BodyAnalysisViewModel
+    viewModel: BodyAnalysisViewModel,
+    onHistory: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
@@ -50,6 +55,22 @@ fun BodyAnalysisScreen(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let { viewModel.analyzeImage(context, it) }
+    }
+
+    // 개인정보 동의 — 동의하기 전에는 촬영 · 사진 선택을 시작하지 않는다
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    fun withConsent(action: () -> Unit) {
+        if (PrivacyConsent.hasAgreed(context)) action() else pendingAction = action
+    }
+    pendingAction?.let { action ->
+        BodyPhotoConsentDialog(
+            onAgree = { saveRecords ->
+                PrivacyConsent.agree(context, saveRecords)
+                pendingAction = null
+                action()
+            },
+            onDismiss = { pendingAction = null }
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -169,7 +190,7 @@ fun BodyAnalysisScreen(
                     }
 
                     Button(
-                        onClick = onCameraClick,
+                        onClick = { withConsent(onCameraClick) },
                         enabled = validHeight,
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -185,7 +206,7 @@ fun BodyAnalysisScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { imagePicker.launch("image/*") },
+                        onClick = { withConsent { imagePicker.launch("image/*") } },
                         enabled = validHeight,
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -198,6 +219,11 @@ fun BodyAnalysisScreen(
                             "사진 선택하기",
                             style = MaterialTheme.typography.titleMedium
                         )
+                    }
+
+                    PrivacyNote()
+                    TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
+                        Text("지난 측정 기록 · 변화 그래프 보기", color = Brown)
                     }
                 }
 
@@ -360,6 +386,8 @@ fun BodyAnalysisScreen(
                         }
                     }
 
+                    result.measurements?.let { BodySizeRecommendationCard(it) }
+
                     // 체형 특징
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -455,6 +483,10 @@ fun BodyAnalysisScreen(
                     ) {
                         Text("다시 분석하기", style = MaterialTheme.typography.titleMedium)
                     }
+
+                    TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
+                        Text("측정 기록 · 변화 그래프 보기", color = Brown)
+                    }
                 }
 
                 is BodyAnalysisUiState.Error -> {
@@ -493,6 +525,24 @@ fun BodyAnalysisScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+/** 촬영 버튼 아래 한 줄 안내 — 사진은 폰 안에서만 분석 */
+@Composable
+private fun PrivacyNote() {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.Lock, contentDescription = null, tint = MediumGray, modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(
+            "사진은 기기에서 분석해요. 저장을 선택한 경우에만 숫자 결과를 서버에 기록해요.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MediumGray
+        )
     }
 }
 

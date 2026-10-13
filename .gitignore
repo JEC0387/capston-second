@@ -1,4 +1,4 @@
-﻿__pycache__/
+__pycache__/
 *.pyc
 .venv/
 venv/
@@ -6,3 +6,14 @@ venv/
 .vscode/
 .idea/
 
+# 빌드 결과물 · 내 컴퓨터 전용 설정 · 비밀 값 (깃허브에 올리지 않음)
+*.zip
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/uploads/
+**/.env
+**/.env.*
+!**/.env.example
+integration-logs/

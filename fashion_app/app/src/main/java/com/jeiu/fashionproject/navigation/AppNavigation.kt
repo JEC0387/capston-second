@@ -18,14 +18,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
-import android.net.Uri
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import com.jeiu.fashionproject.ui.screens.*
@@ -119,61 +119,96 @@ fun AppNavigation() {
             }
             composable(Screen.Home.route) {
                 HomeScreen(
-                    onWeatherOutfitClick = { navController.navigate(Screen.WeatherOutfit.route) },
+                    onOutfitRecommendClick = { navController.navigate(Screen.OutfitRecommend.route()) },
+                    onForecastClick = { navController.navigate(Screen.OutfitRecommend.route(tab = 1)) },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     weatherViewModel = weatherViewModel
                 )
             }
             composable(Screen.Wardrobe.route) {
                 WardrobeScreen(
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
-                    onAddClothing = { navController.navigate(Screen.AddClothing.route) },
-                    onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) }
+                    onOutfitRecommend = { scope -> navController.navigate(Screen.OutfitRecommend.route(scope = scope.name)) },
+                    onProductDetail = { navController.navigate(Screen.ProductDetail.route) },
+                    onShop = { navController.navigate(Screen.Shop.route) },
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
+                    onEditClothing = { id -> navController.navigate(Screen.AddClothing.route(id)) },
+                    onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
+                    onWearLog = { navController.navigate(Screen.WearLog.route()) },
+                    onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
+                    onMissingItem = { navController.navigate(Screen.MissingItem.route) }
                 )
             }
-            composable(Screen.AddClothing.route) {
+            composable(
+                Screen.WearLog.route,
+                arguments = listOf(navArgument("date") { type = NavType.StringType; nullable = true })
+            ) { entry ->
+                WearLogScreen(
+                    initialDate = entry.arguments?.getString("date"),
+                    onBack = { navController.popBackStack() },
+                    onSaved = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.WearCalendar.route) {
+                WearCalendarScreen(
+                    onBack = { navController.popBackStack() },
+                    onRecord = { date -> navController.navigate(Screen.WearLog.route(date)) }
+                )
+            }
+            composable(
+                Screen.AddClothing.route,
+                arguments = listOf(navArgument("edit") { type = NavType.StringType; nullable = true })
+            ) { entry ->
                 AddClothingScreen(
+                    editItemId = entry.arguments?.getString("edit"),
                     onBack = { navController.popBackStack() },
                     onDone = { navController.popBackStack() }
                 )
             }
+            composable(Screen.MissingItem.route) {
+                MissingItemScreen(onBack = { navController.popBackStack() })
+            }
             composable(Screen.StylePreference.route) {
                 StylePreferenceScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Screen.WeatherOutfit.route) {
+                WeatherOutfitScreen(onBack = { navController.popBackStack() },
+                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    weatherViewModel = weatherViewModel)
             }
             composable(Screen.VirtualFitting.route) {
                 VirtualFittingScreen(onBack = { navController.popBackStack() })
             }
-            composable(Screen.WeatherOutfit.route) {
-                WeatherOutfitScreen(
+            composable(
+                Screen.OutfitRecommend.route,
+                arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 },
+                    navArgument("scope") { type = NavType.StringType; defaultValue = "OWNED" })
+            ) { entry ->
+                OutfitRecommendScreen(
+                    initialTab = entry.arguments?.getInt("tab") ?: 0,
+                    initialScope = com.jeiu.fashionproject.recommend.ClothingScope.entries.firstOrNull {
+                        it.name == entry.arguments?.getString("scope")
+                    } ?: com.jeiu.fashionproject.recommend.ClothingScope.OWNED,
+                    onShop = { navController.navigate(Screen.Shop.route) },
                     onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     weatherViewModel = weatherViewModel
                 )
             }
-            composable(Screen.BodyAnalysis.route) { entry ->
-                val context = LocalContext.current
-                val photoUriStr by entry.savedStateHandle
-                    .getStateFlow<String?>("photo_uri", null)
-                    .collectAsState()
-                androidx.compose.runtime.LaunchedEffect(photoUriStr) {
-                    photoUriStr?.let { uriStr ->
-                        bodyAnalysisViewModel.analyzeImage(context, Uri.parse(uriStr))
-                        entry.savedStateHandle.remove<String>("photo_uri")
-                    }
-                }
+            composable(Screen.BodyAnalysis.route) {
                 BodyAnalysisScreen(
                     onBack = { navController.popBackStack() },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
                     onCameraClick = { navController.navigate(Screen.Camera.route) },
-                    viewModel = bodyAnalysisViewModel
+                    viewModel = bodyAnalysisViewModel,
+                    onHistory = { navController.navigate(Screen.BodyHistory.route) }
                 )
             }
             composable(Screen.Camera.route) {
+                val context = LocalContext.current
                 CameraPreviewScreen(
                     onPhotoCaptured = { uri ->
-                        navController.previousBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("photo_uri", uri.toString())
+                        bodyAnalysisViewModel.analyzeImage(context, uri)
                         navController.popBackStack()
                     },
                     onDismiss = { navController.popBackStack() }
@@ -192,9 +227,22 @@ fun AppNavigation() {
                     onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) },
                     onStylePreference = { navController.navigate(Screen.StylePreference.route) },
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
+                    onBodyHistory = { navController.navigate(Screen.BodyHistory.route) },
                     onLogout = {
                         navController.navigate(Screen.Onboarding.route) {
                             popUpTo(0) { inclusive = true }
+                        }
+                    }
+                )
+            }
+            composable(Screen.BodyHistory.route) {
+                BodyHistoryScreen(
+                    onBack = { navController.popBackStack() },
+                    onMeasure = {
+                        navController.navigate(Screen.BodyAnalysis.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
                         }
                     }
                 )

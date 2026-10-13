@@ -22,7 +22,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import android.content.Context
 import com.jeiu.fashionproject.data.StylePreferenceStore
+import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.ui.theme.*
 
 /**
@@ -31,19 +33,36 @@ import com.jeiu.fashionproject.ui.theme.*
  * 코디 카드를 좋아요/싫어요로 평가하면 스타일별 점수가 실시간으로 갱신되고,
  * 평가가 쌓일수록 '내 선호 스타일' 순위가 뚜렷해진다.
  */
-private data class PrefStyleCard(val style: String, val title: String, val desc: String, val imageUrl: String, val accent: Color)
+/**
+ * 취향 카드 한 장. 계획 4 — 4단계부터 스타일과 함께 카드에 든 옷의 색 · 종류 · 색 조합 방식도 학습한다.
+ * (사진은 외부 사이트의 무작위 사진이라 적힌 색·종류와 다를 수 있다)
+ */
+private data class PrefStyleCard(
+    val style: String, val title: String, val desc: String, val imageUrl: String, val accent: Color,
+    val colors: List<String>, val kinds: List<String>, val pattern: String
+)
 
 private val prefStyleCards = listOf(
-    PrefStyleCard("미니멀", "미니멀 셋업", "오버핏 셔츠 + 와이드 슬랙스", "https://loremflickr.com/400/520/minimal,fashion?lock=70", StyleMinimal),
-    PrefStyleCard("캐주얼", "데일리 캐주얼", "그래픽 티 + 데님", "https://loremflickr.com/400/520/casual,outfit?lock=71", StyleCasual),
-    PrefStyleCard("클래식", "클래식 포멀", "테일러드 자켓 + 슬랙스", "https://loremflickr.com/400/520/classic,suit?lock=72", StyleClassic),
-    PrefStyleCard("스트릿", "스트릿 무드", "후드 + 카고팬츠", "https://loremflickr.com/400/520/street,fashion?lock=73", StyleStreet),
-    PrefStyleCard("빈티지", "빈티지 감성", "니트 베스트 + 코듀로이", "https://loremflickr.com/400/520/vintage,clothing?lock=74", StyleVintage),
-    PrefStyleCard("미니멀", "톤온톤 미니멀", "베이지 니트 + 크림 팬츠", "https://loremflickr.com/400/520/beige,knit?lock=75", StyleMinimal),
-    PrefStyleCard("캐주얼", "주말 캐주얼", "맨투맨 + 조거팬츠", "https://loremflickr.com/400/520/sweatshirt,casual?lock=76", StyleCasual),
-    PrefStyleCard("스트릿", "테크웨어 스트릿", "윈드브레이커 + 나일론 팬츠", "https://loremflickr.com/400/520/techwear,street?lock=77", StyleStreet),
-    PrefStyleCard("클래식", "오피스 클래식", "셔츠 + 울 코트", "https://loremflickr.com/400/520/office,coat?lock=78", StyleClassic),
-    PrefStyleCard("빈티지", "레트로 빈티지", "체크 셔츠 + 와이드 데님", "https://loremflickr.com/400/520/retro,shirt?lock=79", StyleVintage),
+    PrefStyleCard("미니멀", "미니멀 셋업", "오버핏 셔츠 + 와이드 슬랙스", "https://loremflickr.com/400/520/minimal,fashion?lock=70", StyleMinimal,
+        listOf("화이트", "블랙"), listOf("셔츠", "슬랙스"), "무채색 조합"),
+    PrefStyleCard("캐주얼", "데일리 캐주얼", "그래픽 티 + 데님", "https://loremflickr.com/400/520/casual,outfit?lock=71", StyleCasual,
+        listOf("화이트", "블루"), listOf("반팔티", "청바지"), "무채색 조합"),
+    PrefStyleCard("클래식", "클래식 포멀", "테일러드 자켓 + 슬랙스", "https://loremflickr.com/400/520/classic,suit?lock=72", StyleClassic,
+        listOf("네이비", "그레이"), listOf("자켓", "슬랙스"), "무채색 조합"),
+    PrefStyleCard("스트릿", "스트릿 무드", "후드 + 카고팬츠", "https://loremflickr.com/400/520/street,fashion?lock=73", StyleStreet,
+        listOf("그레이", "블랙"), listOf("후드티", "면바지"), "무채색 조합"),
+    PrefStyleCard("빈티지", "빈티지 감성", "니트 베스트 + 코듀로이", "https://loremflickr.com/400/520/vintage,clothing?lock=74", StyleVintage,
+        listOf("브라운", "베이지"), listOf("니트", "면바지"), "톤온톤"),
+    PrefStyleCard("미니멀", "톤온톤 미니멀", "베이지 니트 + 크림 팬츠", "https://loremflickr.com/400/520/beige,knit?lock=75", StyleMinimal,
+        listOf("베이지", "화이트"), listOf("니트", "슬랙스"), "톤온톤"),
+    PrefStyleCard("캐주얼", "주말 캐주얼", "맨투맨 + 조거팬츠", "https://loremflickr.com/400/520/sweatshirt,casual?lock=76", StyleCasual,
+        listOf("그레이", "블랙"), listOf("맨투맨", "트레이닝팬츠"), "무채색 조합"),
+    PrefStyleCard("스트릿", "테크웨어 스트릿", "윈드브레이커 + 나일론 팬츠", "https://loremflickr.com/400/520/techwear,street?lock=77", StyleStreet,
+        listOf("블랙"), listOf("점퍼", "트레이닝팬츠"), "무채색 조합"),
+    PrefStyleCard("클래식", "오피스 클래식", "셔츠 + 울 코트", "https://loremflickr.com/400/520/office,coat?lock=78", StyleClassic,
+        listOf("화이트", "베이지"), listOf("셔츠", "코트"), "무채색 조합"),
+    PrefStyleCard("빈티지", "레트로 빈티지", "체크 셔츠 + 와이드 데님", "https://loremflickr.com/400/520/retro,shirt?lock=79", StyleVintage,
+        listOf("레드", "블루"), listOf("셔츠", "청바지"), "포인트 컬러"),
 )
 
 @Composable
@@ -108,6 +127,10 @@ fun StylePreferenceScreen(onBack: () -> Unit) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(c.title, style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
                                 Text(c.desc, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                                Text(
+                                    "${c.colors.joinToString(" · ")} / ${c.kinds.joinToString(" · ")} / ${c.pattern}",
+                                    style = MaterialTheme.typography.labelSmall, color = Camel
+                                )
                             }
                             AssistChip(
                                 onClick = {},
@@ -126,13 +149,13 @@ fun StylePreferenceScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 FilledIconButton(
-                    onClick = { StylePreferenceStore.rate(context, card.style, like = false); cardIndex++ },
+                    onClick = { rateCard(context, card, like = false); cardIndex++ },
                     modifier = Modifier.size(64.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = LightGray)
                 ) { Icon(Icons.Filled.Close, contentDescription = "싫어요", tint = MediumGray) }
 
                 FilledIconButton(
-                    onClick = { StylePreferenceStore.rate(context, card.style, like = true); cardIndex++ },
+                    onClick = { rateCard(context, card, like = true); cardIndex++ },
                     modifier = Modifier.size(64.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(containerColor = Camel)
                 ) { Icon(Icons.Filled.Favorite, contentDescription = "좋아요", tint = White) }
@@ -184,4 +207,10 @@ fun StylePreferenceScreen(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(32.dp))
     }
+}
+
+/** 취향 카드 평가 — 스타일(서버 동기화)과 색 · 종류 · 조합 방식(폰 안)을 함께 학습 */
+private fun rateCard(context: Context, card: PrefStyleCard, like: Boolean) {
+    StylePreferenceStore.rate(context, card.style, like)
+    TastePreferenceStore.rateCard(context, card.colors, card.kinds, card.pattern, like, card.style)
 }

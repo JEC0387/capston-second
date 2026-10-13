@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.R
+import com.jeiu.fashionproject.data.ProductInterestStore
+import com.jeiu.fashionproject.data.ShopCatalog
 import com.jeiu.fashionproject.ui.theme.*
 
 private val colorOptions = listOf(
@@ -57,7 +59,9 @@ fun ProductDetailScreen(onBack: () -> Unit) {
     var selectedColor by remember { mutableStateOf("베이지") }
     var selectedSize by remember { mutableStateOf("M") }
     var showShopSheet by remember { mutableStateOf(false) }
-    var isFavorited by remember { mutableStateOf(false) }
+    val likedIds by ProductInterestStore.ids.collectAsState()
+    LaunchedEffect(Unit) { ProductInterestStore.load(context) }
+    val isFavorited = ShopCatalog.detailProduct.id in likedIds
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 상단 바
@@ -71,7 +75,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             }
             Text("상품 상세", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
             Row {
-                IconButton(onClick = { isFavorited = !isFavorited }) {
+                IconButton(onClick = { ProductInterestStore.toggle(context, ShopCatalog.detailProduct.id) }) {
                     Icon(
                         if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = "찜",
@@ -238,7 +242,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
-                    onClick = { isFavorited = !isFavorited },
+                    onClick = { ProductInterestStore.toggle(context, ShopCatalog.detailProduct.id) },
                     modifier = Modifier.height(52.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isFavorited) Camel else CharcoalBlack)

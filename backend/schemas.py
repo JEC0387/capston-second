@@ -2,8 +2,9 @@
 API 응답/요청 스키마 정의.
 앱(Compose)의 각 화면 data class와 1:1로 대응되도록 설계.
 """
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from typing import Optional
+from datetime import date
 
 
 # ---------- 공통 ----------
@@ -67,12 +68,24 @@ class WeatherOutfitResponse(BaseModel):
 # ---------- 옷장 화면 ----------
 
 class ClothingItem(BaseModel):
-    id: int
+    id: int                 # DB 번호
     name: str
     category: str           # 상의 / 하의 / 아우터 / 신발
     color: str
     imageUrl: str
     isFavorite: bool = False
+    # 앱 WardrobeItem 과 같은 추가 정보 (DB 연동 후 추가, 없어도 됨)
+    clientId: Optional[str] = None      # 앱의 옷 id (sample_01, UUID …)
+    colorName: Optional[str] = None
+    subCategory: Optional[str] = None
+    detailType: Optional[str] = None
+    season: Optional[str] = None
+    style: Optional[str] = None
+    isCutout: bool = False
+    aiTagged: bool = False
+    addedAt: Optional[int] = None       # Unix 밀리초
+    favoritedAt: Optional[int] = None
+    keptAt: Optional[int] = None
 
 
 class WardrobeResponse(BaseModel):
@@ -115,6 +128,23 @@ class ObjectDetectionResponse(BaseModel):
     detections: list[Detection]      # 객체별 상세
     counts: dict[str, int]           # 라벨별 개수 통계 (예: {"person": 2})
     resultImageUrl: str              # 바운딩 박스가 그려진 결과 이미지 URL
+
+
+# ---------- 옷 종류 분류 (DeepFashion2 + COCO 가방류) ----------
+
+class ClothingCandidate(BaseModel):
+    label: str               # DeepFashion2 종류(예: "trousers") 또는 COCO 가방(예: "handbag")
+    source: str              # "deepfashion2" / "coco"
+    confidence: float        # 0.0 ~ 1.0
+    bbox: list[int]          # [x1, y1, x2, y2] (전처리된 이미지 좌표 기준)
+    area: float              # 박스 면적 / 이미지 면적 (0~1)
+    mask: Optional[str] = None  # 옷 윤곽 흑백 PNG(base64), 이미지 크기와 같음 (COCO는 없음)
+
+
+class ClothingClassifyResponse(BaseModel):
+    imageWidth: int                      # 전처리된 이미지 크기 (마스크 크기와 같음)
+    imageHeight: int
+    candidates: list[ClothingCandidate]  # 크게 잡힌 순서
 
 
 # ---------- 체형별 스타일 제안 ----------
@@ -240,3 +270,132 @@ class VirtualFittingResponse(BaseModel):
 
 
 StyleSuggestionResponse.model_rebuild()
+
+
+class WardrobeSyncItem(BaseModel):
+    """앱 WardrobeItem 과 필드 이름·뜻이 같다. 시각은 모두 Unix 밀리초."""
+    id: str = Field(min_length=1, max_length=64)
+    name: str
+    category: str
+    colorName: str = ""
+    colorValue: int = 0xFFEDE3D5        # ARGB (앱 Color 값)
+    imageUri: str = ""
+    aiTagged: bool = False
+    subCategory: Optional[str] = None
+    detailType: Optional[str] = None
+    season: Optional[str] = None
+    addedAt: Optional[int] = None
+    favoritedAt: Optional[int] = None
+    isCutout: bool = False
+    keptAt: Optional[int] = None
+    originalUri: Optional[str] = None
+    cutoutUri: Optional[str] = None
+    garmentUri: Optional[str] = None
+    style: Optional[str] = None
+
+
+class WardrobeSyncRequest(BaseModel):
+    """폰 옷장 전체 목록. 서버는 이 목록과 똑같아지도록 추가·수정·삭제한다."""
+    items: list[WardrobeSyncItem]
+
+    @field_validator('items')
+    @classmethod
+    def unique_ids(cls, items):
+        if len({item.id for item in items}) != len(items):
+            raise ValueError('Duplicate wardrobe ids')
+        return items
+
+
+class SyncResult(BaseModel):
+    saved: int              # 추가·수정된 개수
+    deleted: int            # 폰에 없어서 지운 개수
+    total: int              # 동기화 후 DB 에 있는 개수
+
+
+class WearLogItem(BaseModel):
+    date: str               # yyyy-MM-dd
+    itemIds: list[str]      # 앱 옷 id 목록
+    memo: str = ""
+
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if len(value) != 10 or date.fromisoformat(value).isoformat() != value:
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+
+class WearLogSyncRequest(BaseModel):
+    logs: list[WearLogItem]
+
+    @field_validator('logs')
+    @classmethod
+    def valid_logs(cls, logs):
+        if len({log.date for log in logs}) != len(logs) or any(not log.itemIds for log in logs):
+            raise ValueError('Duplicate dates or empty log')
+        return logs
+
+
+class WearLogResponse(BaseModel):
+    totalCount: int
+    logs: list[WearLogItem]
+
+
+class BodyMeasurementIn(BaseModel):
+    clientId: str = Field(min_length=1, max_length=64)
+    model_config = ConfigDict(allow_inf_nan=False)
+    """앱 체형 분석 결과 저장 (사진은 보내지 않음 — 숫자만)."""
+    bodyType: str
+    confidence: int = Field(default=0, ge=0, le=100)
+    shoulderRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    waistRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    hipRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    legRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    shoulderToHip: Optional[float] = Field(default=None, gt=0.099, le=5)
+    waistToHip: Optional[float] = Field(default=None, gt=0.099, le=5)
+    heightCm: Optional[float] = Field(default=None, gt=99.999, le=230)
+    shoulderCm: Optional[float] = Field(default=None, gt=14.999, le=80)    # 정면 너비 추정값 (둘레 아님)
+    waistCm: Optional[float] = Field(default=None, gt=9.999, le=100)
+    hipCm: Optional[float] = Field(default=None, gt=14.999, le=100)
+    legCm: Optional[float] = Field(default=None, gt=19.999, le=150)
+    torsoCm: Optional[float] = Field(default=None, gt=14.999, le=100)
+    measuredAt: Optional[int] = Field(default=None, ge=1, le=253402300799000)      # Unix 밀리초 (없으면 서버 시각)
+
+
+    @model_validator(mode='after')
+    def consistent_cm(self):
+        widths = [self.shoulderCm, self.waistCm, self.hipCm]
+        if any(v is not None for v in widths + [self.legCm, self.torsoCm]):
+            if self.heightCm is None or any(v is None for v in widths):
+                raise ValueError('cm measurements require height and all three widths')
+        return self
+
+
+class BodyMeasurementOut(BodyMeasurementIn):
+    clientId: Optional[str] = None  # Records created before idempotent sync have no client id.
+    id: int
+    isSample: bool = False                # 시연용 샘플 기록 (실제 측정 아님)
+
+
+class BodyMeasurementHistory(BaseModel):
+    totalCount: int
+    measurements: list[BodyMeasurementOut]   # 최근 것부터
+
+
+class SizeChartRow(BaseModel):
+    brand: str
+    category: str
+    sizeLabel: str
+    shoulderCm: Optional[float] = None
+    chestCm: Optional[float] = None
+    waistCm: Optional[float] = None
+    hipCm: Optional[float] = None
+    lengthCm: Optional[float] = None
+    measureType: str = "단면"
+    sourceUrl: str = ""
+
+
+class SizeChartResponse(BaseModel):
+    totalCount: int
+    rows: list[SizeChartRow]
