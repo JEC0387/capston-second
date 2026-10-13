@@ -41,7 +41,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 def initialize_database():
     """Explicit opt-in for an empty database. Never seed fabricated measurements."""
     if engine is not None and os.getenv('DB_AUTO_CREATE', 'false').lower() == 'true':
-        import db_models  # register ORM tables
+        import db_models  # noqa: F401  (register ORM tables)
         try:
             Base.metadata.create_all(engine)
         except SQLAlchemyError:

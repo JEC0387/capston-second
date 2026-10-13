@@ -2,6 +2,8 @@
 
 2026-10-13 (Asia/Seoul) 클라우드 개발 검증 완료. 저장소는 `/workspace/capstone-integration-backup`, Android 프로젝트는 `capston-second-main/fashion_app`이다.
 
+> JEC0387/capston-second 의 `feature/body-analysis-camera` 브랜치에는 `capston-second-main/` 안의 내용을 저장소 맨 위에 올렸다. 이 문서의 `capston-second-main/` 경로는 이 저장소에서는 빼고 읽는다 (예: `fashion_app/app/src`).
+
 ## Git 기준
 
 - 현재 작업 브랜치: `feature/wardrobe-interest-outfit-scope`.

@@ -48,11 +48,8 @@ import detection
 import fashion_detection
 import weather
 from schemas import (
-    AddClothingRequest, BodyAnalysisResult, ClothingClassifyResponse, ClothingItem, HomeResponse,
-    ObjectDetectionResponse, Product, ProductDetail, Profile,
-    RatePreferenceRequest, ShopResponse, StyleAnalysisResponse, StyleScore,
-    StylePreferenceResponse, StyleSuggestionResponse, UpdateStylesRequest,
-    VirtualFittingResponse, WardrobeResponse, WeatherNowResponse,
+    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse,
+    ObjectDetectionResponse, ProductDetail, ShopResponse, StyleAnalysisResponse, StyleSuggestionResponse, VirtualFittingResponse, WeatherNowResponse,
     WeatherOutfitResponse,
 )
 
