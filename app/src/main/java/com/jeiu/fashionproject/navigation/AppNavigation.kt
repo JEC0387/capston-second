@@ -131,12 +131,27 @@ fun AppNavigation() {
                 HomeScreen(
                     onWeatherOutfitClick = { navController.navigate(Screen.WeatherOutfit.route) },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onShopClick = { preset ->
+                        // 홈에서 보던 목록을 쇼핑 탭에서 이어서 전체로 보여준다 (쇼핑 탭이 성별을 앞에 붙임)
+                        preset?.let { shopViewModel.setPresetQuery(it) }
+                        navController.navigate(Screen.Shop.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     weatherViewModel = weatherViewModel,
                     gender = gender
                 )
             }
             composable(Screen.Wardrobe.route) {
-                WardrobeScreen(onProductClick = { navController.navigate(Screen.ProductDetail.route) })
+                WardrobeScreen(
+                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    gender = gender,
+                    weatherViewModel = weatherViewModel,
+                    // AI 체형 분석에서 찍은 전신 사진이 있으면 가상피팅 기본 사진으로 쓴다
+                    bodyPhotoUri = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.imageUri
+                )
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(

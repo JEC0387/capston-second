@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cameraswitch
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +45,10 @@ fun CameraPreviewScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val previewView = remember { PreviewView(context) }
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    // 후면(다른 사람이 찍어줄 때) / 전면(혼자 셀카로 찍을 때) 전환
+    var useFrontCamera by remember { mutableStateOf(false) }
+    // 기기에 전면·후면 카메라가 둘 다 있을 때만 전환 버튼을 보여준다
+    var canSwitchCamera by remember { mutableStateOf(false) }
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
@@ -62,10 +67,20 @@ fun CameraPreviewScreen(
         }
     }
 
-    LaunchedEffect(hasPermission) {
+    LaunchedEffect(hasPermission, useFrontCamera) {
         if (!hasPermission) return@LaunchedEffect
         val cameraProvider = withContext(Dispatchers.IO) {
             ProcessCameraProvider.getInstance(context).get()
+        }
+        val hasBack = runCatching { cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) }.getOrDefault(false)
+        val hasFront = runCatching { cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) }.getOrDefault(false)
+        canSwitchCamera = hasBack && hasFront
+        // 고른 쪽 카메라가 없으면 있는 쪽으로 대신 연다
+        val selector = when {
+            useFrontCamera && hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+            !useFrontCamera && hasBack -> CameraSelector.DEFAULT_BACK_CAMERA
+            hasFront -> CameraSelector.DEFAULT_FRONT_CAMERA
+            else -> CameraSelector.DEFAULT_BACK_CAMERA
         }
         val preview = Preview.Builder().build().also {
             it.setSurfaceProvider(previewView.surfaceProvider)
@@ -78,7 +93,7 @@ fun CameraPreviewScreen(
             cameraProvider.unbindAll()
             cameraProvider.bindToLifecycle(
                 lifecycleOwner,
-                CameraSelector.DEFAULT_BACK_CAMERA,
+                selector,
                 preview,
                 capture
             )
@@ -107,6 +122,27 @@ fun CameraPreviewScreen(
                 tint = White,
                 modifier = Modifier.size(28.dp)
             )
+        }
+
+        // 전면/후면 카메라 전환 버튼 (셔터 오른쪽)
+        if (canSwitchCamera) {
+            IconButton(
+                onClick = { useFrontCamera = !useFrontCamera },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 40.dp, bottom = 60.dp)
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.4f))
+            ) {
+                Icon(
+                    Icons.Filled.Cameraswitch,
+                    contentDescription = if (useFrontCamera) "후면 카메라로 전환" else "전면 카메라로 전환",
+                    tint = White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
 
         // 셔터 버튼

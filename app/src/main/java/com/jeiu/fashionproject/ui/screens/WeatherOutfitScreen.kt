@@ -32,6 +32,10 @@ import com.jeiu.fashionproject.data.isCloudy
 import com.jeiu.fashionproject.data.isRainy
 import com.jeiu.fashionproject.data.WeatherOutfits
 import com.jeiu.fashionproject.ui.components.ShopSearchSheet
+import com.jeiu.fashionproject.ui.components.outfitQuery
+import com.jeiu.fashionproject.ui.components.OutfitPhoto
+import com.jeiu.fashionproject.ui.components.OutfitPhotoImage
+import com.jeiu.fashionproject.ui.components.rememberOutfitPhoto
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.WeatherUiState
 import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
@@ -72,7 +76,8 @@ fun WeatherOutfitScreen(
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
         ) {
@@ -139,17 +144,20 @@ fun WeatherOutfitScreen(
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         // 코디 이미지
-                        if (outfit.imageSource != 0) {
+                        run { // 앱 사진이 없으면 rememberOutfitPhoto가 네이버 검색 사진으로 채운다
                             Box(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(180.dp)
+                                    .height(320.dp).background(CreamDark) // 코디 전신이 보이게 세로로 넉넉히
                                     .clip(RoundedCornerShape(12.dp))
                             ) {
-                                AsyncImage(
-                                    model = outfit.imageSource,
+                                OutfitPhotoImage(
+                                    photo = rememberOutfitPhoto(
+                                        outfit.imageSource,
+                                        outfitQuery(gender, outfit.top.label, outfit.bottom.label, suffix = "코디")
+                                    ),
                                     contentDescription = outfit.title,
-                                    contentScale = ContentScale.Crop,
+                                    contentScale = ContentScale.Fit,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -185,7 +193,7 @@ fun WeatherOutfitScreen(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(90.dp)
+                                            .height(110.dp)
                                             .clip(RoundedCornerShape(10.dp))
                                             .background(item.color)
                                             .clickable {
@@ -196,14 +204,13 @@ fun WeatherOutfitScreen(
                                                 }
                                             }
                                     ) {
-                                        if (item.imageRes != 0) {
-                                            AsyncImage(
-                                                model = item.imageRes,
-                                                contentDescription = item.label,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
+                                        // 아이템 사진이 없으면 네이버 이미지 검색으로 채운다
+                                        OutfitPhotoImage(
+                                            photo = rememberOutfitPhoto(item.imageRes, outfitQuery(gender, item.label)),
+                                            contentDescription = item.label,
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
                                     }
                                     Text(item.label, style = MaterialTheme.typography.labelSmall, color = MediumGray)
                                 }

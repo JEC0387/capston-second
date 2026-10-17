@@ -35,6 +35,11 @@ android {
             "String", "NAVER_API_KEY",
             "\"${localProperties.getProperty("NAVER_API_KEY", "")}\""
         )
+        // FASHN AI 가상피팅 API 키 (https://app.fashn.ai → API). local.properties에 FASHN_API_KEY=... 한 줄 추가.
+        buildConfigField(
+            "String", "FASHN_API_KEY",
+            "\"${localProperties.getProperty("FASHN_API_KEY", "")}\""
+        )
     }
 
     buildTypes {

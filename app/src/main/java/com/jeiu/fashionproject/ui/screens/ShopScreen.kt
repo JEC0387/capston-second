@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.ShopImageResult
+import com.jeiu.fashionproject.ui.components.OutfitPhoto
+import com.jeiu.fashionproject.ui.components.OutfitPhotoImage
 import com.jeiu.fashionproject.ui.components.ShopSearchSheet
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.ShopUiState
@@ -34,7 +36,8 @@ fun ShopScreen(
     viewModel: ShopViewModel
 ) {
     val state by viewModel.state.collectAsState()
-    var searchQuery by remember { mutableStateOf("") }
+    // 홈에서 "전체보기"로 들어오면 홈에서 보던 검색어로 시작한다
+    var searchQuery by remember { mutableStateOf(viewModel.consumePresetQuery() ?: "") }
     var searchKeyword by remember { mutableStateOf<String?>(null) }
 
     // 입력 멈춘 지 400ms 지나면 검색 — 매 키입력마다 API 호출하지 않게 디바운스
@@ -113,7 +116,13 @@ fun ShopScreen(
                         items(s.results) { result ->
                             ImageResultCard(
                                 result = result,
-                                onClick = { searchKeyword = result.title }
+                                onClick = {
+                                    // 이미지 제목은 블로그·SNS 글 제목이라 쇼핑몰 검색어로 쓰면 결과가 안 나온다.
+                                    // 사용자가 입력한 검색어(없으면 "성별 데일리룩")로 비슷한 상품을 찾게 한다.
+                                    searchKeyword = searchQuery.trim().ifBlank {
+                                        listOfNotNull(gender?.label, "데일리룩").joinToString(" ")
+                                    }
+                                }
                             )
                         }
                     }
@@ -142,8 +151,8 @@ private fun ImageResultCard(result: ShopImageResult, onClick: () -> Unit) {
                     .height(160.dp)
                     .background(CreamDark)
             ) {
-                AsyncImage(
-                    model = result.thumbnailUrl,
+                OutfitPhotoImage(
+                    photo = OutfitPhoto(result.imageUrl, result.thumbnailUrl), // 원본 → 실패 시 썸네일
                     contentDescription = result.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

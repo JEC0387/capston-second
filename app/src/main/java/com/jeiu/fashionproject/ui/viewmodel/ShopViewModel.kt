@@ -20,6 +20,13 @@ class ShopViewModel : ViewModel() {
     private val _state = MutableStateFlow<ShopUiState>(ShopUiState.Loading)
     val state: StateFlow<ShopUiState> = _state
 
+    // 홈의 "전체보기"에서 넘겨준 검색어. 쇼핑 탭이 열릴 때 한 번 꺼내 검색창에 넣는다.
+    private var presetQuery: String? = null
+
+    fun setPresetQuery(query: String) { presetQuery = query }
+
+    fun consumePresetQuery(): String? = presetQuery.also { presetQuery = null }
+
     // 같은 검색어+성별로 다시 안 그려지게 중복 호출 방지
     private var lastKey: String? = null
 
