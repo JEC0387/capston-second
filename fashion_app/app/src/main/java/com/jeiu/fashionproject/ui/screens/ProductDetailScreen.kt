@@ -44,13 +44,13 @@ private val colorOptions = listOf(
 )
 private val sizeOptions = listOf("XS", "S", "M", "L", "XL")
 
-private data class SimilarProduct(val name: String, val price: String, val bgColor: Color, val imageUrl: String)
+private data class SimilarProduct(val name: String, val price: String, val bgColor: Color, val image: Any)
 
 private val similarProducts = listOf(
-    SimilarProduct("크롭 니트", "32,000원", Color(0xFFE8DDD0), "https://loremflickr.com/240/300/crop,knit?lock=60"),
-    SimilarProduct("터틀넥 니트", "55,000원", Color(0xFFD5CABD), "https://loremflickr.com/240/300/turtleneck,sweater?lock=61"),
-    SimilarProduct("V넥 니트", "48,000원", Color(0xFFEDE3D5), "https://loremflickr.com/240/300/vneck,knit?lock=62"),
-    SimilarProduct("카디건", "67,000원", Color(0xFFCDC5BC), "https://loremflickr.com/240/300/cardigan,fashion?lock=63"),
+    SimilarProduct("케이블 반팔 니트", "43,000원", Color(0xFFE8DDD0), R.drawable.popular_knit_cable),
+    SimilarProduct("V넥 니트", "48,000원", Color(0xFFD5CABD), R.drawable.summer_knit),
+    SimilarProduct("크롭 반팔 티", "22,000원", Color(0xFFEDE3D5), R.drawable.popular_crop_tshirt),
+    SimilarProduct("린넨 팬츠", "39,000원", Color(0xFFCDC5BC), R.drawable.popular_linen_pants),
 )
 
 @Composable
@@ -211,7 +211,7 @@ fun ProductDetailScreen(onBack: () -> Unit) {
                                     .background(item.bgColor)
                             ) {
                                 AsyncImage(
-                                    model = item.imageUrl,
+                                    model = item.image,
                                     contentDescription = item.name,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()

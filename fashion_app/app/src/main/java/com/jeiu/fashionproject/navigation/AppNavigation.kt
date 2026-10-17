@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,7 +31,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import com.jeiu.fashionproject.ui.screens.*
 import com.jeiu.fashionproject.ui.theme.Camel
+import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
+import com.jeiu.fashionproject.ui.viewmodel.ShopViewModel
+import com.jeiu.fashionproject.ui.viewmodel.UserPreferencesViewModel
 import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 import com.jeiu.fashionproject.ui.theme.CharcoalBlack
 import com.jeiu.fashionproject.ui.theme.LightGray
@@ -63,8 +67,15 @@ private val bottomNavRoutes = setOf(
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    val context = LocalContext.current
     val weatherViewModel: WeatherViewModel = viewModel()
     val bodyAnalysisViewModel: BodyAnalysisViewModel = viewModel()
+    val bodyAnalysisState by bodyAnalysisViewModel.state.collectAsState()
+    val analyzedBodyTypeKo = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.result?.bodyTypeKo
+    val shopViewModel: ShopViewModel = viewModel()
+    val userPreferencesViewModel: UserPreferencesViewModel = viewModel()
+    val gender by userPreferencesViewModel.gender.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(Unit) { userPreferencesViewModel.loadIfNeeded(context) }
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavRoutes
@@ -123,7 +134,17 @@ fun AppNavigation() {
                     onForecastClick = { navController.navigate(Screen.OutfitRecommend.route(tab = 1)) },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
-                    weatherViewModel = weatherViewModel
+                    onShopClick = { preset ->
+                        // 홈에서 보던 목록을 쇼핑 탭에서 이어서 전체로 보여준다 (쇼핑 탭이 성별을 앞에 붙임)
+                        preset?.let { shopViewModel.setPresetQuery(it) }
+                        navController.navigate(Screen.Shop.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    weatherViewModel = weatherViewModel,
+                    gender = gender
                 )
             }
             composable(Screen.Wardrobe.route) {
@@ -136,7 +157,17 @@ fun AppNavigation() {
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onWearLog = { navController.navigate(Screen.WearLog.route()) },
                     onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
-                    onMissingItem = { navController.navigate(Screen.MissingItem.route) }
+                    onMissingItem = { navController.navigate(Screen.MissingItem.route) },
+                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) }
+                )
+            }
+            composable(Screen.MusinsaCloset.route) {
+                MusinsaClosetScreen(
+                    onBack = { navController.popBackStack() },
+                    gender = gender,
+                    weatherViewModel = weatherViewModel,
+                    // AI 체형 분석에서 찍은 전신 사진이 있으면 가상피팅 기본 사진으로 쓴다
+                    bodyPhotoUri = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.imageUri
                 )
             }
             composable(
@@ -174,7 +205,8 @@ fun AppNavigation() {
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) },
-                    weatherViewModel = weatherViewModel)
+                    weatherViewModel = weatherViewModel,
+                    gender = gender)
             }
             composable(Screen.VirtualFitting.route) {
                 VirtualFittingScreen(onBack = { navController.popBackStack() })
@@ -215,13 +247,20 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.Shop.route) {
-                ShopScreen(onProductClick = { navController.navigate(Screen.ProductDetail.route) })
+                ShopScreen(
+                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    viewModel = shopViewModel,
+                    gender = gender
+                )
             }
             composable(Screen.ProductDetail.route) {
                 ProductDetailScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.MyPage.route) {
                 MyPageScreen(
+                    bodyTypeKo = analyzedBodyTypeKo,
+                    gender = gender,
+                    onGenderSelected = { userPreferencesViewModel.setGender(context, it) },
                     onStyleAnalysis = { navController.navigate(Screen.StyleAnalysis.route) },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
                     onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) },

@@ -5,7 +5,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// 날씨 API 키는 Git에 올라가지 않는 local.properties에서 읽는다 (예: OWM_API_KEY=abcd1234)
+// API 키는 Git에 올라가지 않는 local.properties에서 읽는다.
+// (OWM_API_KEY: 날씨 / NAVER_API_KEY_ID · NAVER_API_KEY: 쇼핑 검색 · 쇼핑인사이트 / FASHN_API_KEY: 가상피팅)
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -23,6 +24,22 @@ android {
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "OWM_API_KEY", "\"${localProperties.getProperty("OWM_API_KEY", "")}\"")
+
+        // NAVER API HUB(NCP) — 데이터랩 쇼핑인사이트 + 이미지 검색이 같은 키를 쓴다.
+        // (옛 developers.naver.com 쇼핑 검색 API는 종료되어 더 못 쓴다.)
+        buildConfigField(
+            "String", "NAVER_API_KEY_ID",
+            "\"${localProperties.getProperty("NAVER_API_KEY_ID", "")}\""
+        )
+        buildConfigField(
+            "String", "NAVER_API_KEY",
+            "\"${localProperties.getProperty("NAVER_API_KEY", "")}\""
+        )
+        // FASHN AI 가상피팅 API 키 (https://app.fashn.ai → API). local.properties에 FASHN_API_KEY=... 한 줄 추가.
+        buildConfigField(
+            "String", "FASHN_API_KEY",
+            "\"${localProperties.getProperty("FASHN_API_KEY", "")}\""
+        )
     }
 
     buildTypes {
@@ -45,6 +62,11 @@ android {
     androidResources {
         // .tflite 모델은 압축되면 MediaPipe가 로딩하지 못하므로 압축 제외
         noCompress += "tflite"
+    }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
@@ -70,6 +92,11 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+    // Force a 16KB-page-aligned release; the version transitively pulled in by
+    // compose-ui (1.0.1) ships an unaligned libandroidx.graphics.path.so.
+    implementation(libs.androidx.graphics.path)
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.converter.gson)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)

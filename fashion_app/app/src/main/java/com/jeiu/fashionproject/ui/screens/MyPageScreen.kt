@@ -36,11 +36,15 @@ import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.ui.components.PrivacyPolicyDialog
 import com.jeiu.fashionproject.ui.components.ServerStatusBadge
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.ui.theme.*
 import kotlinx.coroutines.launch
 
 @Composable
 fun MyPageScreen(
+    bodyTypeKo: String? = null,
+    gender: Gender? = null,
+    onGenderSelected: (Gender) -> Unit = {},
     onStyleAnalysis: () -> Unit,
     onStyleSuggestion: () -> Unit,
     onBodyAnalysis: () -> Unit,
@@ -74,6 +78,8 @@ fun MyPageScreen(
     val wardrobeCount = profile?.wardrobeCount?.toString() ?: "12"
     val outfitCount = profile?.outfitCount?.toString() ?: "8"
     val favoriteCount = profile?.favoriteCount?.toString() ?: "24"
+    var showGenderDialog by remember { mutableStateOf(false) }
+    val shownBodyType = bodyTypeKo ?: profile?.bodyType
 
     Column(
         modifier = Modifier
@@ -127,6 +133,36 @@ fun MyPageScreen(
         ) {
             Text("내 스타일 정보", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
 
+            // 성별 배지 — 상품/코디 추천 필터링에 쓰인다
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showGenderDialog = true },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Filled.Wc, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
+                    Text("성별", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(if (gender != null) CamelLight else CreamDark)
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            gender?.label ?: "선택 안함",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (gender != null) Brown else MediumGray,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
+                }
+            }
+
             // 체형 배지
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -140,11 +176,16 @@ fun MyPageScreen(
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(CamelLight)
+                        .background(if (shownBodyType != null) CamelLight else CreamDark)
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    // 서버에 저장된 가장 최근 체형 분석 결과 (없으면 안내)
-                    Text(profile?.bodyType ?: "분석 전", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
+                    // 이번 실행에서 분석한 결과가 있으면 그것, 없으면 서버에 저장된 최근 결과 (둘 다 없으면 안내)
+                    Text(
+                        shownBodyType ?: "분석 전",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (shownBodyType != null) Brown else MediumGray,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
 
@@ -274,6 +315,49 @@ fun MyPageScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showGenderDialog) {
+        AlertDialog(
+            onDismissRequest = { showGenderDialog = false },
+            title = { Text("성별 선택", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "선택한 성별에 맞춰 추천 상품과 코디가 달라져요.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MediumGray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Gender.entries.forEach { option ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onGenderSelected(option)
+                                    showGenderDialog = false
+                                }
+                                .padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            RadioButton(
+                                selected = gender == option,
+                                onClick = {
+                                    onGenderSelected(option)
+                                    showGenderDialog = false
+                                },
+                                colors = RadioButtonDefaults.colors(selectedColor = Camel)
+                            )
+                            Text(option.label, style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showGenderDialog = false }) { Text("닫기", color = Camel) }
+            }
+        )
     }
 
     if (showNotifDialog) {

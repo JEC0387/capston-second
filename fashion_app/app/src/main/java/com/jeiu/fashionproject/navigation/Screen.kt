@@ -30,4 +30,6 @@ sealed class Screen(val route: String) {
     /** 체형 측정 기록 · 변화 그래프 (서버 DB 기록) */
     object BodyHistory : Screen("body_history")
     object MissingItem : Screen("missing_item")
+    /** 무신사 랭킹 옷장 — 성별 맞춤 데모 옷 · 날씨 코디 · 가상 피팅 */
+    object MusinsaCloset : Screen("musinsa_closet")
 }

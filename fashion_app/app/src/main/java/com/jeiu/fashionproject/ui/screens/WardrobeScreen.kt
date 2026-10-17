@@ -60,7 +60,8 @@ fun WardrobeScreen(
     onWearLog: () -> Unit = {},          // 오늘 입은 옷 기록
     onWearCalendar: () -> Unit = {},     // 착용 기록 달력
     onEditClothing: (id: String) -> Unit = {},  // 옷 정보 수정
-    onMissingItem: () -> Unit = {}              // "이것만 사면" 화면
+    onMissingItem: () -> Unit = {},             // "이것만 사면" 화면
+    onMusinsaCloset: () -> Unit = {}            // 무신사 랭킹 옷장 (성별 맞춤 데모 옷 · 가상 피팅)
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
@@ -137,6 +138,27 @@ fun WardrobeScreen(
         }
         missingReport?.let { r ->
             BuyThisCard(r, onClick = onMissingItem, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
+        }
+
+        // 무신사 랭킹 옷장으로 들어가는 카드
+        Card(
+            onClick = onMusinsaCloset,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = CamelLight)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("무신사 랭킹 옷장", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
+                    Text("20대 인기 상품으로 날씨 코디 · 가상 피팅 해보기", style = MaterialTheme.typography.labelSmall, color = Brown)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Brown)
+            }
         }
 
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
