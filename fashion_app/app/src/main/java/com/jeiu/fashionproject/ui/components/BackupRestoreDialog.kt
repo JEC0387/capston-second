@@ -66,7 +66,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                                 Toast.makeText(context, "백업 코드를 복사했어요", Toast.LENGTH_SHORT).show()
                             }) { Text("복사", color = Camel) }
                         }
-                        Text("폰을 바꾸거나 앱을 다시 설치할 때 이 코드를 넣으면 옷장 · 착용 기록 · 취향 · 관심 상품을 되살릴 수 있어요. " +
+                        Text("폰을 바꾸거나 앱을 다시 설치할 때 이 코드를 넣으면 옷장 · 착용 기록 · 취향 · 관심 상품 · 저장한 코디 · 코디 일정을 되살릴 수 있어요. " +
                             "코드를 아는 사람은 내 기록을 볼 수 있으니 다른 사람에게 알려 주지 마세요.",
                             style = MaterialTheme.typography.labelSmall, color = MediumGray)
                     } else {
@@ -122,7 +122,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmRestore = false },
             title = { Text("기록을 가져올까요?") },
-            text = { Text("이 폰의 옷장 · 착용 기록 · 취향 · 관심 상품이 백업 코드의 기록으로 바뀌어요. 가져온 뒤 앱이 다시 시작돼요.") },
+            text = { Text("이 폰의 옷장 · 착용 기록 · 취향 · 관심 상품 · 저장한 코디 · 코디 일정이 백업 코드의 기록으로 바뀌어요. 가져온 뒤 앱이 다시 시작돼요.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmRestore = false
@@ -154,7 +154,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmDisable = false },
             title = { Text("서버 백업을 끌까요?") },
-            text = { Text("서버 DB 에 저장된 내 옷장 · 사진 백업 · 착용 · 체형 숫자 · 취향 · 관심 상품 · 추천 기록을 모두 지워요. 폰 안의 기록은 그대로예요.") },
+            text = { Text("서버 DB 에 저장된 내 옷장 · 사진 백업 · 착용 · 체형 숫자 · 취향 · 관심 상품 · 추천 기록 · 저장한 코디 · 코디 일정을 모두 지워요. 폰 안의 기록은 그대로예요.") },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDisable = false

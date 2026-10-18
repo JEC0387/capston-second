@@ -154,7 +154,8 @@ class AddClothingViewModel : ViewModel() {
     /** 옷장에 새로 저장. 사진 세 가지를 모두 보관한다. */
     fun save(
         context: Context, name: String, category: String, subCategory: String?,
-        detailType: String?, season: String, style: String?, mode: ImageMode
+        detailType: String?, season: String, style: String?, mode: ImageMode,
+        brand: String? = null, price: Int? = null
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         val shown = s.uriFor(mode) ?: s.originalUri ?: return
@@ -175,7 +176,9 @@ class AddClothingViewModel : ViewModel() {
                 isCutout = shown != s.originalUri,
                 originalUri = s.originalUri,
                 cutoutUri = s.cutoutUri,
-                garmentUri = s.garmentUri
+                garmentUri = s.garmentUri,
+                brand = brand?.trim()?.take(50)?.ifBlank { null },
+                price = price
             )
         )
         _state.value = AddClothingUiState.Idle
@@ -220,7 +223,8 @@ class AddClothingViewModel : ViewModel() {
     /** 수정 완료 — 같은 번호로 덮어써서 착용 기록·하트·등록일·보관 기록이 그대로 이어진다. */
     fun saveEdit(
         context: Context, name: String, category: String, subCategory: String?,
-        detailType: String?, season: String, style: String?, mode: ImageMode
+        detailType: String?, season: String, style: String?, mode: ImageMode,
+        brand: String? = null, price: Int? = null
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         val item = editingItem ?: return
@@ -242,7 +246,9 @@ class AddClothingViewModel : ViewModel() {
                 aiTagged = item.aiTagged || (s.fromServer && s.candidates.isNotEmpty()),
                 originalUri = s.originalUri,
                 cutoutUri = s.cutoutUri,
-                garmentUri = s.garmentUri
+                garmentUri = s.garmentUri,
+                brand = brand?.trim()?.take(50)?.ifBlank { null },
+                price = price
             )
         )
         editingItem = null

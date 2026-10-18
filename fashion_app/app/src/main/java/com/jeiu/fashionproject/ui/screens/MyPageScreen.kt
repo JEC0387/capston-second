@@ -65,6 +65,7 @@ fun MyPageScreen(
     onStylePreference: () -> Unit = {},
     onVirtualFitting: () -> Unit = {},
     onBodyHistory: () -> Unit = {},
+    onOutfitBook: () -> Unit = {},
     onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -295,6 +296,8 @@ fun MyPageScreen(
             MyMenuItem(icon = Icons.Filled.Favorite, label = "스타일 취향 학습", onClick = onStylePreference)
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Checkroom, label = "가상 피팅", onClick = onVirtualFitting)
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Bookmark, label = "저장한 코디 · 코디 일정", onClick = onOutfitBook)
         }
 
         Spacer(modifier = Modifier.height(8.dp))

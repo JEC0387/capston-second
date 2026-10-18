@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import com.jeiu.fashionproject.MainActivity
 import com.jeiu.fashionproject.R
 import com.jeiu.fashionproject.data.DayForecast
+import com.jeiu.fashionproject.data.OutfitPlanStore
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
@@ -79,11 +80,17 @@ class WeatherAlertWorker(context: Context, params: WorkerParameters) : Coroutine
             append("내일 ${day.condition} ${day.minTemp}° / ${day.maxTemp}°")
             if (day.rainChance >= DayForecast.RAINY_CHANCE) append(" · 비 ${day.rainChance}%")
         }
+        // 코디 일정에 내일 입기로 정한 코디가 있으면 그것을, 없으면 추천 코디를 알려 준다
+        OutfitPlanStore.load(ctx)
+        val byId = WardrobeStore.items.value.associateBy { it.id }
+        val planned = OutfitPlanStore.planFor(tomorrow)?.itemIds?.mapNotNull { byId[it] }?.takeIf { it.isNotEmpty() }
+            ?.joinToString(" + ") { it.name }
         val outfit = (plan.result as? OutfitEngine.Result.Ok)?.outfits?.firstOrNull()
             ?.items?.joinToString(" + ") { it.name }
         val lines = buildList {
             addAll(plan.alerts)
-            if (outfit != null) add("추천 코디: $outfit")
+            if (planned != null) add("입기로 한 코디: $planned")
+            else if (outfit != null) add("추천 코디: $outfit")
         }.ifEmpty { listOf("무난한 날씨예요. 앱에서 내일 코디를 확인해 보세요.") }
 
         notify(ctx, if (isTest) "[테스트] $title" else title, lines.joinToString("\n"))

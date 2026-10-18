@@ -14,8 +14,8 @@ import java.util.UUID
 
 /**
  * Local stores remain authoritative. Durable, serialized retries; body photos never leave this queue.
- * 서버 DB 로 보내는 것: 옷장(+ 옷 사진 백업) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 ·
- * 추천 기록 · (동의 시) 체형 숫자 기록.
+ * 서버 DB 로 보내는 것: 옷장(+ 옷 사진 백업 · 가격 · 브랜드) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 ·
+ * 취향 평가 기록 · 추천 기록 · 저장한 코디 · 코디 일정 · (동의 시) 체형 숫자 기록.
  * 각 항목은 "마지막 상태 한 개"만 대기열에 남아, 서버가 꺼져 있다 켜지면 최신 상태로 맞춰진다.
  *
  * 마이페이지 > 데이터 백업 · 복원 에서 서버 백업을 끄면, 서버의 내 기록을 지우고 이후로는 아무것도 보내지 않는다.
@@ -193,6 +193,32 @@ object DbSync {
         enqueue("recs", "/api/recommendations/sync", body)
     }
 
+    /** 저장한 코디 (룩북) — 폰 목록과 똑같이 맞춘다 */
+    fun pushSavedOutfits(list: List<SavedOutfit>) {
+        val body = runCatching {
+            val arr = JSONArray()
+            list.take(SavedOutfitStore.MAX).filter { it.itemIds.size in 1..8 && it.itemIds.all { id -> id.length <= 64 } }.forEach {
+                arr.put(JSONObject().put("id", it.id).put("itemIds", JSONArray(it.itemIds)).put("style", it.style)
+                    .put("pattern", it.pattern ?: JSONObject.NULL).put("note", it.note).put("savedAt", it.savedAt))
+            }
+            JSONObject().put("outfits", arr).toString()
+        }.getOrNull() ?: return
+        enqueue("saved_outfits", "/api/saved-outfits/sync", body)
+    }
+
+    /** 코디 일정 — 폰 목록과 똑같이 맞춘다 (날짜마다 하나) */
+    fun pushOutfitPlans(list: List<OutfitPlan>) {
+        val body = runCatching {
+            val arr = JSONArray()
+            list.filter { it.itemIds.size in 1..8 && it.itemIds.all { id -> id.length <= 64 } }.forEach {
+                arr.put(JSONObject().put("date", it.date).put("itemIds", JSONArray(it.itemIds)).put("note", it.note)
+                    .put("createdAt", it.createdAt))
+            }
+            JSONObject().put("plans", arr).toString()
+        }.getOrNull() ?: return
+        enqueue("plans", "/api/outfit-plans/sync", body)
+    }
+
     // ── 백업 끄기 · 켜기 · 복원 ──────────────────────────────
 
     /**
@@ -215,6 +241,7 @@ object DbSync {
         BackendApi.deviceId = backupCode
         WardrobeStore.load(appContext); WearLogStore.load(appContext)
         TastePreferenceStore.load(appContext); ProductInterestStore.load(appContext); RecommendationLog.load(appContext)
+        SavedOutfitStore.load(appContext); OutfitPlanStore.load(appContext)
         pushWardrobe(WardrobeStore.items.value)
         pushWearLogs(WearLogStore.logs.value)
         if (ProfileStore.hasSelection(appContext)) pushPreferredStyles(ProfileStore.preferredStyles(appContext))
@@ -222,6 +249,8 @@ object DbSync {
         pushProductInterests(ProductInterestStore.ids.value)
         pushTasteEvents(TastePreferenceStore.events.value)
         pushRecommendations(RecommendationLog.entries.value)
+        pushSavedOutfits(SavedOutfitStore.items.value)
+        pushOutfitPlans(OutfitPlanStore.plans.value)
     }
 
     /**
@@ -338,6 +367,8 @@ object DbSync {
                     .put("cutoutUri", item.cutoutUri)
                     .put("garmentUri", item.garmentUri)
                     .put("style", item.style)
+                    .put("brand", item.brand)
+                    .put("price", item.price)
             )
         }
         return JSONObject().put("items", arr).toString()

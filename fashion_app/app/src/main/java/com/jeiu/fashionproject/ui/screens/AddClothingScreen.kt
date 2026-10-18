@@ -1,5 +1,8 @@
 package com.jeiu.fashionproject.ui.screens
 
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import com.jeiu.fashionproject.recommend.CostPerWear
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,6 +69,9 @@ fun AddClothingScreen(
     var nameOverride by remember { mutableStateOf<String?>(null) }
     var seasonOverride by remember { mutableStateOf<String?>(null) }
     var styleOverride by remember { mutableStateOf<String?>(null) }
+    // 구매 정보 (선택) — 착용당 비용 계산에 쓴다
+    var brandInput by remember { mutableStateOf("") }
+    var priceInput by remember { mutableStateOf("") }
     // 수정 화면에서는 AI 결과로 입력값을 덮어쓰지 않다가, 사용자가 AI 후보를 직접 누를 때만 반영한다
     var applyAiOnce by remember { mutableStateOf(false) }
 
@@ -85,6 +91,8 @@ fun AddClothingScreen(
         nameOverride = item.name
         seasonOverride = item.season
         styleOverride = item.style
+        brandInput = item.brand.orEmpty()
+        priceInput = item.price?.toString().orEmpty()
     }
     // 등록 모드에서 새 사진이거나, AI 후보를 바꾸면 분류를 AI 결과로 채운다
     LaunchedEffect(tagged?.originalUri, tagged?.selected) {
@@ -347,13 +355,33 @@ fun AddClothingScreen(
                         Text("옷 종류와 색을 보고 자동으로 골랐어요. 다른 스타일을 눌러 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                     }
 
+                    // 구매 정보 (선택) — 넣으면 착용 달력에서 '착용당 비용'을 계산해 줘요
+                    Label("구매 정보 (선택)")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = brandInput, onValueChange = { brandInput = it.take(50) },
+                            label = { Text("브랜드") }, singleLine = true, modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Camel, focusedLabelColor = Camel)
+                        )
+                        OutlinedTextField(
+                            value = priceInput, onValueChange = { v -> priceInput = v.filter { it.isDigit() }.take(9) },
+                            label = { Text("가격(원)") }, singleLine = true, modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            supportingText = { CostPerWear.parsePrice(priceInput)?.let { Text(CostPerWear.won(it)) } },
+                            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Camel, focusedLabelColor = Camel)
+                        )
+                    }
+
                     // 저장 / 다시 선택(등록) · 취소(수정)
                     Button(
                         onClick = {
                             val name = nameOverride ?: autoName
                             val season = seasonOverride ?: autoSeason
-                            if (isEdit) viewModel.saveEdit(context, name, category, subCategory, detailType, season, styleOverride, imageMode)
-                            else viewModel.save(context, name, category, subCategory, detailType, season, styleOverride, imageMode)
+                            val price = CostPerWear.parsePrice(priceInput)
+                            if (isEdit) viewModel.saveEdit(context, name, category, subCategory, detailType, season, styleOverride, imageMode,
+                                brandInput, price)
+                            else viewModel.save(context, name, category, subCategory, detailType, season, styleOverride, imageMode,
+                                brandInput, price)
                             onDone()
                         },
                         enabled = !s.garmentLoading,

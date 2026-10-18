@@ -91,6 +91,8 @@ class ClothingItem(BaseModel):
     cutoutUri: Optional[str] = None
     garmentUri: Optional[str] = None
     hasPhoto: bool = False              # 사진 백업(clothing_photos)이 있는지
+    brand: Optional[str] = None
+    price: Optional[int] = None
 
 
 class WardrobeResponse(BaseModel):
@@ -309,6 +311,8 @@ class WardrobeSyncItem(BaseModel):
     cutoutUri: Optional[str] = None
     garmentUri: Optional[str] = None
     style: Optional[str] = None
+    brand: Optional[str] = None         # 50자까지 저장
+    price: Optional[int] = None         # 원 (1 ~ 1억 원만 저장, 그 밖은 비움)
 
 
 class WardrobeSyncRequest(BaseModel):
@@ -577,3 +581,99 @@ class TasteEventListResponse(BaseModel):
 
 class DeleteMyDataResult(BaseModel):
     deleted: dict[str, int]   # 표 이름 → 지운 줄 수
+
+
+# ---------- 저장한 코디 · 코디 일정 ----------
+
+def _check_ids(value: list[str]) -> list[str]:
+    if any(not i or len(i) > 64 for i in value):
+        raise ValueError('item id must be 1-64 chars')
+    return value
+
+
+class SavedOutfitItem(BaseModel):
+    id: Optional[str] = Field(default=None, max_length=600)   # 없으면 서버가 옷 id 로 만든다
+    itemIds: list[str] = Field(min_length=1, max_length=8)
+    style: Optional[str] = None
+    pattern: Optional[str] = None
+    note: str = Field(default="", max_length=100)
+    savedAt: Optional[int] = None
+
+    @field_validator('itemIds')
+    @classmethod
+    def valid_ids(cls, value):
+        return _check_ids(value)
+
+
+class SavedOutfitSyncRequest(BaseModel):
+    """폰의 저장한 코디 목록 (최근 저장 순). 서버는 이 목록과 똑같아지도록 추가 · 수정 · 삭제한다."""
+    outfits: list[SavedOutfitItem] = Field(max_length=200)
+
+
+class SavedOutfitResponse(BaseModel):
+    totalCount: int
+    outfits: list[SavedOutfitItem]
+
+
+class OutfitPlanItem(BaseModel):
+    date: str
+    itemIds: list[str] = Field(min_length=1, max_length=8)
+    note: str = Field(default="", max_length=100)
+    createdAt: Optional[int] = None
+
+    @field_validator('itemIds')
+    @classmethod
+    def valid_ids(cls, value):
+        return _check_ids(value)
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if len(value) != 10 or date.fromisoformat(value).isoformat() != value:
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+
+class OutfitPlanSyncRequest(BaseModel):
+    """폰의 코디 일정 전체 (날짜마다 하나). 서버는 이 목록과 똑같아지도록 맞춘다."""
+    plans: list[OutfitPlanItem] = Field(max_length=400)
+
+    @field_validator('plans')
+    @classmethod
+    def unique_dates(cls, plans):
+        if len({p.date for p in plans}) != len(plans):
+            raise ValueError('Duplicate plan dates')
+        return plans
+
+
+class OutfitPlanResponse(BaseModel):
+    totalCount: int
+    plans: list[OutfitPlanItem]
+
+
+# ---------- 전체 통계 (발표용) ----------
+
+class NameCount(BaseModel):
+    name: str
+    count: int
+
+
+class OverviewStats(BaseModel):
+    """모든 사용자를 합친 개수 · 순위 (개인 정보 없이 숫자만)"""
+    users: int
+    clothes: int
+    clothingPhotos: int
+    wearLogs: int
+    savedOutfits: int
+    outfitPlans: int
+    productInterests: int
+    tasteEvents: int
+    recommendations: int
+    bodyMeasurements: int
+    topCategories: list[NameCount]
+    topColors: list[NameCount]
+    topPreferredStyles: list[NameCount]
+    pricedClothes: int                 # 가격을 넣은 옷 수
+    averagePrice: Optional[int] = None
+    planDays: int                      # 지난 일정 중 착용 기록이 있는 날
+    planFollowed: int                  # 그중 일정대로 입은 날

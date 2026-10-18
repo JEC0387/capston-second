@@ -14,7 +14,8 @@ import java.io.File
  * 백업 코드로 다른 폰(또는 앱을 다시 설치한 폰)의 기록을 서버 DB 에서 가져온다.
  *
  * 백업 코드 = 예전 폰의 기기 번호. 서버는 기기 번호로 사용자를 구분하므로, 이 폰이 그 번호를 이어서 쓰게 된다.
- * 가져오는 것: 옷장(+ 사진 백업) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 · 스타일 점수.
+ * 가져오는 것: 옷장(+ 사진 백업 · 가격 · 브랜드) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 ·
+ * 스타일 점수 · 저장한 코디 · 코디 일정.
  * 가져오지 않는 것: 체형 사진(원래 서버에 없음), 체형 동의 상태(이 폰에서 다시 동의), 알림 설정.
  * 체형 숫자 기록은 서버에 그대로 있어서, 동의하면 '측정 기록 · 변화 그래프'에서 다시 볼 수 있다.
  *
@@ -46,11 +47,13 @@ object BackupRestore {
         val interests: List<String>,
         val tasteEvents: List<TasteEvent>,
         val styleScores: Map<String, Int>?,
-        val styleRatedCount: Int
+        val styleRatedCount: Int,
+        val savedOutfits: List<SavedOutfit> = emptyList(),
+        val plans: List<OutfitPlan> = emptyList()
     ) {
         val isEmpty: Boolean
             get() = clothes.isEmpty() && wearLogs.isEmpty() && interests.isEmpty() && tasteEvents.isEmpty() &&
-                preferredStyles.isEmpty() && styleRatedCount == 0
+                preferredStyles.isEmpty() && styleRatedCount == 0 && savedOutfits.isEmpty() && plans.isEmpty()
     }
 
     // ── 서버 응답 읽기 (PC 단위 테스트 가능) ──────────────────
@@ -88,7 +91,9 @@ object BackupRestore {
                 originalUri = o.str("originalUri"),
                 cutoutUri = o.str("cutoutUri"),
                 garmentUri = o.str("garmentUri"),
-                style = o.str("style")
+                style = o.str("style"),
+                brand = o.str("brand"),
+                price = if (o.has("price") && !o.isNull("price")) o.getInt("price") else null
             )
             // 샘플 옷은 앱 안 사진을 그대로 쓴다
             val item = if (sample != null) base.copy(imageUri = sample.imageUri, originalUri = sample.originalUri,
@@ -144,6 +149,22 @@ object BackupRestore {
         }.sortedBy { it.at }
     }
 
+    fun parseSavedOutfits(body: String): List<SavedOutfit> {
+        val arr = JSONObject(body).getJSONArray("outfits")
+        return List(arr.length()) { arr.getJSONObject(it) }.map { o ->
+            val ids = o.optJSONArray("itemIds").strings()
+            SavedOutfit(o.str("id") ?: SavedOutfit.idOf(ids), ids, o.str("style").orEmpty(), o.str("pattern"),
+                o.str("note").orEmpty(), o.long("savedAt") ?: 0L)
+        }.sortedByDescending { it.savedAt }
+    }
+
+    fun parsePlans(body: String): List<OutfitPlan> {
+        val arr = JSONObject(body).getJSONArray("plans")
+        return List(arr.length()) { arr.getJSONObject(it) }.map { o ->
+            OutfitPlan(o.getString("date"), o.optJSONArray("itemIds").strings(), o.str("note").orEmpty(), o.long("createdAt") ?: 0L)
+        }.sortedBy { it.date }
+    }
+
     /** /api/profile → (선호 스타일, 성별) */
     fun parseProfile(body: String): Pair<List<String>, String?> {
         val o = JSONObject(body)
@@ -172,10 +193,12 @@ object BackupRestore {
         val interests = BackendApi.getJson("/api/product-interests", code)?.let { runCatching { parseInterests(it) }.getOrNull() }
         val taste = BackendApi.getJson("/api/taste-events", code)?.let { runCatching { parseTasteEvents(it) }.getOrNull() }
         val pref = BackendApi.getJson("/api/style-preference", code)?.let { runCatching { parseStylePreference(it) }.getOrNull() }
+        val savedOutfits = BackendApi.getJson("/api/saved-outfits", code)?.let { runCatching { parseSavedOutfits(it) }.getOrNull() }
+        val plans = BackendApi.getJson("/api/outfit-plans", code)?.let { runCatching { parsePlans(it) }.getOrNull() }
 
         val snapshot = runCatching {
             Snapshot(parseWardrobe(wardrobe), parseWearLogs(wear), profile?.first.orEmpty(), profile?.second,
-                interests.orEmpty(), taste.orEmpty(), pref?.first, pref?.second ?: 0)
+                interests.orEmpty(), taste.orEmpty(), pref?.first, pref?.second ?: 0, savedOutfits.orEmpty(), plans.orEmpty())
         }.getOrNull() ?: return@withContext Result.Offline
         if (snapshot.isEmpty) return@withContext Result.NotFound
 
@@ -211,6 +234,8 @@ object BackupRestore {
         ProductInterestStore.writeForRestore(context, snapshot.interests)
         TastePreferenceStore.writeForRestore(context, snapshot.tasteEvents)
         snapshot.styleScores?.let { StylePreferenceStore.writeForRestore(context, it, snapshot.styleRatedCount) }
+        SavedOutfitStore.writeForRestore(context, snapshot.savedOutfits)
+        OutfitPlanStore.writeForRestore(context, snapshot.plans)
         RecommendationLog.clearForRestore(context)
         DbSync.adoptForRestore(code, files, uris)
 

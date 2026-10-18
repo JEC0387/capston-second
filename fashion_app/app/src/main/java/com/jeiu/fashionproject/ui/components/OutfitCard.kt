@@ -5,7 +5,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
@@ -49,7 +52,10 @@ fun OutfitCard(
     modifier: Modifier = Modifier,
     photoHeight: Dp = 200.dp,
     interestedItemIds: Set<String> = emptySet(),
-    wear: WearToday? = null
+    wear: WearToday? = null,
+    saved: Boolean? = null,                  // null 이면 🔖 버튼 숨김
+    onToggleSave: () -> Unit = {},
+    onPlan: (() -> Unit)? = null             // null 이면 📅 (코디 일정에 넣기) 버튼 숨김
 ) {
     Card(
         modifier = modifier,
@@ -119,8 +125,20 @@ fun OutfitCard(
                     Text(if (worn) "오늘 입은 코디로 기록했어요" else "오늘 이거 입었어요", color = if (worn) MediumGray else Brown)
                 }
             }
-            // 👍 👎
+            // 🔖 저장 · 📅 일정 · 👍 👎
+            val ownedOnly = outfit.items.none { it.id in interestedItemIds || !it.isOwned }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (saved != null && ownedOnly) {
+                    IconButton(onClick = onToggleSave) {
+                        Icon(if (saved) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                            contentDescription = if (saved) "저장 취소" else "코디 저장", tint = if (saved) Camel else MediumGray)
+                    }
+                }
+                if (onPlan != null && ownedOnly) {
+                    IconButton(onClick = onPlan) {
+                        Icon(Icons.Filled.EventAvailable, contentDescription = "코디 일정에 넣기", tint = MediumGray)
+                    }
+                }
                 if (rated != null) {
                     Text(
                         if (rated) "좋아요를 취향에 반영했어요" else "다음엔 다른 스타일도 보여드릴게요",

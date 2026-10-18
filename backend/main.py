@@ -56,6 +56,10 @@ from schemas import (
 @asynccontextmanager
 async def lifespan(_):
     initialize_database()
+    # DB 에 아직 적용하지 않은 마이그레이션이 있으면 서버 창에 알려 준다 (그 기능만 저장이 안 됨)
+    status = database_status()
+    if status.get("missing"):
+        print(f"[DB] 빠진 표 · 칸: {', '.join(status['missing'])} → backend 폴더에서 python apply_migrations.py 실행")
     yield
 
 
