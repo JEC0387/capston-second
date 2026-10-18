@@ -45,24 +45,8 @@ object CaptureGuide {
         if (headTop < height * TOP || feet > height * BOTTOM ||
             points.values.any { it.x < width * LEFT || it.x > width * RIGHT } ||
             abs((lh.x + rh.x) / 2f - width / 2f) > width * 0.10f) return GuideStatus.CENTER
-        val nose = p(Joint.NOSE)
-        if (shoulder / torso < 0.55f || abs(lh.x - rh.x) / torso < 0.25f ||
-            abs(ls.y - rs.y) / shoulder > 0.20f ||
-            abs(lh.y - rh.y) / shoulder > 0.20f ||
-            abs(nose.x - (ls.x + rs.x) / 2f) / shoulder > 0.25f ||
-            abs(p(Joint.LEFT_EYE).x - p(Joint.RIGHT_EYE).x) / shoulder < 0.12f)
-            return GuideStatus.FRONT
-        // Elbow and wrist must both be outside their own shoulder-to-hip line.
-        fun separated(s: GuidePoint, h: GuidePoint, arm: GuidePoint): Boolean {
-            val t = ((arm.y - s.y) / (h.y - s.y).coerceAtLeast(1f)).coerceIn(0f, 1f)
-            val edge = s.x + (h.x - s.x) * t
-            val outward = if (s.x < (ls.x + rs.x) / 2f) -1 else 1
-            return (arm.x - edge) * outward >= shoulder * 0.12f
-        }
-        if (!separated(ls, lh, p(Joint.LEFT_ELBOW)) ||
-            !separated(ls, lh, p(Joint.LEFT_WRIST)) ||
-            !separated(rs, rh, p(Joint.RIGHT_ELBOW)) ||
-            !separated(rs, rh, p(Joint.RIGHT_WRIST))) return GuideStatus.ARMS
+        val core = PoseQualityRules.evaluate(points, width, height)
+        if (core != GuideStatus.READY) return core
         return GuideStatus.READY
     }
 }

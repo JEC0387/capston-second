@@ -1,130 +1,112 @@
 package com.jeiu.fashionproject.ui.viewmodel
 
-import com.jeiu.fashionproject.ui.camera.GuidePoint
-import com.jeiu.fashionproject.ui.camera.Joint
+import com.jeiu.fashionproject.ui.camera.*
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Pure Kotlin mask geometry. Confidence channel 0 is 'selfie' in the bundled single-channel model. */
+enum class SilhouetteIssue(val message: String) {
+    MODEL_UNAVAILABLE("기기 내 인물 분할 모델을 준비하지 못했어요. 앱을 다시 실행해주세요."),
+    INVALID_MASK("인물 마스크가 올바르지 않아요. 다른 정면 전신 사진을 선택해주세요."),
+    LANDMARKS("관절 또는 발끝을 확인하지 못했어요. 머리부터 발끝까지 선명하게 촬영해주세요."),
+    POSTURE("정면으로 서고 팔을 몸에서 조금 떼주세요. 무릎도 펴주세요."),
+    NO_BODY("배경과 몸통 외곽이 구분되지 않아요. 단순한 배경에서 다시 촬영해주세요."),
+    EXTRA_FOREGROUND("다른 사람이나 큰 배경 물체가 함께 감지됐어요. 한 명만 나오게 촬영해주세요."),
+    ARM_CONTOUR("팔·소매와 어깨 경계가 겹쳐요. 팔을 조금 떼고 몸에 맞는 옷으로 촬영해주세요."),
+    UNSTABLE_BOUNDARY("허리·힙 외곽이 불안정해요. 옷자락과 배경을 정리해 다시 촬영해주세요."),
+    FULL_BODY("머리 꼭대기나 발끝 경계를 확인하지 못했어요. 위아래에 여유를 두고 촬영해주세요.")
+}
+data class SilhouetteMeasurement(val widths: BodyWidths? = null, val issue: SilhouetteIssue? = null)
+
+/** Pure mask geometry; all output lengths use the same orientation-normalized bitmap coordinates. */
 object SilhouetteMeasurer {
-    fun measure(
-        confidence: FloatArray, maskWidth: Int, maskHeight: Int,
-        imageWidth: Int, imageHeight: Int, points: Map<Joint, GuidePoint>
-    ): BodyWidths? {
-        if (maskWidth < 32 || maskHeight < 32 || maskWidth.toLong() * maskHeight != confidence.size.toLong() ||
-            imageWidth <= 0 || imageHeight <= 0 || confidence.any { !it.isFinite() || it !in 0f..1f }) return null
-        if (Joint.values().any { j -> points[j]?.let {
-                it.x.isFinite() && it.y.isFinite() && it.confidence.isFinite() &&
-                    it.x in 0f..imageWidth.toFloat() && it.y in 0f..imageHeight.toFloat()
-            } != true }) return null
-        fun p(j: Joint) = points.getValue(j)
-        val sx = imageWidth.toFloat() / maskWidth
-        val sy = imageHeight.toFloat() / maskHeight
-        val ls = p(Joint.LEFT_SHOULDER); val rs = p(Joint.RIGHT_SHOULDER)
-        val lh = p(Joint.LEFT_HIP); val rh = p(Joint.RIGHT_HIP)
-        val shoulderY = (ls.y + rs.y) / 2f
-        val hipY = (lh.y + rh.y) / 2f
-        val torso = hipY - shoulderY
-        if (torso <= 0f) return null
-        val centerX = (ls.x + rs.x + lh.x + rh.x) / 4f
-        val seedX = (centerX / sx).toInt().coerceIn(0, maskWidth - 1)
-        val seedY = ((shoulderY + torso * 0.5f) / sy).toInt().coerceIn(0, maskHeight - 1)
-        val foreground = BooleanArray(confidence.size) { confidence[it] >= 0.7f }
-        val seed = seedY * maskWidth + seedX
-        if (!foreground[seed]) return null
-        val component = BooleanArray(confidence.size)
-        val queue = IntArray(confidence.size)
-        var read = 0; var count = 1
-        queue[0] = seed; component[seed] = true
-        var minX = seedX; var maxX = seedX; var minY = seedY; var maxY = seedY
-        fun visit(index: Int) {
-            if (foreground[index] && !component[index]) {
-                component[index] = true; queue[count++] = index
-            }
+    fun measure(confidence: FloatArray, maskWidth: Int, maskHeight: Int,
+                imageWidth: Int, imageHeight: Int, points: Map<Joint, GuidePoint>): BodyWidths? =
+        inspect(confidence,maskWidth,maskHeight,imageWidth,imageHeight,points).widths
+
+    fun inspect(confidence: FloatArray, maskWidth: Int, maskHeight: Int,
+                imageWidth: Int, imageHeight: Int, points: Map<Joint, GuidePoint>): SilhouetteMeasurement {
+        fun fail(issue: SilhouetteIssue)=SilhouetteMeasurement(issue=issue)
+        if (maskWidth<32 || maskHeight<32 || maskWidth.toLong()*maskHeight!=confidence.size.toLong() ||
+            imageWidth<=0 || imageHeight<=0 || confidence.any { !it.isFinite() || it !in 0f..1f }) return fail(SilhouetteIssue.INVALID_MASK)
+        when (PoseQualityRules.evaluate(points,imageWidth.toFloat(),imageHeight.toFloat())) {
+            GuideStatus.READY -> Unit
+            GuideStatus.FRONT, GuideStatus.ARMS -> return fail(SilhouetteIssue.POSTURE)
+            else -> return fail(SilhouetteIssue.LANDMARKS)
         }
-        while (read < count) {
-            val i = queue[read++]; val x = i % maskWidth; val y = i / maskWidth
-            minX = minOf(minX, x); maxX = maxOf(maxX, x)
-            minY = minOf(minY, y); maxY = maxOf(maxY, y)
-            if (x > 0) visit(i - 1)
-            if (x + 1 < maskWidth) visit(i + 1)
-            if (y > 0) visit(i - maskWidth)
-            if (y + 1 < maskHeight) visit(i + maskWidth)
+        fun p(j:Joint)=points.getValue(j)
+        val sx=imageWidth.toFloat()/maskWidth; val sy=imageHeight.toFloat()/maskHeight
+        val ls=p(Joint.LEFT_SHOULDER); val rs=p(Joint.RIGHT_SHOULDER)
+        val lh=p(Joint.LEFT_HIP); val rh=p(Joint.RIGHT_HIP)
+        val shoulderY=(ls.y+rs.y)/2f; val hipY=(lh.y+rh.y)/2f; val torso=hipY-shoulderY
+        val shoulderX=(ls.x+rs.x)/2f; val hipX=(lh.x+rh.x)/2f
+        // Follow a leaning/translating torso rather than a fixed X column.
+        fun center(imageY:Float)=shoulderX+(hipX-shoulderX)*(imageY-shoulderY)/torso
+        val seedX=(center(shoulderY+torso*.5f)/sx).roundToInt()
+        val seedY=((shoulderY+torso*.5f)/sy).roundToInt()
+        val foreground=BooleanArray(confidence.size){confidence[it]>=.65f}
+        if(seedX !in 0 until maskWidth || seedY !in 0 until maskHeight) return fail(SilhouetteIssue.NO_BODY)
+        val seed=seedY*maskWidth+seedX
+        if(!foreground[seed]) return fail(SilhouetteIssue.NO_BODY)
+        val component=BooleanArray(confidence.size); val queue=IntArray(confidence.size)
+        var read=0; var count=1; queue[0]=seed;component[seed]=true
+        var minX=seedX;var maxX=seedX;var minY=seedY;var maxY=seedY
+        fun visit(i:Int){if(foreground[i]&&!component[i]){component[i]=true;queue[count++]=i}}
+        while(read<count){
+            val i=queue[read++];val x=i%maskWidth;val y=i/maskWidth
+            minX=minOf(minX,x);maxX=maxOf(maxX,x);minY=minOf(minY,y);maxY=maxOf(maxY,y)
+            if(x>0)visit(i-1);if(x+1<maskWidth)visit(i+1)
+            if(y>0)visit(i-maskWidth);if(y+1<maskHeight)visit(i+maskWidth)
         }
-        // A central contiguous run excludes separate arm/hand runs, unlike row min/max.
-        fun bandWidth(imageY: Float): Float? {
-            val widths = listOf(-0.01f, -0.005f, 0f, 0.005f, 0.01f).mapNotNull { offset ->
-                val y = ((imageY + imageHeight * offset) / sy).roundToInt()
-                if (y !in 0 until maskHeight || !component[y * maskWidth + seedX]) null else {
-                    var left = seedX; var right = seedX
-                    while (left > 0 && component[y * maskWidth + left - 1]) left--
-                    while (right + 1 < maskWidth && component[y * maskWidth + right + 1]) right++
-                    (right - left + 1) * sx
-                }
-            }
-            if (widths.size < 3 || widths.min() <= 0 || widths.max() / widths.min() > 1.35f) return null
-            return widths.average().toFloat()
+        if(count<confidence.size*.03f) return fail(SilhouetteIssue.NO_BODY)
+        if(foreground.count{it}-count>count*.05f) return fail(SilhouetteIssue.EXTRA_FOREGROUND)
+        if(queue.take(count).map { confidence[it].toDouble() }.average()<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        fun run(imageY:Float):Float? {
+            val y=(imageY/sy).roundToInt();val x=(center(imageY)/sx).roundToInt()
+            if(y !in 0 until maskHeight || x !in 0 until maskWidth || !component[y*maskWidth+x]) return null
+            var l=x;var r=x
+            while(l>0&&component[y*maskWidth+l-1])l--
+            while(r+1<maskWidth&&component[y*maskWidth+r+1])r++
+            return (r-l+1)*sx
         }
-        val shoulder = bandWidth(shoulderY) ?: return null
-        val waist = bandWidth(shoulderY + torso * 0.6f) ?: return null
-        val hip = bandWidth(hipY) ?: return null
-        val top = minY * sy; val bottom = (maxY + 1) * sy
-        val bodyHeight = bottom - top
-        val shoulderSpan = abs(ls.x - rs.x)
-        val hipSpan = abs(lh.x - rh.x)
-        val nose = p(Joint.NOSE)
-        val feetY = maxOf(p(Joint.LEFT_FOOT).y, p(Joint.RIGHT_FOOT).y)
-        val ankleY = (p(Joint.LEFT_ANKLE).y + p(Joint.RIGHT_ANKLE).y) / 2f
-        val marginX = max(2, (maskWidth * 0.01f).toInt())
-        val marginY = max(2, (maskHeight * 0.01f).toInt())
-        fun covered(point: GuidePoint): Boolean {
-            val x = (point.x / sx).toInt(); val y = (point.y / sy).toInt()
+        fun median(values:List<Float>):Float {val a=values.sorted();val n=a.size;return if(n%2==1)a[n/2] else (a[n/2-1]+a[n/2])/2f}
+        fun representative(fractions:List<Float>, reference:Float, shoulder:Boolean=false):Float? {
+            val samples=fractions.mapNotNull { run(shoulderY+torso*it) }
+            // Reject arm/sleeve spans; never replace them with a landmark-derived width.
+            val plausible=samples.filter { it>0f && (!shoulder || it in reference*.8f..reference*1.8f) }
+            if(plausible.size<5 || plausible.size<fractions.size*.5f)return null
+            val middle=median(plausible)
+            val stable=plausible.filter { abs(it-middle)/middle<=.12f }
+            if(stable.size<5 || stable.size<plausible.size*.7f)return null
+            return median(stable)
+        }
+        val shoulderSpan=abs(ls.x-rs.x)
+        val shoulder=representative((-1..10).map { it*.025f },shoulderSpan,true) ?: return fail(SilhouetteIssue.ARM_CONTOUR)
+        val waist=representative((0..8).map { .5f+it*.025f },shoulderSpan) ?: return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        val hip=representative((0..10).map { .8f+it*.03f },shoulderSpan) ?: return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        val top=minY*sy;val bottom=(maxY+1)*sy;val bodyHeight=bottom-top
+        val marginX=max(2,(maskWidth*.01f).toInt());val marginY=max(2,(maskHeight*.01f).toInt())
+        fun covered(point:GuidePoint):Boolean {
+            val x=(point.x/sx).toInt();val y=(point.y/sy).toInt()
             return (-2..2).any { dy -> (-2..2).any { dx ->
-                val xx = x + dx; val yy = y + dy
-                xx in 0 until maskWidth && yy in 0 until maskHeight && component[yy * maskWidth + xx]
+                val xx=x+dx;val yy=y+dy
+                xx in 0 until maskWidth && yy in 0 until maskHeight && component[yy*maskWidth+xx]
             } }
         }
-        val keyJoints = listOf(Joint.NOSE, Joint.LEFT_SHOULDER, Joint.RIGHT_SHOULDER,
-            Joint.LEFT_HIP, Joint.RIGHT_HIP, Joint.LEFT_KNEE, Joint.RIGHT_KNEE,
-            Joint.LEFT_ANKLE, Joint.RIGHT_ANKLE, Joint.LEFT_FOOT, Joint.RIGHT_FOOT)
-        fun armClear(s: GuidePoint, h: GuidePoint, arm: GuidePoint): Boolean {
-            if (arm.y < s.y || arm.y > hipY + torso * 0.6f) return false
-            val t = ((arm.y - s.y) / (h.y - s.y).coerceAtLeast(1f)).coerceIn(0f, 1f)
-            val direction = if (s.x < centerX) -1f else 1f
-            return (arm.x - (s.x + (h.x - s.x) * t)) * direction >= shoulderSpan * 0.12f
+        val keys=listOf(Joint.NOSE,Joint.LEFT_SHOULDER,Joint.RIGHT_SHOULDER,Joint.LEFT_HIP,Joint.RIGHT_HIP,
+            Joint.LEFT_KNEE,Joint.RIGHT_KNEE,Joint.LEFT_ANKLE,Joint.RIGHT_ANKLE,Joint.LEFT_FOOT,Joint.RIGHT_FOOT)
+        val feetY=maxOf(p(Joint.LEFT_FOOT).y,p(Joint.RIGHT_FOOT).y)
+        val ankleY=(p(Joint.LEFT_ANKLE).y+p(Joint.RIGHT_ANKLE).y)/2f
+        if(minX<marginX || maxX>=maskWidth-marginX || minY<marginY || maxY>=maskHeight-marginY ||
+            bodyHeight<imageHeight*.5f || maxY-minY<80 || !keys.all { covered(p(it)) } ||
+            p(Joint.NOSE).y-top !in bodyHeight*.025f..bodyHeight*.16f ||
+            bottom-feetY !in -sy*2f..bodyHeight*.05f) return fail(SilhouetteIssue.FULL_BODY)
+        fun straight(h:GuidePoint,k:GuidePoint,a:GuidePoint):Boolean {
+            val length=a.y-h.y;if(length<=0)return false
+            val t=(k.y-h.y)/length;val line=h.x+(a.x-h.x)*t
+            return t in .25f.. .75f && abs(k.x-line)<=torso*.12f && abs(a.x-h.x)<=torso*.35f
         }
-        // Height calibration assumes straight standing legs, not a crouch with shortened projection.
-        fun straightLeg(hipPoint: GuidePoint, knee: GuidePoint, ankle: GuidePoint): Boolean {
-            val length = ankle.y - hipPoint.y
-            if (length <= 0f) return false
-            val t = (knee.y - hipPoint.y) / length
-            val lineX = hipPoint.x + (ankle.x - hipPoint.x) * t
-            return t in 0.25f..0.75f && abs(knee.x - lineX) <= torso * 0.12f &&
-                abs(ankle.x - hipPoint.x) <= torso * 0.35f
-        }
-        val reliable = points.values.all { it.confidence in 0.75f..1f } &&
-            count >= confidence.size * 0.03f && foreground.count { it } - count <= count * 0.05f &&
-            minX >= marginX && maxX < maskWidth - marginX && minY >= marginY && maxY < maskHeight - marginY &&
-            bodyHeight >= imageHeight * 0.50f && maxY - minY >= 80 &&
-            keyJoints.all { covered(p(it)) } &&
-            // The mask crown and soles must agree with pose; no nose-to-ankle height substitution.
-            nose.y - top in bodyHeight * 0.025f..bodyHeight * 0.16f &&
-            bottom - feetY in -sy * 2f..bodyHeight * 0.05f &&
-            shoulderY > nose.y && hipY > shoulderY && ankleY > hipY &&
-            listOf(Joint.LEFT_KNEE, Joint.RIGHT_KNEE).all { p(it).y in hipY..ankleY } &&
-            straightLeg(lh, p(Joint.LEFT_KNEE), p(Joint.LEFT_ANKLE)) &&
-            straightLeg(rh, p(Joint.RIGHT_KNEE), p(Joint.RIGHT_ANKLE)) &&
-            shoulderSpan / torso >= 0.55f && hipSpan / torso >= 0.25f &&
-            abs(ls.y - rs.y) <= shoulderSpan * 0.20f && abs(lh.y - rh.y) <= shoulderSpan * 0.20f &&
-            abs(nose.x - (ls.x + rs.x) / 2f) <= shoulderSpan * 0.25f &&
-            abs(p(Joint.LEFT_EYE).x - p(Joint.RIGHT_EYE).x) >= shoulderSpan * 0.12f &&
-            abs((ls.x + rs.x - lh.x - rh.x) / 2f) <= torso * 0.15f &&
-            shoulder in shoulderSpan * 0.8f..shoulderSpan * 1.5f &&
-            armClear(ls, lh, p(Joint.LEFT_ELBOW)) && armClear(ls, lh, p(Joint.LEFT_WRIST)) &&
-            armClear(rs, rh, p(Joint.RIGHT_ELBOW)) && armClear(rs, rh, p(Joint.RIGHT_WRIST))
-        return BodyWidths(shoulder, waist, hip, bodyHeight, ankleY - hipY, torso, reliable)
+        if(!straight(lh,p(Joint.LEFT_KNEE),p(Joint.LEFT_ANKLE)) || !straight(rh,p(Joint.RIGHT_KNEE),p(Joint.RIGHT_ANKLE))) return fail(SilhouetteIssue.POSTURE)
+        return SilhouetteMeasurement(BodyWidths(shoulder,waist,hip,bodyHeight,ankleY-hipY,torso,true))
     }
 }
-
-

@@ -155,8 +155,10 @@ private fun HistoryContent(
             elevation = CardDefaults.cardElevation(0.dp)
         ) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("최근 체형: ${latest.bodyType}", style = MaterialTheme.typography.titleMedium, color = BrownDark, fontWeight = FontWeight.Bold)
+                Text("최근 사진의 추정 분류: ${latest.bodyType}", style = MaterialTheme.typography.titleMedium, color = BrownDark, fontWeight = FontWeight.Bold)
                 Text(summary, style = MaterialTheme.typography.bodyMedium, color = BrownDark)
+                Text("사진·자세·옷차림에 따른 추정값 차이예요. 0.5cm·1% 표시 기준은 검증된 측정 오차나 실제 신체 변화를 뜻하지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = Brown)
                 Text(
                     "총 ${records.size}회 측정 · 마지막 ${dateLabel(latest.measuredAt, "M월 d일 HH:mm")}",
                     style = MaterialTheme.typography.bodySmall, color = Brown

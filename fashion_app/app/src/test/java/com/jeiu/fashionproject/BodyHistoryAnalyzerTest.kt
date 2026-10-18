@@ -40,7 +40,7 @@ class BodyHistoryAnalyzerTest {
 
     @Test fun bodyTypeChangeIsMentioned() {
         val records = listOf(record(1, 1000, type = "직사각형"), record(2, 2000, type = "모래시계형"))
-        assertTrue(BodyHistoryAnalyzer.summary(records).startsWith("체형이 직사각형 → 모래시계형"))
+        assertTrue(BodyHistoryAnalyzer.summary(records).startsWith("사진 추정 분류가 직사각형 → 모래시계형"))
     }
 
     @Test fun seriesSkipsMissingValuesAndKeepsTimeOrder() {

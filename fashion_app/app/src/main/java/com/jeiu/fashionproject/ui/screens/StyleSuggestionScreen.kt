@@ -46,7 +46,7 @@ private val recommendItems = listOf(
 )
 
 @Composable
-fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit) {
+fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit, analysis: com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisResult? = null) {
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         Row(
             modifier = Modifier.fillMaxWidth().background(White).padding(horizontal = 8.dp, vertical = 8.dp),
@@ -67,6 +67,11 @@ fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit) {
         ) {
             Spacer(modifier = Modifier.height(4.dp))
 
+            analysis?.styleAdvice?.forEach { advice ->
+                Text("• $advice", style = MaterialTheme.typography.bodyMedium, color = Brown)
+            }
+            Text("아래 카드는 일반 스타일 예시이며 개인 체형이나 실제 착용 핏을 검증한 추천이 아니에요.",
+                style = MaterialTheme.typography.bodySmall, color = MediumGray)
             // 체형 배지
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -80,9 +85,9 @@ fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("내 체형", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.8f))
-                        Text("모래시계형", style = MaterialTheme.typography.headlineSmall, color = White, fontWeight = FontWeight.Bold)
-                        Text("어깨·힙 균형 · 허리 라인 뚜렷", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
+                        Text("이번 사진의 추정 분류", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.8f))
+                        Text(analysis?.bodyTypeKo ?: "분석 결과 없음", style = MaterialTheme.typography.headlineSmall, color = White, fontWeight = FontWeight.Bold)
+                        Text(analysis?.characteristics?.firstOrNull() ?: "유효한 분석 뒤 추정 분류를 표시해요", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
                     }
                     Box(
                         modifier = Modifier
@@ -103,7 +108,7 @@ fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit) {
             }
 
             // 추천 스타일
-            Text("추천 스타일", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            Text("스타일 예시", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
 
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 recommendedStyles.forEach { style ->
