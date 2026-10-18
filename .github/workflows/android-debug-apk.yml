@@ -67,13 +67,23 @@ jobs:
           key: android-debug-keystore-${{ runner.os }}-v1
 
       - name: Build debug APK
-        run: bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+        run: set -o pipefail; bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log"
 
       - name: Unit tests
-        run: bash gradlew :app:testDebugUnitTest --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+        run: set -o pipefail; bash gradlew :app:testDebugUnitTest --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/test.log"
 
       - name: Compile instrumented tests
-        run: bash gradlew :app:compileDebugAndroidTestKotlin --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+        run: set -o pipefail; bash gradlew :app:compileDebugAndroidTestKotlin --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/androidtest.log"
+
+      - name: Show errors as annotations (로그인 없이 볼 수 있게)
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP"/*.log 2>/dev/null \
+            | grep -E '^e: |error:|FAILED|What went wrong|Exception|expected:|> Task .*FAILED|tests completed' \
+            | grep -v '^\s*at ' | head -80 > "$RUNNER_TEMP/errors.txt" || true
+          msg=$(sed -e 's/%/%25/g' -e 's#file://'"$GITHUB_WORKSPACE"'/##' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle errors::${msg}"
+          { echo '### Gradle errors'; echo '```'; cat "$RUNNER_TEMP/errors.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint
         continue-on-error: true
