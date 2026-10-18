@@ -24,7 +24,7 @@ from typing import Optional
 
 from sqlalchemy import (
     JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
-    UniqueConstraint, func,
+    UniqueConstraint, func, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,6 +33,8 @@ from database import Base
 
 class User(Base):
     __tablename__ = "users"
+    # 저장 뒤 서버 기본값을 RETURNING 으로 다시 읽지 않는다 — 예전 DB 에 없는 칸(gender)을 묻지 않도록
+    __mapper_args__ = {"eager_defaults": False}
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, index=True)
@@ -42,7 +44,10 @@ class User(Base):
     height_cm: Mapped[Optional[float]] = mapped_column(Float)
     body_type: Mapped[Optional[str]] = mapped_column(String(20))
     preferred_styles: Mapped[list] = mapped_column(JSON, default=list)
-    gender: Mapped[Optional[str]] = mapped_column(String(10))  # FEMALE / MALE (마이페이지 성별 설정, 없으면 미설정)
+    # FEMALE / MALE (마이페이지 성별 설정). 002 마이그레이션 칸이라 필요할 때만 읽는다(deferred) —
+    # 002 를 적용하지 않은 DB 에서도 사용자 조회가 멈추지 않도록
+    # server_default=NULL: 값을 안 넣은 새 사용자는 INSERT 에서 이 칸을 빼서, 칸이 없는 예전 DB 에서도 저장된다
+    gender: Mapped[Optional[str]] = mapped_column(String(10), deferred=True, server_default=text("NULL"))
     sample_records_added: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)  # 시연용 측정 기록을 넣었는지
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -52,6 +57,7 @@ class User(Base):
 class Clothing(Base):
     __tablename__ = "clothes"
     __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_clothes_user_client"),)
+    __mapper_args__ = {"eager_defaults": False}   # 예전 DB 에 없는 칸(brand · price)을 저장 뒤 다시 묻지 않도록
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -73,8 +79,10 @@ class Clothing(Base):
     added_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     favorited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # 하트 누른 시각
     kept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))       # "계속 둘게요" 시각
-    brand: Mapped[Optional[str]] = mapped_column(String(50))   # 브랜드 (선택 입력)
-    price: Mapped[Optional[int]] = mapped_column(Integer)      # 산 가격(원, 선택 입력) — 착용당 비용
+    # 004 마이그레이션 칸 — 필요할 때만 읽는다(deferred), 004 를 적용하지 않은 DB 에서도 옷장 조회 · 저장이 되도록
+    # (server_default=NULL: 값을 안 넣으면 INSERT 에서 빠져서, 칸이 없는 예전 DB 에도 새 옷이 저장된다)
+    brand: Mapped[Optional[str]] = mapped_column(String(50), deferred=True, server_default=text("NULL"))  # 브랜드 (선택)
+    price: Mapped[Optional[int]] = mapped_column(Integer, deferred=True, server_default=text("NULL"))     # 산 가격(원, 선택)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
