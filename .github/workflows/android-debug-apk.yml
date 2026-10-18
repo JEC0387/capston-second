@@ -152,3 +152,46 @@ jobs:
           tail -25 "$RUNNER_TEMP/backend.log" >> "$RUNNER_TEMP/errors.txt"
           msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
           echo "::error title=Backend test errors::${msg}"
+
+  # 팀원 PC 와 같은 방법(requirements.txt 전체 설치 → uvicorn)으로 서버가 실제로 켜지는지 확인
+  server-start:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+        python: ['3.12']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: pip install -r requirements.txt (수정사항.md 실행 방법 그대로)
+        run: |
+          set -o pipefail
+          python -m pip install -r requirements.txt 2>&1 | tee "$RUNNER_TEMP/pip.log" | tail -5
+      - name: Start server and call it (DB 없이)
+        run: |
+          set -o pipefail
+          python -m uvicorn main:app --host 0.0.0.0 --port 8000 > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8000/ > /dev/null; then break; fi
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/ && echo
+          curl -sf http://127.0.0.1:8000/api/health/database && echo
+          curl -sf "http://127.0.0.1:8000/api/products" > /dev/null && echo "products ok"
+          curl -sf http://127.0.0.1:8000/docs > /dev/null && echo "docs ok"
+      - name: Show server / pip errors as annotations
+        if: failure()
+        run: |
+          { tail -40 "$RUNNER_TEMP/server.log" 2>/dev/null; grep -iE 'error|failed' "$RUNNER_TEMP/pip.log" 2>/dev/null | tail -20; } > "$RUNNER_TEMP/errors.txt" || true
+          msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Server start (${{ matrix.os }})::${msg}"
