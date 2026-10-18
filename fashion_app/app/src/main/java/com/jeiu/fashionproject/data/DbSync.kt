@@ -12,7 +12,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
 
-/** Local stores remain authoritative. Durable, serialized retries; body photos never leave this queue. */
+/**
+ * Local stores remain authoritative. Durable, serialized retries; body photos never leave this queue.
+ * 서버 DB 로 보내는 것: 옷장 · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 · (동의 시) 체형 숫자 기록.
+ * 각 항목은 "마지막 상태 한 개"만 대기열에 남아, 서버가 꺼져 있다 켜지면 최신 상태로 맞춰진다.
+ */
 object DbSync {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val networkLock = Mutex()
@@ -97,6 +101,45 @@ object DbSync {
         JSONObject().put("styles", JSONArray(styles)).toString())
 
     fun pushWardrobe(items: List<WardrobeItem>) = enqueue("wardrobe", "/api/wardrobe/sync", wardrobeJson(items))
+
+    /** 관심 상품(쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트) 목록을 누른 순서대로 서버 DB(product_interests)에 맞춘다 */
+    fun pushProductInterests(ids: List<String>) {
+        val body = runCatching { JSONObject().put("productIds", JSONArray(ids)).toString() }.getOrNull() ?: return
+        enqueue("interests", "/api/product-interests/sync", body)
+    }
+
+    /** 마이페이지 성별 설정 (FEMALE / MALE, null = 해제) → 서버 users.gender */
+    fun pushGender(gender: String?) {
+        val body = runCatching { JSONObject().put("gender", gender ?: JSONObject.NULL).toString() }.getOrNull() ?: return
+        enqueue("gender", "/api/profile/gender", body)
+    }
+
+    /**
+     * 취향 평가 기록 전체(코디 👍👎 · 취향 카드 · 착용)를 서버 DB(taste_events)에 맞춘다.
+     * 점수 합계가 아니라 기록 하나하나를 보내서, 서버에서도 같은 규칙으로 다시 계산할 수 있다.
+     */
+    fun pushTasteEvents(events: List<TasteEvent>) {
+        val body = runCatching {
+            val arr = JSONArray()
+            // 서버 한 번 요청 한도(5000개) 안에서 최근 기록 위주로 보낸다
+            events.takeLast(5000).forEach { e ->
+                arr.put(
+                    JSONObject()
+                        .put("at", e.at)
+                        .put("source", e.source)
+                        .put("liked", e.liked)
+                        .put("colors", JSONArray(e.colors.take(20)))
+                        .put("kinds", JSONArray(e.kinds.take(20)))
+                        .put("pattern", e.pattern ?: JSONObject.NULL)
+                        .put("style", e.style ?: JSONObject.NULL)
+                        .put("itemIds", JSONArray(e.itemIds.take(20)))
+                        .put("date", e.date ?: JSONObject.NULL)
+                )
+            }
+            JSONObject().put("events", arr).toString()
+        }.getOrNull() ?: return
+        enqueue("taste", "/api/taste-events/sync", body)
+    }
 
     fun pushWearLogs(logs: List<WearLog>) {
         val entries = JSONArray()

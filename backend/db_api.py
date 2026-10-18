@@ -1,19 +1,21 @@
 """Selective DB/history integration. Existing image and recommendation endpoints stay in main.py."""
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import delete, func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 import data
 from database import get_db
-from db_models import BodyMeasurement, Clothing, ProductLike, SizeChart, StyleRating, User, WearLog
+from db_models import (BodyMeasurement, Clothing, Product, ProductInterest, SizeChart, StyleRating,
+    TasteEvent, User, WearLog)
 from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, WardrobeSyncRequest,
     SyncResult, WearLogSyncRequest, WearLogResponse, BodyMeasurementIn, BodyMeasurementOut,
     BodyMeasurementHistory, SizeChartResponse, Profile, UpdateStylesRequest,
-    StylePreferenceResponse, RatePreferenceRequest)
+    StylePreferenceResponse, RatePreferenceRequest, GenderRequest, ProductInterestSyncRequest,
+    ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary)
 
 app = APIRouter()
 
@@ -46,8 +48,10 @@ def current_user(
 
 
 def to_dt(ms: Optional[int]) -> Optional[datetime]:
-    """앱의 Unix 밀리초 → DB 시각"""
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc) if ms else None
+    """앱의 Unix 밀리초 → DB 시각 (소수 계산 없이 밀리초까지 정확히)"""
+    if not ms:
+        return None
+    return datetime.fromtimestamp(ms // 1000, tz=timezone.utc) + timedelta(milliseconds=ms % 1000)
 
 
 def to_ms(dt: Optional[datetime]) -> Optional[int]:
@@ -56,7 +60,7 @@ def to_ms(dt: Optional[datetime]) -> Optional[int]:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return int(dt.timestamp() * 1000)
+    return int(round(dt.timestamp() * 1000))
 
 
 def cut(text: Optional[str], n: int) -> Optional[str]:
@@ -388,15 +392,17 @@ def _profile_payload(db: Session, user: User) -> dict:
     outfits = db.scalar(select(func.count()).select_from(WearLog).where(WearLog.user_id == user.id))
     fav_clothes = db.scalar(select(func.count()).select_from(Clothing)
                             .where(Clothing.user_id == user.id, Clothing.favorited_at.is_not(None)))
-    fav_products = db.scalar(select(func.count()).select_from(ProductLike).where(ProductLike.user_id == user.id))
+    interests = db.scalar(select(func.count()).select_from(ProductInterest).where(ProductInterest.user_id == user.id))
     return {
         "nickname": user.nickname,
         "email": user.email or "",
         "wardrobeCount": wardrobe,
         "outfitCount": outfits,                      # 착용 기록 남긴 날 수
-        "favoriteCount": fav_clothes + fav_products,  # 하트 옷 + 하트 상품
+        "favoriteCount": fav_clothes + interests,    # 하트 옷 + 관심 상품
         "bodyType": latest_body_type(db, user),
         "preferredStyles": user.preferred_styles or [],
+        "gender": user.gender,
+        "interestCount": interests,
     }
 
 
@@ -452,4 +458,204 @@ def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_
     db.commit()
     return _preference_payload(db, user)
 
+
+# ──────────────────────────────────────────────
+# 성별 (마이페이지)
+# ──────────────────────────────────────────────
+
+@app.post("/api/profile/gender", response_model=Profile, tags=["프로필"])
+def update_gender(req: GenderRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """마이페이지 성별 설정 저장 (FEMALE / MALE, null 이면 해제) — 앱 UserPreferencesViewModel 과 같은 값"""
+    user.gender = req.gender
+    db.commit()
+    return _profile_payload(db, user)
+
+
+# ──────────────────────────────────────────────
+# 관심 상품 (쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트)
+# ──────────────────────────────────────────────
+
+def _catalog_by_key(db: Session, keys: list[str]) -> dict[str, Product]:
+    if not keys:
+        return {}
+    return {p.product_key: p for p in db.scalars(select(Product).where(Product.product_key.in_(keys)))}
+
+
+@app.post("/api/product-interests/sync", response_model=SyncResult, tags=["쇼핑"])
+def sync_product_interests(req: ProductInterestSyncRequest, db: Session = Depends(get_db),
+                           user: User = Depends(current_user)):
+    """
+    폰의 관심 상품 목록(누른 순서)을 받아 DB 를 똑같이 맞춘다 (앱 ProductInterestStore 가 바뀔 때마다 호출).
+    새 상품은 추가, 순서는 갱신, 폰에 없는 상품은 삭제. 처음 저장된 시각(added_at)은 유지한다.
+    """
+    existing = {r.product_key: r for r in db.scalars(select(ProductInterest).where(ProductInterest.user_id == user.id))}
+    saved = 0
+    for position, key in enumerate(req.productIds):
+        row = existing.get(key)
+        if row is None:
+            db.add(ProductInterest(user_id=user.id, product_key=key, position=position,
+                                   added_at=datetime.now(timezone.utc)))
+            saved += 1
+        elif row.position != position:
+            row.position = position
+            saved += 1
+    keep = set(req.productIds)
+    deleted = 0
+    for key, row in existing.items():
+        if key not in keep:
+            db.delete(row)
+            deleted += 1
+    db.commit()
+    return {"saved": saved, "deleted": deleted, "total": len(keep)}
+
+
+@app.get("/api/product-interests", response_model=ProductInterestResponse, tags=["쇼핑"])
+def get_product_interests(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """내 관심 상품 (누른 순서). 카탈로그(products)에 있는 상품은 이름 · 가격 · 사진도 함께."""
+    rows = list(db.scalars(select(ProductInterest).where(ProductInterest.user_id == user.id)
+                           .order_by(ProductInterest.position, ProductInterest.id)))
+    catalog = _catalog_by_key(db, [r.product_key for r in rows])
+    items = []
+    for r in rows:
+        p = catalog.get(r.product_key)
+        items.append({
+            "productKey": r.product_key, "position": r.position, "addedAt": to_ms(r.added_at),
+            "name": p.name if p else None, "brand": p.brand if p else None,
+            "price": p.price if p else None, "imageUrl": (p.image_url or None) if p else None,
+            "productUrl": (p.product_url or None) if p else None,
+        })
+    return {"totalCount": len(items), "items": items}
+
+
+@app.get("/api/product-interests/popular", response_model=PopularInterestResponse, tags=["쇼핑"])
+def popular_interests(limit: int = 10, db: Session = Depends(get_db)):
+    """
+    여러 사용자가 관심 상품으로 많이 담은 상품 순위 (기기 번호 불필요, 개인 정보 없이 개수만).
+    발표 · 쇼핑 화면의 "많이 찜한 상품"용.
+    """
+    rows = db.execute(
+        select(ProductInterest.product_key, func.count(func.distinct(ProductInterest.user_id)).label("n"))
+        .group_by(ProductInterest.product_key)
+        .order_by(func.count(func.distinct(ProductInterest.user_id)).desc(), ProductInterest.product_key)
+        .limit(max(1, min(limit, 50)))
+    ).all()
+    catalog = _catalog_by_key(db, [k for k, _ in rows])
+    return {"items": [{
+        "productKey": k, "interestCount": n,
+        "name": catalog[k].name if k in catalog else None,
+        "brand": catalog[k].brand if k in catalog else None,
+        "imageUrl": (catalog[k].image_url or None) if k in catalog else None,
+    } for k, n in rows]}
+
+
+# ──────────────────────────────────────────────
+# 취향 평가 기록 (색 · 종류 · 색 조합 방식)
+# ──────────────────────────────────────────────
+
+@app.post("/api/taste-events/sync", response_model=SyncResult, tags=["취향 학습"])
+def sync_taste_events(req: TasteEventSyncRequest, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    """
+    폰의 취향 평가 기록 전체(코디 👍👎 · 취향 카드 · 착용)를 받아 DB 를 똑같이 맞춘다.
+    (평가 시각, 종류)가 같으면 같은 기록 — 새 기록만 추가하고, 폰에서 사라진 기록은 삭제한다.
+    (같은 날 착용 기록을 다시 저장하면 앱이 그날 착용 평가를 바꿔 쓰기 때문)
+    """
+    existing = {(e.at_ms, e.source): e for e in db.scalars(select(TasteEvent).where(TasteEvent.user_id == user.id))}
+    seen = set()
+    saved = 0
+    for ev in req.events:
+        key = (ev.at, ev.source)
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in existing:
+            continue
+        db.add(TasteEvent(
+            user_id=user.id, at_ms=ev.at, source=ev.source, liked=ev.liked,
+            colors=[cut(c, 20) for c in ev.colors], kinds=[cut(k, 20) for k in ev.kinds],
+            pattern=cut(ev.pattern, 20), style=cut(ev.style, 20),
+            item_ids=[cut(i, 64) for i in ev.itemIds], date=ev.date,
+        ))
+        saved += 1
+    deleted = 0
+    for key, e in existing.items():
+        if key not in seen:
+            db.delete(e)
+            deleted += 1
+    try:
+        db.commit()
+    except IntegrityError:   # 같은 폰의 동기화 두 개가 동시에 들어온 경우 — 다음 동기화에서 맞춰진다
+        db.rollback()
+        raise HTTPException(409, "동시에 들어온 동기화 요청이 있어요. 잠시 후 다시 보내 주세요") from None
+    return {"saved": saved, "deleted": deleted, "total": len(seen)}
+
+
+@app.get("/api/taste-events/summary", response_model=TasteSummary, tags=["취향 학습"])
+def taste_summary(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """DB 에 쌓인 평가 기록으로 색 · 종류 · 조합 방식 · 스타일 점수를 다시 계산 (앱과 같은 규칙)"""
+    colors: dict[str, int] = {}
+    kinds: dict[str, int] = {}
+    patterns: dict[str, int] = {}
+    styles: dict[str, int] = {}
+    rated = worn = total = 0
+    for e in db.scalars(select(TasteEvent).where(TasteEvent.user_id == user.id)):
+        total += 1
+        if e.source == "worn":
+            worn += 1
+            delta = 1
+        else:
+            rated += 1
+            delta = 2 if e.liked else -1
+        for c in set(e.colors or []):
+            colors[c] = colors.get(c, 0) + delta
+        for k in set(e.kinds or []):
+            kinds[k] = kinds.get(k, 0) + delta
+        if e.pattern:
+            patterns[e.pattern] = patterns.get(e.pattern, 0) + delta
+        if e.style:
+            styles[e.style] = styles.get(e.style, 0) + delta
+
+    def ranked(d: dict[str, int]) -> dict[str, int]:
+        return dict(sorted(d.items(), key=lambda kv: (-kv[1], kv[0])))
+
+    return {"totalCount": total, "ratedCount": rated, "wornCount": worn, "colors": ranked(colors),
+            "kinds": ranked(kinds), "patterns": ranked(patterns), "styles": ranked(styles)}
+
+
+# ──────────────────────────────────────────────
+# 쇼핑 상품 카탈로그 (main.py 의 /api/products 가 사용)
+# ──────────────────────────────────────────────
+
+def _catalog_from_data() -> list[dict]:
+    return [{
+        "id": i + 1, "productKey": p["productKey"], "name": p["name"], "brand": p["brand"],
+        "price": p["price"], "originalPrice": p["originalPrice"], "rating": p["rating"],
+        "reviewCount": p["reviewCount"], "bgColor": p["bgColor"], "badge": p["badge"],
+        "imageUrl": p["imageUrl"], "productUrl": p["productKey"] if p["productKey"].startswith("http") else None,
+        "category": p["category"], "mallName": p["mallName"],
+    } for i, p in enumerate(data.SHOP_CATALOG)]
+
+
+def product_out(p: Product) -> dict:
+    return {
+        "id": p.id, "productKey": p.product_key, "name": p.name, "brand": p.brand, "price": p.price,
+        "originalPrice": p.original_price, "rating": p.rating, "reviewCount": p.review_count,
+        "bgColor": p.bg_color, "badge": p.badge, "imageUrl": p.image_url or "",
+        "productUrl": p.product_url or None, "category": p.category, "mallName": p.mall_name,
+    }
+
+
+def catalog_rows(db: Optional[Session]) -> tuple[list[dict], bool]:
+    """
+    상품 목록 — DB products 표(seed_catalog.py 로 채움)가 있으면 그 내용, 없으면 data.SHOP_CATALOG.
+    두 번째 값은 DB 에서 읽었는지 여부.
+    """
+    if db is not None:
+        try:
+            rows = list(db.scalars(select(Product).where(Product.product_key.is_not(None)).order_by(Product.id)))
+            if rows:
+                return [product_out(p) for p in rows], True
+        except SQLAlchemyError:
+            db.rollback()
+    return _catalog_from_data(), False
 

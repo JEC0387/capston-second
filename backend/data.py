@@ -205,3 +205,42 @@ FITTING_SAMPLES = [
     {"id": 904, "name": "베이지 코트",   "category": "아우터",
      "imageUrl": "https://loremflickr.com/300/380/coat,beige?lock=48"},
 ]
+
+
+# ---------- 쇼핑 상품 카탈로그 (앱 data/ShopCatalog.kt 와 같은 9개) ----------
+# productKey = 앱 ShopProduct.id (구매 링크, 상세 시연 상품은 demo:…) — 관심 상품과 연결하는 고정 열쇠.
+# DB products 표는 seed_catalog.py 로 이 목록을 넣는다. imageUrl 이 빈 상품은 앱 안 사진(res/drawable)을 쓴다.
+# category 는 상품명에 적힌 종류만 적었다 (앱 ShopCatalog 와 같은 원칙).
+SHOP_CATALOG = [
+    {"productKey": "https://www.musinsa.com/products/6405693", "name": "CKS 스탠다드 슬림핏 반팔 셔츠 네이비",
+     "brand": "CHICKS", "mallName": "무신사", "price": 39000, "originalPrice": None, "rating": 4.7,
+     "reviewCount": 184, "bgColor": "#D5E0EC", "badge": "AI추천", "category": "상의", "imageUrl": ""},
+    {"productKey": "https://4910.kr/desktop/goods/51479882", "name": "사이드 핀턱 빈티지 워싱 벌룬핏 데님 팬츠",
+     "brand": "미스터제이슨", "mallName": "4910", "price": 8522, "originalPrice": 22000, "rating": 4.5,
+     "reviewCount": 231, "bgColor": "#A8B8C8", "badge": None, "category": "하의",
+     "imageUrl": "https://d3ha2047wt6x28.cloudfront.net/hEmVfMXLFDQ/pr:GOODS_DETAIL/czM6Ly9hYmx5LWltYWdlLWxlZ2FjeS9kYXRhL2dvb2RzLzIwMjYwMjI2XzE3NzIwNjgyMzQ2NTQ5NjRtLmpwZw"},
+    {"productKey": "https://zigzag.kr/catalog/products/170263336", "name": "[made]썸머크루즈가디건",
+     "brand": "어텀", "mallName": "지그재그", "price": 26560, "originalPrice": 35000, "rating": 4.6,
+     "reviewCount": 98, "bgColor": "#EDE3D5", "badge": "AI추천", "category": "아우터",
+     "imageUrl": "https://cf.product-image.s.zigzag.kr/original/c/17/026/333/170263336-3421640085957955899.jpeg?width=400&height=400&quality=80&format=webp"},
+    {"productKey": "https://www.musinsa.com/products/3142059", "name": "아치스 조리샌들_블랙",
+     "brand": "ARCHIES", "mallName": "무신사", "price": 35000, "originalPrice": None, "rating": 4.8,
+     "reviewCount": 342, "bgColor": "#3A3A3A", "badge": "베스트", "category": "신발", "imageUrl": ""},
+    {"productKey": "https://www.musinsa.com/products/3304653", "name": "백 사틴 오피서 팬츠 [블랙]",
+     "brand": "무신사스탠다드", "mallName": "무신사", "price": 59900, "originalPrice": None, "rating": 4.8,
+     "reviewCount": 512, "bgColor": "#4A4A4A", "badge": None, "category": "하의", "imageUrl": ""},
+    {"productKey": "https://zigzag.kr/catalog/products/161164288", "name": "[MADE]러블린셔링블라우스 - 4color",
+     "brand": "Ni:some", "mallName": "지그재그", "price": 32200, "originalPrice": 42900, "rating": 4.9,
+     "reviewCount": 284, "bgColor": "#F5EEE8", "badge": "AI추천", "category": "상의",
+     "imageUrl": "https://cf.product-image.s.zigzag.kr/original/d/2026/4/27/5875_202604271053470543_53810.jpeg?width=400&height=400&quality=80&format=webp"},
+    {"productKey": "https://www.musinsa.com/products/6317950", "name": "바이오워싱 크롭 데님 반팔 셔츠",
+     "brand": "DIMITRI BLACK", "mallName": "무신사", "price": 49000, "originalPrice": None, "rating": 4.4,
+     "reviewCount": 156, "bgColor": "#A8C0D0", "badge": None, "category": "상의", "imageUrl": ""},
+    {"productKey": "https://www.musinsa.com/products/6068184", "name": "8부 원턱 버뮤다 스웨트 팬츠 3color",
+     "brand": "NANDE", "mallName": "무신사", "price": 49000, "originalPrice": None, "rating": 4.5,
+     "reviewCount": 203, "bgColor": "#D5D0C8", "badge": None, "category": "하의", "imageUrl": ""},
+    # 상품 상세 화면의 시연 상품 (구매 링크가 없어 demo: 열쇠를 쓴다)
+    {"productKey": "demo:detail-knit-j19", "name": "아이보리 라이트 베이지 브이넥 니트 J19",
+     "brand": "저스트메리드", "mallName": None, "price": 43800, "originalPrice": None, "rating": 4.8,
+     "reviewCount": 284, "bgColor": "#EDE3D5", "badge": None, "category": "상의", "imageUrl": ""},
+]

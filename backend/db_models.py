@@ -1,14 +1,16 @@
 """
 DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 생성된다.
 
-테이블 8개
-  users              사용자 (폰마다 1명 — 앱이 보내는 기기 번호로 구분, 번호 없으면 데모 사용자)
+테이블 10개
+  users              사용자 (폰마다 1명 — 앱이 보내는 기기 번호로 구분) + 성별 · 선호 스타일
   clothes            옷장 옷 (앱 WardrobeStore 와 같은 내용, client_id = 앱의 옷 id)
   wear_logs          착용 기록 (앱 WearLogStore — 날짜별로 입은 옷 id 목록)
   body_measurements  체형 분석 결과 기록 (비율 + cm 추정값, 사진은 저장하지 않음)
-  style_ratings      취향 학습 좋아요/싫어요 기록
-  products           쇼핑 상품
-  product_likes      상품 하트
+  style_ratings      취향 학습 좋아요/싫어요 기록 (스타일 점수)
+  taste_events       취향 평가 기록 — 색 · 종류 · 색 조합 방식 (코디 👍👎 · 취향 카드 · 착용)
+  products           쇼핑 상품 카탈로그 (product_key = 앱 ShopCatalog 의 상품 id = 구매 링크)
+  product_likes      상품 하트 (예전 숫자 id 방식, 지금 앱은 product_interests 사용)
+  product_interests  관심 상품 (쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트, 누른 순서 포함)
   size_charts        브랜드별 사이즈표 (사이즈 추천용, CSV 로 채움)
 
 동기화 원칙: 앱(폰)에 저장된 내용이 기준이고, 서버 DB 는 그 내용을 그대로 따라 저장한다.
@@ -17,7 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text,
+    JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text,
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,6 +38,7 @@ class User(Base):
     height_cm: Mapped[Optional[float]] = mapped_column(Float)
     body_type: Mapped[Optional[str]] = mapped_column(String(20))
     preferred_styles: Mapped[list] = mapped_column(JSON, default=list)
+    gender: Mapped[Optional[str]] = mapped_column(String(10))  # FEMALE / MALE (마이페이지 성별 설정, 없으면 미설정)
     sample_records_added: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)  # 시연용 측정 기록을 넣었는지
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -129,6 +132,8 @@ class Product(Base):
     __tablename__ = "products"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # 앱 ShopCatalog 의 상품 id (구매 링크 또는 demo:…) — 관심 상품과 연결하는 고정 열쇠
+    product_key: Mapped[Optional[str]] = mapped_column(String(512), unique=True, index=True)
     mall_name: Mapped[Optional[str]] = mapped_column(String(30))   # 무신사/지그재그/4910
     brand: Mapped[str] = mapped_column(String(50))
     name: Mapped[str] = mapped_column(String(200))
@@ -152,6 +157,42 @@ class ProductLike(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
     liked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ProductInterest(Base):
+    """
+    관심 상품 (앱 ProductInterestStore). 상품은 숫자 id 가 아니라 앱의 고정 상품 id(product_key)로 가리킨다.
+    카탈로그(products)에 없는 상품도 저장할 수 있게 외래 키를 걸지 않는다.
+    """
+    __tablename__ = "product_interests"
+    __table_args__ = (UniqueConstraint("user_id", "product_key", name="uq_product_interest_user_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    product_key: Mapped[str] = mapped_column(String(512), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)   # 하트를 누른 순서 (0부터)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TasteEvent(Base):
+    """
+    취향 평가 기록 한 건 (앱 TastePreferenceStore 의 TasteEvent 와 같음).
+    점수 합계가 아니라 기록을 남겨서, 점수 규칙(👍 +2 / 👎 −1 / 착용 +1)을 바꿔도 다시 계산할 수 있다.
+    """
+    __tablename__ = "taste_events"
+    __table_args__ = (UniqueConstraint("user_id", "at_ms", "source", name="uq_taste_event_user_at_source"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    at_ms: Mapped[int] = mapped_column(BigInteger)                  # 평가한 시각 (앱의 Unix 밀리초 그대로)
+    source: Mapped[str] = mapped_column(String(10))                 # outfit(코디 👍👎) / card(취향 카드) / worn(착용)
+    liked: Mapped[bool] = mapped_column(Boolean)
+    colors: Mapped[list] = mapped_column(JSON, default=list)        # ["베이지", "블랙"]
+    kinds: Mapped[list] = mapped_column(JSON, default=list)         # ["니트", "슬랙스"]
+    pattern: Mapped[Optional[str]] = mapped_column(String(20))      # 무채색 조합 / 톤온톤 / 포인트 컬러
+    style: Mapped[Optional[str]] = mapped_column(String(20))
+    item_ids: Mapped[list] = mapped_column(JSON, default=list)      # 평가한 옷장 옷 client_id
+    date: Mapped[Optional[str]] = mapped_column(String(10))         # 착용 기록이면 입은 날짜
 
 
 class SizeChart(Base):

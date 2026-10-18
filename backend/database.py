@@ -62,6 +62,18 @@ def get_db():
         session.close()
 
 
+def optional_db():
+    """DB 가 있으면 세션, 없거나 연결이 안 되면 None — DB 가 없어도 동작해야 하는 API(상품 목록 등)용."""
+    if engine is None:
+        yield None
+        return
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
 def database_status():
     if engine is None:
         return {'ready': False, 'status': 'not_configured'}
@@ -69,6 +81,27 @@ def database_status():
         with engine.connect() as conn:
             # Include the integration schema, not merely TCP connectivity.
             conn.execute(text('SELECT client_id FROM body_measurements LIMIT 0'))
-        return {'ready': True, 'status': 'available'}
     except SQLAlchemyError:
         return {'ready': False, 'status': 'unavailable'}
+    # 002 마이그레이션(관심 상품 · 취향 기록 · 성별 · 상품 열쇠)이 빠졌는지도 알려 준다.
+    # 빠져 있어도 ready 는 True — 기존 기능은 그대로 동작하고, 새 항목만 저장되지 않는다.
+    missing = []
+    for label, sql in _SCHEMA_002_CHECKS:
+        try:
+            with engine.connect() as conn:
+                conn.execute(text(sql))
+        except SQLAlchemyError:
+            missing.append(label)
+    result = {'ready': True, 'status': 'available'}
+    if missing:
+        result['missing'] = missing
+        result['hint'] = 'Apply backend/migrations/002_user_data_tables.sql'
+    return result
+
+
+_SCHEMA_002_CHECKS = [
+    ('users.gender', 'SELECT gender FROM users LIMIT 0'),
+    ('products.product_key', 'SELECT product_key FROM products LIMIT 0'),
+    ('product_interests', 'SELECT product_key FROM product_interests LIMIT 0'),
+    ('taste_events', 'SELECT at_ms FROM taste_events LIMIT 0'),
+]

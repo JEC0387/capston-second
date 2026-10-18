@@ -104,6 +104,8 @@ object TastePreferenceStore {
             runCatching { JSONArray(raw).let { arr -> List(arr.length()) { eventFromJson(arr.getJSONObject(it)) } } }.getOrNull()
         } ?: emptyList()
         _scores.value = _events.value.fold(base) { acc, e -> acc.plus(e) }
+        // 서버 DB(taste_events)에도 같은 기록을 맞춰 둔다 (폰이 기준)
+        DbSync.pushTasteEvents(_events.value)
     }
 
     /** 코디 카드 👍👎 — 스타일(기존 저장소)과 색·종류·조합 방식을 함께 학습한다 */
@@ -190,6 +192,7 @@ object TastePreferenceStore {
             )
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_EVENTS, arr.toString()).apply()
+        DbSync.pushTasteEvents(_events.value)
     }
 }
 

@@ -3,7 +3,7 @@ API 응답/요청 스키마 정의.
 앱(Compose)의 각 화면 data class와 1:1로 대응되도록 설계.
 """
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from typing import Optional
+from typing import Literal, Optional
 from datetime import date
 
 
@@ -191,6 +191,11 @@ class Product(BaseModel):
     bgColor: str
     badge: Optional[str] = None      # "AI추천" / "베스트" / None
     imageUrl: str
+    # DB 카탈로그 연동 후 추가 (없어도 됨)
+    productKey: Optional[str] = None # 앱 ShopCatalog 상품 id (구매 링크) — 관심 상품과 같은 값
+    productUrl: Optional[str] = None
+    category: Optional[str] = None
+    mallName: Optional[str] = None
 
 
 class ShopResponse(BaseModel):
@@ -216,6 +221,13 @@ class Profile(BaseModel):
     favoriteCount: int
     bodyType: Optional[str] = None
     preferredStyles: list[str] = []
+    gender: Optional[str] = None     # FEMALE / MALE (마이페이지 성별 설정)
+    interestCount: int = 0           # 관심 상품 수
+
+
+class GenderRequest(BaseModel):
+    """마이페이지 성별 설정 (null 이면 설정 해제)"""
+    gender: Optional[Literal["FEMALE", "MALE"]] = None
 
 
 class UpdateStylesRequest(BaseModel):
@@ -399,3 +411,89 @@ class SizeChartRow(BaseModel):
 class SizeChartResponse(BaseModel):
     totalCount: int
     rows: list[SizeChartRow]
+
+
+# ---------- 관심 상품 (앱 ProductInterestStore → DB) ----------
+
+class ProductInterestSyncRequest(BaseModel):
+    """폰의 관심 상품 id 목록 (누른 순서). 서버는 이 목록과 똑같아지도록 추가 · 삭제한다."""
+    productIds: list[str] = Field(max_length=500)
+
+    @field_validator('productIds')
+    @classmethod
+    def valid_ids(cls, ids):
+        cleaned = []
+        for value in ids:
+            value = (value or '').strip()
+            if not value or len(value) > 512:
+                raise ValueError('Product id must be 1~512 characters')
+            if value not in cleaned:
+                cleaned.append(value)
+        return cleaned
+
+
+class ProductInterestItem(BaseModel):
+    productKey: str
+    position: int
+    addedAt: Optional[int] = None    # Unix 밀리초 (서버에 처음 저장된 시각)
+    # 카탈로그(products)에 있는 상품이면 함께 채움
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    price: Optional[int] = None
+    imageUrl: Optional[str] = None
+    productUrl: Optional[str] = None
+
+
+class ProductInterestResponse(BaseModel):
+    totalCount: int
+    items: list[ProductInterestItem]
+
+
+class PopularInterest(BaseModel):
+    productKey: str
+    interestCount: int               # 이 상품을 관심 상품으로 담은 사용자 수
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    imageUrl: Optional[str] = None
+
+
+class PopularInterestResponse(BaseModel):
+    items: list[PopularInterest]
+
+
+# ---------- 취향 평가 기록 (앱 TastePreferenceStore → DB) ----------
+
+class TasteEventItem(BaseModel):
+    at: int = Field(gt=0)            # Unix 밀리초 (평가한 시각)
+    source: Literal["outfit", "card", "worn"]
+    liked: bool
+    colors: list[str] = Field(default_factory=list, max_length=20)
+    kinds: list[str] = Field(default_factory=list, max_length=20)
+    pattern: Optional[str] = None
+    style: Optional[str] = None
+    itemIds: list[str] = Field(default_factory=list, max_length=20)
+    date: Optional[str] = None       # 착용 기록이면 yyyy-MM-dd
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if value is not None and (len(value) != 10 or date.fromisoformat(value).isoformat() != value):
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+
+class TasteEventSyncRequest(BaseModel):
+    """폰의 취향 평가 기록 전체. (평가 시각, 종류)가 같으면 같은 기록으로 본다."""
+    events: list[TasteEventItem] = Field(max_length=5000)
+
+
+class TasteSummary(BaseModel):
+    """DB 기록으로 다시 계산한 취향 점수 (👍 +2 / 👎 −1 / 착용 +1, 한 기록 안의 같은 색 · 종류는 한 번만)"""
+    totalCount: int
+    ratedCount: int
+    wornCount: int
+    colors: dict[str, int]
+    kinds: dict[str, int]
+    patterns: dict[str, int]
+    styles: dict[str, int]
+
