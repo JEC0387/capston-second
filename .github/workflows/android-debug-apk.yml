@@ -158,8 +158,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-24.04]
-        python: ['3.12']
+        os: [windows-latest]
+        python: ['3.11', '3.12', '3.13', '3.14']
+        include:
+          - os: ubuntu-24.04
+            python: '3.12'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     defaults:
