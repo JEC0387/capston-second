@@ -1,3 +1,5 @@
+> 2026-10-18: 이 병합본을 기준으로 체형분석 안정화 및 실제 Android build/test/lint를 수행했다. [BODY_ANALYSIS_FIX_REPORT.md](BODY_ANALYSIS_FIX_REPORT.md)의 최신 결과를 따른다. 실기기·외부 API 실행·실제 사람 정확도는 미검증이다. 아래 내용은 원래 병합 시점의 메모다.
+
 # 손유리 작업 병합 메모 (son-yuri/merge)
 
 `feature/body-analysis-camera`(10/13 통합본) 위에 `son-yuri/frontend`(손유리 10/06·10/13 작업)를 합친 브랜치입니다.

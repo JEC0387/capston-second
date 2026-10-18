@@ -2,6 +2,9 @@ package com.jeiu.fashionproject.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.material.icons.filled.CenterFocusStrong
+import com.jeiu.fashionproject.data.TryOnGarment
+import com.jeiu.fashionproject.data.TryOnRepository
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -32,6 +35,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.verticalScroll
+import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -158,6 +164,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
     val wardrobeItems by WardrobeStore.items.collectAsState()
 
     var bodyPhoto by remember { mutableStateOf<Uri?>(null) }
+    var photoGeneration by remember { mutableLongStateOf(0L) }
     var body by remember { mutableStateOf<FittingPoseDetector.BodyPoints?>(null) }
     var poseStatus by remember { mutableStateOf(PoseStatus.NONE) }
     var canvasSize by remember { mutableStateOf(Size.Zero) }
@@ -175,11 +182,17 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         bodyPhoto = uri
+        photoGeneration++
+        val requestGeneration = photoGeneration
         body = null
         poseStatus = PoseStatus.LOADING
         scope.launch {
-            body = FittingPoseDetector.detect(context, uri)
-            poseStatus = if (body != null) PoseStatus.FOUND else PoseStatus.NOT_FOUND
+            val detected = try { FittingPoseDetector.detect(context, uri) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (_: Exception) { null }
+            if (requestGeneration != photoGeneration) return@launch
+            body = detected
+            poseStatus = if (detected != null) PoseStatus.FOUND else PoseStatus.NOT_FOUND
             worn.keys.toList().forEach { refit(it) }
         }
     }
@@ -202,8 +215,22 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
     }
 
     val active = activeSlot?.let { worn[it] }
+    var showAi by remember { mutableStateOf(false) }
+    var aiSelection by remember { mutableStateOf<List<TryOnGarment>>(emptyList()) }
+    if (showAi) {
+        AiTryOnScreen(
+            defaultPhoto = bodyPhoto,
+            garments = aiSelection,
+            onBack = { showAi = false }
+        )
+        return
+    }
 
-    Column(modifier = Modifier.fillMaxSize().background(Cream)) {
+
+    BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
+    val compact = maxHeight < 480.dp
+    val controlsMaxHeight = (maxHeight * if (compact) 0.3f else 0.4f).coerceAtMost(260.dp)
+    Column(modifier = Modifier.fillMaxSize()) {
         // 헤더
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -233,9 +260,26 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                     onClick = { worn.keys.toList().forEach { refit(it) } },
                     enabled = worn.isNotEmpty()
                 ) {
-                    Icon(Icons.Filled.AutoFixHigh, contentDescription = "몸에 맞추기", tint = if (worn.isNotEmpty()) Camel else MediumGray)
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = "수동 배치 초기화 · 관절 위치에 맞추기", tint = if (worn.isNotEmpty()) Camel else MediumGray)
                 }
             }
+        }
+
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+            Text(if (compact) "수동 배치 · AI 생성은 별도 기능이에요."
+                else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
+                color = Brown, style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = {
+                aiSelection = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
+                    g.item.originalUri ?: g.item.imageUri) }
+                showAi = true
+            }, contentPadding = PaddingValues(vertical = 2.dp)) {
+                Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (TryOnRepository.hasKey()) "AI로 입어보기" else "AI 피팅 연결 안내", color = Camel)
+            }
+            if (!compact && !TryOnRepository.hasKey()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
+                color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
         // 피팅 캔버스
@@ -263,7 +307,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
             if (bodyPhoto == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "정면 전신 사진을 선택하면\n옷을 어깨·골반에 맞춰 입혀볼 수 있어요",
+                        "정면 전신 사진을 선택하면\n옷 사진을 어깨·골반에 맞춰 배치할 수 있어요",
                         style = MaterialTheme.typography.bodyMedium, color = MediumGray
                     )
                     Button(
@@ -321,6 +365,8 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
             }
         }
 
+        Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
+            .verticalScroll(rememberScrollState()).testTag("manualFittingControls")) {
         // 입은 옷 — 누르면 그 옷을 조절, X로 벗기
         // (전신 사진을 고른 뒤에는 조절 영역 높이를 고정해, 옷을 입혀도 사진 위치가 바뀌지 않게 한다)
         if (bodyPhoto != null) {
@@ -401,7 +447,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
 
         // 입어볼 옷 선택 (종류별로 한 벌씩 함께 입을 수 있음)
         Text(
-            "입어볼 옷 선택 · 종류별로 한 벌씩 함께 입어져요",
+            "입어볼 옷 선택 · 종류별로 한 벌씩 배치해요",
             style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
@@ -443,5 +489,8 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 }
             }
         }
+        }
+
+    }
     }
 }

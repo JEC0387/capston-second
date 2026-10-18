@@ -1,3 +1,7 @@
+> 최신 실기기 오류 수정은 REAL_DEVICE_FIX_HANDOFF.md / REAL_DEVICE_FIX_REPORT.md / RESUME_PROMPT.md를 따른다. 아래 과거 결과와 최신 검증 결과를 구분한다.
+
+> 2026-10-18 최신 체형분석 작업: 기존 `fix/body-analysis-20261018`, 시작 `0ddf197` 기준이다. 현재 상태·SAFEPOINT·실제 테스트·재개 명령은 [BODY_ANALYSIS_FIX_HANDOFF.md](BODY_ANALYSIS_FIX_HANDOFF.md), 최종 결과는 [BODY_ANALYSIS_FIX_REPORT.md](BODY_ANALYSIS_FIX_REPORT.md)를 우선 확인한다. 아래 10/13 내용은 이전 개발의 역사적 기록이다.
+
 # Current Development Handoff
 
 2026-10-13 (Asia/Seoul) 클라우드 개발 검증 완료. 저장소는 `/workspace/capstone-integration-backup`, Android 프로젝트는 `capston-second-main/fashion_app`이다.

@@ -30,19 +30,19 @@ class BodySegmenter(context: Context) {
     }
 
     @Synchronized
-    fun measureWidths(bitmap: Bitmap, points: Map<Joint, GuidePoint>): BodyWidths? {
-        val seg = segmenter ?: return null
+    fun inspectWidths(bitmap: Bitmap, points: Map<Joint, GuidePoint>): SilhouetteMeasurement {
+        val seg = segmenter ?: return SilhouetteMeasurement(issue = SilhouetteIssue.MODEL_UNAVAILABLE)
         return runCatching {
             val input = BitmapImageBuilder(bitmap).build()
             try {
                 val result = seg.segment(input)
-                val masks = result.confidenceMasks().orElse(null) ?: return null
+                val masks = result.confidenceMasks().orElse(null) ?: return SilhouetteMeasurement(issue = SilhouetteIssue.INVALID_MASK)
                 try {
                     // Bundled model metadata labels.txt contains only "selfie": channel 0 is person probability.
                     // Do not interpret its category IDs as multiclass clothing/body labels.
-                    val mask = masks.singleOrNull() ?: return null
+                    val mask = masks.singleOrNull() ?: return SilhouetteMeasurement(issue = SilhouetteIssue.INVALID_MASK)
                     val buffer = ByteBufferExtractor.extract(mask).duplicate().order(ByteOrder.nativeOrder())
-                    if (buffer.capacity().toLong() < mask.width.toLong() * mask.height * 4L) return null
+                    if (buffer.capacity().toLong() < mask.width.toLong() * mask.height * 4L) return SilhouetteMeasurement(issue = SilhouetteIssue.INVALID_MASK)
                     // Limit mask geometry work/memory. Separate X/Y scaling maps it exactly back to the bitmap.
                     val scale = minOf(1f, 512f / maxOf(mask.width, mask.height))
                     val w = (mask.width * scale).roundToInt().coerceAtLeast(1)
@@ -52,13 +52,13 @@ class BodySegmenter(context: Context) {
                         val y = (((i / w) + 0.5f) * mask.height / h).toInt().coerceAtMost(mask.height - 1)
                         buffer.getFloat((y * mask.width + x) * 4)
                     }
-                    SilhouetteMeasurer.measure(confidence, w, h, bitmap.width, bitmap.height, points)
+                    SilhouetteMeasurer.inspect(confidence, w, h, bitmap.width, bitmap.height, points)
                 } finally {
                     masks.forEach { it.close() }
                     result.categoryMask().orElse(null)?.close()
                 }
             } finally { input.close() }
-        }.getOrNull()
+        }.getOrElse { SilhouetteMeasurement(issue = SilhouetteIssue.INVALID_MASK) }
     }
 
     @Synchronized

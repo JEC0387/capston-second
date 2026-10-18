@@ -33,6 +33,13 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.TryOnRepository
+import com.jeiu.fashionproject.data.TryOnBatch
+import com.jeiu.fashionproject.data.TryOnPlan
+import com.jeiu.fashionproject.data.TryOnGarment
+import com.jeiu.fashionproject.data.TryOnFailure
+import kotlinx.coroutines.TimeoutCancellationException
+import com.jeiu.fashionproject.ui.viewmodel.PhotoTransferConsent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.jeiu.fashionproject.data.advice
 import com.jeiu.fashionproject.data.isRainy
@@ -311,8 +318,8 @@ fun MusinsaClosetScreen(
                                 if (item.url != null) {
                                     Text("무신사에서 보기 ›", style = MaterialTheme.typography.labelSmall, color = Camel)
                                 }
-                                // 가상피팅은 FASHN 키가 있을 때만 버튼을 보여준다 (유료라 이번 발표 범위에서는 제외)
-                                if (TryOnRepository.hasKey() && TryOnRepository.categoryFor(item.category) != null) {
+                                // 미설정이어도 진입해 서비스 안내를 볼 수 있다. 실제 생성은 별도 동의/설정 검사 후 실행한다.
+                                if (TryOnRepository.categoryFor(item.category) != null) {
                                     Spacer(Modifier.weight(1f))
                                     Text(
                                         "입어보기",
@@ -684,32 +691,68 @@ private fun TryOnView(
     var resultUrl by remember { mutableStateOf<String?>(null) }
     var errorText by remember { mutableStateOf<String?>(null) }
     var showOriginal by remember { mutableStateOf(false) }
+    val transferConsent = remember { PhotoTransferConsent() }
+    var showTransferConsent by remember { mutableStateOf(false) }
     val wearable = tryOnPiecesOf(pieces)
+    var savingResult by remember { mutableStateOf(false) }
+    var saveMessage by remember { mutableStateOf<String?>(null) }
+    val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { target ->
+        val result = resultUrl
+        if (target != null && result != null && !savingResult) {
+            savingResult = true
+            scope.launch {
+                try {
+                    TryOnRepository.saveResult(context, result, target)
+                    saveMessage = "AI 결과 이미지를 저장했어요."
+                } catch (cancelled: CancellationException) { throw cancelled
+                } catch (_: Exception) { saveMessage = "이미지를 저장하지 못했어요. 다시 시도해주세요."
+                } finally { savingResult = false }
+            }
+        }
+    }
+
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { personUri = it; TryOnPhotoHolder.uri = it; resultUrl = null; errorText = null }
+        uri?.let { transferConsent.cancel(); personUri = it; TryOnPhotoHolder.uri = it; resultUrl = null; errorText = null }
     }
 
     fun start() {
         val person = personUri ?: return
+        if (progress != null || wearable.isEmpty() || !TryOnRepository.hasKey() || !transferConsent.consume(person.toString())) return
+        progress = "사진 준비 중…"
         scope.launch {
             errorText = null; resultUrl = null; showOriginal = false
             try {
                 progress = "사진 준비 중…"
-                var current = TryOnRepository.uriToDataUri(context, person)
-                wearable.forEachIndexed { i, item ->
-                    progress = "${item.category} 입히는 중… (${i + 1}/${wearable.size})"
-                    val img = item.image.toString()
-                    val garment = if (img.startsWith("http")) img else TryOnRepository.uriToDataUri(context, Uri.parse(img))
-                    current = TryOnRepository.tryOn(current, garment, TryOnRepository.categoryFor(item.category)!!)
-                }
-                resultUrl = current
+                val input = TryOnRepository.uriToDataUri(context, person)
+                val plan = TryOnPlan.build(wearable.map { TryOnGarment(it.name, it.name, it.category, it.image.toString()) })
+                resultUrl = TryOnBatch.run(plan, input, generate = { current, item ->
+                    val garment = if (TryOnBatch.isResultUrl(item.image)) item.image
+                        else TryOnRepository.uriToDataUri(context, Uri.parse(item.image))
+                    TryOnRepository.tryOn(current, garment, TryOnRepository.categoryFor(item.category)!!)
+                }, progress = { index, total -> progress = "AI가 옷을 입혀주고 있어요… ($index/$total)" })
+            } catch (_: TimeoutCancellationException) {
+                errorText = "AI 피팅이 오래 걸려요. 서버 작업·차감 여부를 확인한 뒤 재시도해주세요."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                errorText = e.message ?: "가상피팅에 실패했어요"
+                errorText = if (e is TryOnFailure) e.message else "AI 피팅을 완료하지 못했어요. 사진과 네트워크를 확인해주세요."
             } finally {
                 progress = null
             }
         }
+    }
+
+    if (showTransferConsent) {
+        AlertDialog(onDismissRequest = { transferConsent.cancel(); showTransferConsent = false },
+            title = { Text("외부 서비스에 사진을 전송할까요?") },
+            text = { Text("가상피팅을 위해 선택한 전신 사진과 의류 이미지를 FASHN(api.fashn.ai)으로 전송해요. ${wearable.size}벌을 순서대로 생성하며 최대 ${wearable.size}회 생성 요청해요. 중간 결과도 다시 전송하며 재시도는 추가 요청이에요. 현재 요금·크레딧 정책을 확인해주세요. 얼굴·체형·세부 디자인이나 실제 제품 핏은 보장하지 않아요. 체형분석 동의와 별개이고, 거부해도 체형분석과 기본 추천은 사용할 수 있어요. 전송 후 처리·보관은 외부 서비스 정책을 따라요.") },
+            confirmButton = { TextButton(onClick = {
+                val photo = personUri
+                showTransferConsent = false
+                if (photo != null && transferConsent.confirm(photo.toString())) start()
+            }) { Text("확인하고 전송") } },
+            dismissButton = { TextButton(onClick = { transferConsent.cancel(); showTransferConsent = false }) { Text("전송하지 않기") } })
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -795,12 +838,20 @@ private fun TryOnView(
             }
             if (!TryOnRepository.hasKey()) {
                 Text(
-                    "FASHN API 키가 없어요. local.properties에 FASHN_API_KEY를 넣고 다시 빌드해 주세요.",
+                    "AI 피팅 서비스가 아직 연결되지 않았어요. 체형분석과 기본 추천은 계속 사용할 수 있어요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color(0xFFB3261E)
                 )
             }
             errorText?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB3261E)) }
+
+            if (resultUrl != null && progress == null) {
+                Text("AI 피팅이 완료됐어요! ✨", color = Brown)
+                OutlinedButton(enabled = !savingResult, onClick = { savePicker.launch("ai-fitting-${System.currentTimeMillis()}.jpg") }) {
+                    Text(if (savingResult) "저장 중…" else "결과 이미지 저장")
+                }
+            }
+            saveMessage?.let { Text(it, color = Brown) }
 
             // 입어볼 옷 + 구매 버튼
             Text("입어볼 옷", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
@@ -852,7 +903,7 @@ private fun TryOnView(
                 }
             }
             Text(
-                "FASHN AI 가상피팅 · 옷 1벌 입힐 때마다 1크레딧이 사용돼요",
+                "FASHN AI 가상피팅 · 최대 ${wearable.size}회 생성 요청 · 현재 서비스 요금·크레딧 정책 적용",
                 style = MaterialTheme.typography.labelSmall,
                 color = MediumGray
             )
@@ -861,8 +912,14 @@ private fun TryOnView(
 
         Box(modifier = Modifier.fillMaxWidth().background(White).padding(16.dp)) {
             Button(
-                onClick = { if (personUri == null) picker.launch("image/*") else start() },
-                enabled = progress == null && wearable.isNotEmpty() && TryOnRepository.hasKey(),
+                onClick = {
+                    val photo = personUri
+                    if (photo == null) picker.launch("image/*") else {
+                        transferConsent.request(photo.toString())
+                        showTransferConsent = true
+                    }
+                },
+                enabled = progress == null && !savingResult && wearable.isNotEmpty() && TryOnRepository.hasKey(),
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)

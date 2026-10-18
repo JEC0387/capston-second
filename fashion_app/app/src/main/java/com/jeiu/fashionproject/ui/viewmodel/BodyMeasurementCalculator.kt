@@ -35,6 +35,21 @@ object BodyMeasurementCalculator {
         text.toFloatOrNull()?.takeIf(::validHeight) else null
     fun validHeight(value: Float) = value.isFinite() && value in MIN_HEIGHT_CM..MAX_HEIGHT_CM
 
+    /** Shared numerical/calibration guard for session, storage and recommendations. */
+    fun isValid(m: BodyMeasurements?): Boolean {
+        if(m==null || !validHeight(m.heightCm) || m.measuredAt<=0L ||
+            !m.cmPerPixel.isFinite() || m.cmPerPixel<=0f ||
+            !m.measuredBodyHeightPx.isFinite() || m.measuredBodyHeightPx<200f) return false
+        if(kotlin.math.abs(m.cmPerPixel*m.measuredBodyHeightPx-m.heightCm)>m.heightCm*.0001f)return false
+        fun width(v:Float,range:ClosedFloatingPointRange<Float>,ratio:ClosedFloatingPointRange<Float>)=
+            v.isFinite() && v in range && v/m.heightCm in ratio
+        if(!width(m.shoulderWidthCm,15f..75f,.12f.. .40f) ||
+            !width(m.waistWidthCm,12f..80f,.09f.. .45f) || !width(m.hipWidthCm,15f..85f,.12f.. .45f))return false
+        if(m.legLengthCm!=null && (!m.legLengthCm.isFinite() || m.legLengthCm/m.heightCm !in .25f.. .65f))return false
+        if(m.torsoLengthCm!=null && (!m.torsoLengthCm.isFinite() || m.torsoLengthCm/m.heightCm !in .15f.. .40f))return false
+        return true
+    }
+
     fun calculate(heightCm: Float?, pixels: BodyWidths?, measuredAt: Long): BodyMeasurements? {
         if (heightCm == null || !validHeight(heightCm) || pixels == null || !pixels.fullBodyReliable) return null
         val heightPx = pixels.bodyHeightPx ?: return null

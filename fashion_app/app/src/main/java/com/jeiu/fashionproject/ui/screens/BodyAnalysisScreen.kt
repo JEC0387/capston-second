@@ -1,6 +1,12 @@
 package com.jeiu.fashionproject.ui.screens
 
 import android.net.Uri
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.platform.testTag
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -11,6 +17,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CameraAlt
@@ -34,6 +44,10 @@ import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
 import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
 import com.jeiu.fashionproject.ui.theme.*
+import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryFlow
+import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryRequest
+import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryStep
+import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoSource
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisViewModel
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurementCalculator
@@ -47,30 +61,97 @@ fun BodyAnalysisScreen(
     onHistory: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val state by viewModel.state.collectAsState()
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
 
-    val imagePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let { viewModel.analyzeImage(context, it) }
+    val entryFlow = remember { BodyPhotoEntryFlow() }
+    var entryPrompt by remember { mutableStateOf<BodyPhotoEntryRequest?>(null) }
+    var selectedForConsent by remember { mutableStateOf<Uri?>(null) }
+    var entryError by remember { mutableStateOf<String?>(null) }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        entryFlow.returnedFromExternal()
+        if (uri != null) {
+            if (PrivacyConsent.hasAgreed(context)) viewModel.analyzeImage(context, uri)
+            else selectedForConsent = uri
+        }
     }
-
-    // 개인정보 동의 — 동의하기 전에는 촬영 · 사진 선택을 시작하지 않는다
-    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
-    fun withConsent(action: () -> Unit) {
-        if (PrivacyConsent.hasAgreed(context)) action() else pendingAction = action
+    fun proceed(request: BodyPhotoEntryRequest?) {
+        if (request == null) return
+        entryPrompt = request.takeUnless { it.step == BodyPhotoEntryStep.LAUNCH }
+        if (request.step == BodyPhotoEntryStep.LAUNCH) {
+            entryError = null
+            try {
+                when (request.source) {
+                    BodyPhotoSource.CAMERA -> onCameraClick()
+                    BodyPhotoSource.GALLERY -> imagePicker.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            } catch (_: RuntimeException) {
+                entryFlow.returnedFromExternal()
+                entryError = "촬영·사진 선택을 열지 못했어요. 잠시 후 다시 시도해주세요."
+            }
+        }
     }
-    pendingAction?.let { action ->
+    fun requestPhoto(source: BodyPhotoSource) {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        proceed(entryFlow.request(source, heightInput, PrivacyConsent.hasAgreed(context)))
+    }
+    fun dismissEntry() { entryPrompt = null; selectedForConsent = null; entryFlow.cancel() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) entryFlow.returnedFromExternal()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    if (entryPrompt?.step == BodyPhotoEntryStep.HEIGHT) {
+        AlertDialog(
+            onDismissRequest = ::dismissEntry,
+            title = { Text("분석에 사용할 키를 입력해주세요") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = heightInput, onValueChange = viewModel::updateHeightInput,
+                    label = { Text("키 (cm)") }, singleLine = true,
+                    supportingText = { Text("100~230 cm, 소수점 첫째 자리까지 입력해주세요. 키는 cm 환산에 필요해요.") },
+                    isError = heightInput.isNotEmpty() && !validHeight,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); keyboard?.hide() }),
+                    modifier = Modifier.testTag("bodyHeightDialogInput")
+                )
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = validHeight, modifier = Modifier.testTag("bodyHeightContinue"),
+                    onClick = { proceed(entryFlow.advance(heightInput, PrivacyConsent.hasAgreed(context))) }) {
+                    Text("계속", color = Camel)
+                }
+            },
+            dismissButton = { TextButton(onClick = ::dismissEntry) { Text("취소") } }
+        )
+    }
+    if (entryPrompt?.step == BodyPhotoEntryStep.CONSENT || selectedForConsent != null) {
         BodyPhotoConsentDialog(
             onAgree = { saveRecords ->
                 PrivacyConsent.agree(context, saveRecords)
-                pendingAction = null
-                action()
+                val selected = selectedForConsent
+                selectedForConsent = null
+                if (selected != null) viewModel.analyzeImage(context, selected)
+                else proceed(entryFlow.advance(heightInput, true))
             },
-            onDismiss = { pendingAction = null }
+            onDismiss = ::dismissEntry
         )
+    }
+
+    BackHandler { viewModel.reset(); onBack() }
+    val activeRequest = (state as? BodyAnalysisUiState.Analyzing)?.requestId
+    DisposableEffect(activeRequest) {
+        onDispose { activeRequest?.let(viewModel::cancelRequest) }
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -78,7 +159,7 @@ fun BodyAnalysisScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = { viewModel.reset(); onBack() }) {
                 Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack)
             }
             Text(
@@ -92,22 +173,28 @@ fun BodyAnalysisScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
+                    Text("1. 키 입력 (필수)", color = Brown, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = heightInput,
                         onValueChange = viewModel::updateHeightInput,
                         label = { Text("키 (cm)") },
                         placeholder = { Text("예: 170 또는 170.5") },
-                        supportingText = { Text("키를 먼저 입력해주세요. 지원 범위 100~230 cm, 소수점 첫째 자리까지") },
+                        supportingText = { Text(
+                            if (validHeight) "입력한 키로 cm를 환산해요. 아래 촬영 또는 사진 선택을 눌러주세요."
+                            else "키는 cm 환산에 필요해요. 100~230 cm를 입력해주세요. 버튼을 먼저 누르면 키 입력 안내가 나와요.",
+                            modifier = Modifier.testTag("bodyHeightHelp")) },
                         isError = heightInput.isNotEmpty() && !validHeight,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); keyboard?.hide() }),
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().testTag("bodyHeightInput")
                     )
                     Box(
                         modifier = Modifier
@@ -116,7 +203,7 @@ fun BodyAnalysisScreen(
                             .clip(RoundedCornerShape(20.dp))
                             .border(1.5.dp, LightGray, RoundedCornerShape(20.dp))
                             .background(White)
-                            .clickable(enabled = validHeight) { imagePicker.launch("image/*") },
+                            .testTag("bodyGalleryPicker").clickable { requestPhoto(BodyPhotoSource.GALLERY) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(
@@ -190,9 +277,8 @@ fun BodyAnalysisScreen(
                     }
 
                     Button(
-                        onClick = { withConsent(onCameraClick) },
-                        enabled = validHeight,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        onClick = { requestPhoto(BodyPhotoSource.CAMERA) },
+                        modifier = Modifier.testTag("bodyCameraButton").fillMaxWidth().height(52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
                     ) {
@@ -206,9 +292,8 @@ fun BodyAnalysisScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { withConsent { imagePicker.launch("image/*") } },
-                        enabled = validHeight,
-                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        onClick = { requestPhoto(BodyPhotoSource.GALLERY) },
+                        modifier = Modifier.testTag("bodyGalleryButton").fillMaxWidth().height(48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel),
                         border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
@@ -221,6 +306,7 @@ fun BodyAnalysisScreen(
                         )
                     }
 
+                    entryError?.let { Text(it, color = Brown, modifier = Modifier.testTag("bodyEntryError")) }
                     PrivacyNote()
                     TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
                         Text("지난 측정 기록 · 변화 그래프 보기", color = Brown)
@@ -246,6 +332,7 @@ fun BodyAnalysisScreen(
                             )
                         }
                     }
+                    TextButton(onClick = viewModel::reset) { Text("분석 취소") }
                 }
 
                 is BodyAnalysisUiState.Success -> {
@@ -255,7 +342,7 @@ fun BodyAnalysisScreen(
                         "허리 너비" to result.waistRatio,
                         "힙 너비" to result.hipRatio,
                         "다리 길이" to result.legRatio,
-                    )
+                    ).mapNotNull { (label, ratio) -> ratio?.let { label to it } }
 
                     // 분석한 사진
                     Box(
@@ -290,7 +377,7 @@ fun BodyAnalysisScreen(
                             ) {
                                 Column {
                                     Text(
-                                        "분석 완료! · 신뢰도 ${result.confidence}%",
+                                        "관절 검출 참고값 ${result.confidence}/100 · 판정 정확도 아님",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Camel,
                                         fontWeight = FontWeight.Medium
@@ -313,11 +400,13 @@ fun BodyAnalysisScreen(
                             HorizontalDivider(color = LightGray)
 
                             Text(
-                                "신체 비율 분석",
+                                "신체 비율 추정 (정면 너비, 둘레 아님)",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = CharcoalBlack,
                                 fontWeight = FontWeight.SemiBold
                             )
+                            Text("너비는 최대 너비 대비, 다리는 입력 키 대비 고관절~발목 길이예요.",
+                                style = MaterialTheme.typography.bodySmall, color = MediumGray)
                             proportions.forEach { (label, ratio) ->
                                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Row(
@@ -489,6 +578,18 @@ fun BodyAnalysisScreen(
                     }
                 }
 
+                is BodyAnalysisUiState.Partial -> {
+                    Text(if (s.measurements != null) "일부 측정 완료 · 체형 판정 보류" else "분석 불가 · 체형 판정 보류", style = MaterialTheme.typography.titleLarge, color = Brown)
+                    Text(s.message, color = MediumGray)
+                    Text("측정이 불확실한 결과는 기록이나 추천에 사용하지 않아요.", color = MediumGray)
+                    s.measurements?.let { cm ->
+                        Text("이번 사진의 정면 너비 추정: 어깨 %.1f / 허리 %.1f / 힙 %.1f cm".format(
+                            cm.shoulderWidthCm,cm.waistWidthCm,cm.hipWidthCm), color = MediumGray)
+                        Text("분류가 보류된 측정값은 현재 세션·서버 기록에 저장하지 않아요.", color = MediumGray)
+                    }
+                    Button(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.CAMERA) }) { Text("다시 촬영하기") }
+                    OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.GALLERY) }) { Text("사진 다시 선택하기") }
+                }
                 is BodyAnalysisUiState.Error -> {
                     Box(
                         modifier = Modifier
@@ -515,11 +616,14 @@ fun BodyAnalysisScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
                     ) {
                         Text(
-                            "다시 시도하기",
+                            "처음으로 돌아가기",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                     }
+                    OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.CAMERA) }) { Text("다시 촬영하기") }
+                    OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.GALLERY) }) { Text("사진 다시 선택하기") }
+
                 }
             }
 

@@ -291,6 +291,7 @@ fun AppNavigation() {
             }
             composable(Screen.StyleSuggestion.route) {
                 StyleSuggestionScreen(
+                    analysis = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.result,
                     onBack = { navController.popBackStack() },
                     onProductClick = { navController.navigate(Screen.ProductDetail.route) }
                 )

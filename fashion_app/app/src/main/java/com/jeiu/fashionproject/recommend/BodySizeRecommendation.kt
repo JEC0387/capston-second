@@ -32,7 +32,12 @@ object BodySizeRecommendation {
      */
     fun suggest(body: BodyMeasurements, rows: List<GarmentSizeRow>): List<ShoulderSizeSuggestion> {
         val shoulder = body.shoulderWidthCm
-        if (!shoulder.isFinite() || shoulder <= 0f) return emptyList()
+        // This recommendation uses only shoulder flat width. Do not infer circumference from waist/hip.
+        if (!com.jeiu.fashionproject.ui.viewmodel.BodyMeasurementCalculator.validHeight(body.heightCm) ||
+            !shoulder.isFinite() || shoulder !in 15f..75f || shoulder/body.heightCm !in .12f.. .40f ||
+            !body.cmPerPixel.isFinite() || body.cmPerPixel<=0f || !body.measuredBodyHeightPx.isFinite() ||
+            body.measuredBodyHeightPx<200f || body.measuredAt<=0L ||
+            kotlin.math.abs(body.cmPerPixel*body.measuredBodyHeightPx-body.heightCm)>body.heightCm*.0001f) return emptyList()
         return rows.asSequence()
             .filter { it.category == "상의" || it.category == "아우터" }
             .filter { it.measureType == "단면" && it.brand.isNotBlank() && it.sizeLabel.isNotBlank() }

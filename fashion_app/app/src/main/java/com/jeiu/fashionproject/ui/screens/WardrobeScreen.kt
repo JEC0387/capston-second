@@ -14,9 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import com.jeiu.fashionproject.ui.components.WardrobeContentGrid
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -95,6 +94,13 @@ fun WardrobeScreen(
     // 관심상품 하트와 구분하도록 보유 옷 즐겨찾기는 별 표시를 사용한다.
     val displayList = filtered.sortedBy { it.owned?.favoritedAt ?: Long.MAX_VALUE }
 
+    val gridState = rememberLazyListState()
+    val unworn = remember(allDisplayed, logs) { WearAnalyzer.unworn(allDisplayed, logs) }
+    var missingReport by remember { mutableStateOf<MissingItemFinder.Report?>(null) }
+    LaunchedEffect(allDisplayed) {
+        missingReport = withContext(Dispatchers.Default) { MissingItemFinder.analyze(allDisplayed) }
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 헤더
         Row(
@@ -122,86 +128,89 @@ fun WardrobeScreen(
             }
         }
 
-        // 3개월 넘게 안 입은 옷 알림 (해당 옷이 있을 때만)
-        val unworn = remember(allDisplayed, logs) { WearAnalyzer.unworn(allDisplayed, logs) }
-        UnwornAlertCard(
-            result = unworn,
-            onDelete = { WardrobeStore.remove(context, it.id) },
-            onKeep = { WardrobeStore.keep(context, it.id) },
-            modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)
-        )
+        WardrobeContentGrid(
+            entries = displayList,
+            key = { it.key },
+            state = gridState,
+            modifier = Modifier.weight(1f),
+            banners = {
+                // 3개월 넘게 안 입은 옷 알림 (해당 옷이 있을 때만)
+                UnwornAlertCard(
+                    result = unworn,
+                    onDelete = { WardrobeStore.remove(context, it.id) },
+                    onKeep = { WardrobeStore.keep(context, it.id) },
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
 
-        // "이것만 사면 코디 완성" 요약 (계획 4 — 5단계). 계산은 화면이 멈추지 않게 따로 한다
-        var missingReport by remember { mutableStateOf<MissingItemFinder.Report?>(null) }
-        LaunchedEffect(allDisplayed) {
-            missingReport = withContext(Dispatchers.Default) { MissingItemFinder.analyze(allDisplayed) }
-        }
-        missingReport?.let { r ->
-            BuyThisCard(r, onClick = onMissingItem, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
-        }
-
-        // 무신사 랭킹 옷장으로 들어가는 카드
-        Card(
-            onClick = onMusinsaCloset,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = CamelLight)
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("무신사 랭킹 옷장", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
-                    Text("20대 인기 상품으로 날씨 코디 · 가상 피팅 해보기", style = MaterialTheme.typography.labelSmall, color = Brown)
+                // "이것만 사면 코디 완성" 요약 (계획 4 — 5단계). 계산은 화면이 멈추지 않게 따로 한다
+                missingReport?.let { r ->
+                    BuyThisCard(r, onClick = onMissingItem, modifier = Modifier.padding(bottom = 4.dp))
                 }
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Brown)
-            }
-        }
 
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ClothingScope.entries.forEach { scope ->
-                FilterChip(selected = selectedScope == scope, onClick = { selectedScope = scope },
-                    label = { Text(scope.label) })
-            }
-        }
-
-        // 카테고리 탭
-        ScrollableTabRow(
-            selectedTabIndex = categories.indexOf(selectedCategory),
-            containerColor = Cream,
-            contentColor = Camel,
-            edgePadding = 20.dp,
-            indicator = {},
-            divider = {}
-        ) {
-            categories.forEach { cat ->
-                val isSelected = cat == selectedCategory
-                Tab(
-                    selected = isSelected,
-                    onClick = { selectedCategory = cat },
-                    modifier = Modifier
-                        .padding(horizontal = 4.dp, vertical = 8.dp)
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (isSelected) Camel else CreamDark)
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                // 무신사 랭킹 옷장으로 들어가는 카드
+                Card(
+                    onClick = onMusinsaCloset,
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = CamelLight)
                 ) {
-                    Text(
-                        cat,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (isSelected) White else MediumGray
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("무신사 랭킹 옷장", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
+                            Text("20대 인기 상품으로 날씨 코디 · 가상 피팅 해보기", style = MaterialTheme.typography.labelSmall, color = Brown)
+                        }
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Brown)
+                    }
                 }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            },
+            filters = {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ClothingScope.entries.forEach { scope ->
+                        FilterChip(selected = selectedScope == scope, onClick = { selectedScope = scope },
+                            label = { Text(scope.label) })
+                    }
+                }
 
-        // Scope and category filters share one projection of the current interest state.
-        if (displayList.isEmpty()) {
-            Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+                // 카테고리 탭
+                ScrollableTabRow(
+                    selectedTabIndex = categories.indexOf(selectedCategory),
+                    containerColor = Cream,
+                    contentColor = Camel,
+                    edgePadding = 4.dp,
+                    indicator = {},
+                    divider = {}
+                ) {
+                    categories.forEach { cat ->
+                        val isSelected = cat == selectedCategory
+                        Tab(
+                            selected = isSelected,
+                            onClick = { selectedCategory = cat },
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp, vertical = 8.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (isSelected) Camel else CreamDark)
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Text(
+                                cat,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (isSelected) White else MediumGray
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+            },
+            empty = {
+            Column(Modifier.fillMaxWidth().heightIn(min = 200.dp).padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Text(OutfitSources.emptyMessage(selectedScope, selectedCategory), color = MediumGray)
@@ -212,20 +221,14 @@ fun WardrobeScreen(
                     TextButton(onClick = onShop) { Text("쇼핑 둘러보기") }
                 }
             }
-        } else LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(displayList, key = { entry -> entry.key }) { entry ->
+            }
+        ) { entry ->
                 val product = entry.product
                 if (product != null) {
                     Card(onClick = {
                         if (product.purchaseUrl.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
                         else onProductDetail()
-                    }, modifier = Modifier.fillMaxWidth().animateItem(), shape = RoundedCornerShape(16.dp),
+                    }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = White)) {
                         Box(Modifier.fillMaxWidth().height(150.dp).background(Color(product.color))) {
                             AsyncImage(model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
@@ -245,15 +248,14 @@ fun WardrobeScreen(
                             }
                         }
                     }
-                    return@items
+                    return@WardrobeContentGrid
                 }
                 val item = entry.owned!!
                 val isFav = item.favoritedAt != null
                 Card(
                     onClick = { detailItemId = item.id },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .animateItem(),
+                        .fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = White),
                     elevation = CardDefaults.cardElevation(1.dp)
@@ -294,7 +296,6 @@ fun WardrobeScreen(
                         }
                     }
                 }
-            }
         }
 
         // 하단 버튼

@@ -1,0 +1,144 @@
+name: Android debug APK
+
+# 이지민의 body-analysis-debug-apk.yml 을 이 저장소 구조(fashion_app/ 이 최상위)에 맞게 옮긴 것.
+# fashion_app 이 바뀐 커밋을 올리면 단위 테스트 → 디버그 APK 빌드 → Lint 를 돌리고,
+# 폰에 설치할 수 있는 APK 를 Actions 실행 화면의 Artifacts 에 올려 준다. (API 키는 넣지 않음)
+on:
+  push:
+    branches:
+      - main
+      - 'merge/**'
+      - 'feature/**'
+    paths:
+      - .github/workflows/android-debug-apk.yml
+      - fashion_app/**
+  pull_request:
+    paths:
+      - .github/workflows/android-debug-apk.yml
+      - fashion_app/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-debug-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ANDROID_USER_HOME: ${{ github.workspace }}/../android-user
+    defaults:
+      run:
+        shell: bash
+        working-directory: fashion_app
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            fashion_app/**/*.gradle.kts
+            fashion_app/gradle.properties
+            fashion_app/gradle/libs.versions.toml
+            fashion_app/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install Android SDK packages
+        run: |
+          mkdir -p "$ANDROID_USER_HOME"
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_HOME" \
+            'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools'
+
+      - name: Keep the debug signing key between builds (so APK updates install over each other)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.ANDROID_USER_HOME }}/debug.keystore
+          key: android-debug-keystore-${{ runner.os }}-v1
+
+      - name: Build debug APK
+        run: set -o pipefail; bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Unit tests
+        run: set -o pipefail; bash gradlew :app:testDebugUnitTest --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/test.log"
+
+      - name: Compile instrumented tests
+        run: set -o pipefail; bash gradlew :app:compileDebugAndroidTestKotlin --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/androidtest.log"
+
+      - name: Show errors as annotations (로그인 없이 볼 수 있게)
+        if: failure()
+        run: |
+          cat "$RUNNER_TEMP"/*.log 2>/dev/null \
+            | grep -E '^e: |error:|FAILED|What went wrong|Exception|expected:|> Task .*FAILED|tests completed' \
+            | grep -v '^\s*at ' | head -80 > "$RUNNER_TEMP/errors.txt" || true
+          msg=$(sed -e 's/%/%25/g' -e 's#file://'"$GITHUB_WORKSPACE"'/##' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
+          echo "::error title=Gradle errors::${msg}"
+          { echo '### Gradle errors'; echo '```'; cat "$RUNNER_TEMP/errors.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Lint
+        continue-on-error: true
+        run: bash gradlew :app:lintDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Prepare APK and build information
+        if: always()
+        run: |
+          [ -f app/build/outputs/apk/debug/app-debug.apk ] || exit 0
+          mkdir -p "$GITHUB_WORKSPACE/apk-artifact"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/apk-artifact/fashion-app-debug.apk"
+          cd "$GITHUB_WORKSPACE/apk-artifact"
+          sha256sum fashion-app-debug.apk > SHA256SUMS.txt
+          printf 'Repository: %s\nBranch: %s\nCommit: %s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" > BUILD_INFO.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging fashion-app-debug.apk | sed -n '1p' >> BUILD_INFO.txt
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fashion-app-debug-apk
+          path: apk-artifact/
+          if-no-files-found: warn
+          retention-days: 30
+          compression-level: 0
+
+      - name: Upload test and lint reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-and-lint-reports
+          path: |
+            fashion_app/app/build/test-results/testDebugUnitTest/
+            fashion_app/app/build/reports/tests/
+            fashion_app/app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 30
+
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies (AI 모델 패키지 제외)
+        run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" python-dotenv httpx opencv-python-headless Pillow numpy
+      - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
+        env:
+          DATABASE_URL: ''
+        run: python -m unittest discover -s tests -v
