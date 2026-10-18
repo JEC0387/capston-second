@@ -134,7 +134,8 @@ def schema_has(db, table: str, column: Optional[str] = None) -> bool:
     if hit is not None and (hit[0] or now - hit[1] < _RECHECK_SECONDS):
         return hit[0]
     try:
-        insp = inspect(bind)
+        # 세션이 쓰는 연결로 확인한다 (다른 연결을 빌렸다 돌려주면서 진행 중인 저장을 되돌리지 않도록)
+        insp = inspect(db.connection())
         ok = insp.has_table(table) and (column is None or any(c['name'] == column for c in insp.get_columns(table)))
     except SQLAlchemyError:
         ok = False

@@ -917,9 +917,11 @@ def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_u
     폰 안의 데이터는 지우지 않는다. 앱은 지운 뒤 서버 백업을 끈다.
     """
     deleted: dict[str, int] = {}
-    for model in (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
-                  ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan):
-        if not schema_has(db, model.__tablename__):   # 아직 만들지 않은 표는 지울 것도 없음
+    models = (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
+              ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan)
+    present = {m.__tablename__: schema_has(db, m.__tablename__) for m in models}   # 지우기 전에 한 번에 확인
+    for model in models:
+        if not present[model.__tablename__]:   # 아직 만들지 않은 표는 지울 것도 없음
             deleted[model.__tablename__] = 0
             continue
         result = db.execute(delete(model).where(model.user_id == user.id))
