@@ -32,4 +32,8 @@ sealed class Screen(val route: String) {
     object MissingItem : Screen("missing_item")
     /** 무신사 랭킹 옷장 — 성별 맞춤 데모 옷 · 날씨 코디 · 가상 피팅 */
     object MusinsaCloset : Screen("musinsa_closet")
+    /** 저장한 코디 · 코디 일정 — tab 1 이면 코디 일정 탭으로 열림 */
+    object OutfitBook : Screen("outfit_book?tab={tab}") {
+        fun route(tab: Int = 0) = "outfit_book?tab=$tab"
+    }
 }

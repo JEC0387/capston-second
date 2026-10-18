@@ -12,15 +12,16 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 import data
 from database import get_db
-from db_models import (BodyMeasurement, Clothing, ClothingPhoto, Product, ProductInterest, ProductLike,
-    RecommendationLog, SizeChart, StyleRating, TasteEvent, User, WearLog)
+from db_models import (BodyMeasurement, Clothing, ClothingPhoto, OutfitPlan, Product, ProductInterest, ProductLike,
+    RecommendationLog, SavedOutfit, SizeChart, StyleRating, TasteEvent, User, WearLog)
 from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, WardrobeSyncRequest,
     SyncResult, WearLogSyncRequest, WearLogResponse, BodyMeasurementIn, BodyMeasurementOut,
     BodyMeasurementHistory, SizeChartResponse, Profile, UpdateStylesRequest,
     StylePreferenceResponse, RatePreferenceRequest, GenderRequest, ProductInterestSyncRequest,
     ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary,
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
-    TasteEventListResponse, DeleteMyDataResult)
+    TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
+    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats)
 
 app = APIRouter()
 
@@ -96,6 +97,8 @@ def clothing_out(c: Clothing, has_photo: bool = False) -> dict:
         "cutoutUri": c.cutout_uri,
         "garmentUri": c.garment_uri,
         "hasPhoto": has_photo,
+        "brand": c.brand,
+        "price": c.price,
     }
 
 
@@ -185,6 +188,8 @@ def sync_wardrobe(req: WardrobeSyncRequest, db: Session = Depends(get_db),
         c.added_at = to_dt(it.addedAt)
         c.favorited_at = to_dt(it.favoritedAt)
         c.kept_at = to_dt(it.keptAt)
+        c.brand = cut((it.brand or "").strip(), 50) or None
+        c.price = it.price if it.price is not None and 0 < it.price <= 100_000_000 else None
         saved += 1
 
     deleted = 0
@@ -876,10 +881,145 @@ def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_u
     """
     deleted: dict[str, int] = {}
     for model in (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
-                  ProductInterest, ProductLike, RecommendationLog):
+                  ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan):
         result = db.execute(delete(model).where(model.user_id == user.id))
         deleted[model.__tablename__] = result.rowcount or 0
     db.execute(delete(User).where(User.id == user.id))
     deleted["users"] = 1
     db.commit()
     return {"deleted": deleted}
+
+
+# ──────────────────────────────────────────────
+# 저장한 코디 (룩북) · 코디 일정
+# ──────────────────────────────────────────────
+
+@app.post("/api/saved-outfits/sync", response_model=SyncResult, tags=["코디 저장 · 일정"])
+def sync_saved_outfits(req: SavedOutfitSyncRequest, db: Session = Depends(get_db),
+                       user: User = Depends(current_user)):
+    """폰의 저장한 코디 목록(최근 저장 순)과 DB 를 똑같이 맞춘다. 같은 옷 조합은 하나로 본다."""
+    existing = {r.client_key: r for r in db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user.id))}
+    seen: set[str] = set()
+    saved = 0
+    for position, o in enumerate(req.outfits):
+        key = item_key(o.itemIds)
+        if key in seen:
+            continue
+        seen.add(key)
+        row = existing.get(key)
+        if row is None:
+            row = SavedOutfit(user_id=user.id, client_key=key)
+            db.add(row)
+        row.item_ids = sorted(set(o.itemIds))
+        row.style, row.pattern = cut(o.style, 20), cut(o.pattern, 20)
+        row.note = cut(o.note, 100)
+        row.position = position
+        row.saved_at = to_dt(o.savedAt) or row.saved_at or datetime.now(timezone.utc)
+        saved += 1
+    deleted = 0
+    for key, row in existing.items():
+        if key not in seen:
+            db.delete(row)
+            deleted += 1
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "동시에 들어온 동기화 요청이 있어요. 잠시 후 다시 보내 주세요") from None
+    return {"saved": saved, "deleted": deleted, "total": len(seen)}
+
+
+@app.get("/api/saved-outfits", response_model=SavedOutfitResponse, tags=["코디 저장 · 일정"])
+def get_saved_outfits(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """저장한 코디 (최근 저장 순)"""
+    rows = list(db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user.id)
+                           .order_by(SavedOutfit.position, SavedOutfit.id)))
+    return {"totalCount": len(rows), "outfits": [{
+        "id": r.client_key, "itemIds": r.item_ids or [], "style": r.style, "pattern": r.pattern,
+        "note": r.note or "", "savedAt": to_ms(r.saved_at),
+    } for r in rows]}
+
+
+@app.post("/api/outfit-plans/sync", response_model=SyncResult, tags=["코디 저장 · 일정"])
+def sync_outfit_plans(req: OutfitPlanSyncRequest, db: Session = Depends(get_db),
+                      user: User = Depends(current_user)):
+    """폰의 코디 일정 전체(날짜마다 하나)와 DB 를 똑같이 맞춘다."""
+    existing = {r.date: r for r in db.scalars(select(OutfitPlan).where(OutfitPlan.user_id == user.id))}
+    saved = 0
+    for p in req.plans:
+        row = existing.get(p.date)
+        if row is None:
+            row = OutfitPlan(user_id=user.id, date=p.date)
+            db.add(row)
+        row.item_ids = list(dict.fromkeys(p.itemIds))
+        row.note = cut(p.note, 100)
+        row.created_at = to_dt(p.createdAt) or row.created_at or datetime.now(timezone.utc)
+        saved += 1
+    keep = {p.date for p in req.plans}
+    deleted = 0
+    for d, row in existing.items():
+        if d not in keep:
+            db.delete(row)
+            deleted += 1
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "동시에 들어온 동기화 요청이 있어요. 잠시 후 다시 보내 주세요") from None
+    return {"saved": saved, "deleted": deleted, "total": len(keep)}
+
+
+@app.get("/api/outfit-plans", response_model=OutfitPlanResponse, tags=["코디 저장 · 일정"])
+def get_outfit_plans(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """코디 일정 (날짜 순)"""
+    rows = list(db.scalars(select(OutfitPlan).where(OutfitPlan.user_id == user.id).order_by(OutfitPlan.date)))
+    return {"totalCount": len(rows), "plans": [{
+        "date": r.date, "itemIds": r.item_ids or [], "note": r.note or "", "createdAt": to_ms(r.created_at),
+    } for r in rows]}
+
+
+# ──────────────────────────────────────────────
+# 전체 통계 (발표용 — 개인 정보 없이 숫자만)
+# ──────────────────────────────────────────────
+
+def _count(db: Session, model) -> int:
+    return db.scalar(select(func.count()).select_from(model)) or 0
+
+
+def _top(rows, n: int = 5) -> list[dict]:
+    counts: dict[str, int] = {}
+    for name in rows:
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    return [{"name": k, "count": v} for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n]]
+
+
+@app.get("/api/stats/overview", response_model=OverviewStats, tags=["상태"])
+def overview_stats(db: Session = Depends(get_db)):
+    """
+    모든 사용자를 합친 DB 현황 — 발표 · 보고서용 (기기 번호 불필요, 개인 정보 없이 개수 · 순위만).
+    옷 종류 · 색 순위, 선호 스타일 순위, 가격을 넣은 옷 평균 가격, 코디 일정대로 입은 비율.
+    """
+    priced = [p for p in db.scalars(select(Clothing.price).where(Clothing.price.is_not(None))) if p and p > 0]
+    styles = [s for row in db.scalars(select(User.preferred_styles)) for s in (row or [])]
+    wear = {(w.user_id, w.date): set(w.item_ids or []) for w in db.scalars(select(WearLog))}
+    today = datetime.now(timezone.utc).date().isoformat()
+    plan_days = followed = 0
+    for p in db.scalars(select(OutfitPlan).where(OutfitPlan.date < today)):
+        got = wear.get((p.user_id, p.date))
+        if got is None:
+            continue
+        plan_days += 1
+        followed += int(all(i in got for i in (p.item_ids or [])))
+    return {
+        "users": _count(db, User), "clothes": _count(db, Clothing), "clothingPhotos": _count(db, ClothingPhoto),
+        "wearLogs": _count(db, WearLog), "savedOutfits": _count(db, SavedOutfit), "outfitPlans": _count(db, OutfitPlan),
+        "productInterests": _count(db, ProductInterest), "tasteEvents": _count(db, TasteEvent),
+        "recommendations": _count(db, RecommendationLog), "bodyMeasurements": _count(db, BodyMeasurement),
+        "topCategories": _top(db.scalars(select(Clothing.category))),
+        "topColors": _top(db.scalars(select(Clothing.color_name))),
+        "topPreferredStyles": _top(styles),
+        "pricedClothes": len(priced),
+        "averagePrice": round(sum(priced) / len(priced)) if priced else None,
+        "planDays": plan_days, "planFollowed": followed,
+    }

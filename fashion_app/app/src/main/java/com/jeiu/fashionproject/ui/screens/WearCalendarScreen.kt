@@ -25,7 +25,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.jeiu.fashionproject.data.OutfitPlanStore
+import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
+import com.jeiu.fashionproject.recommend.CostPerWear
+import com.jeiu.fashionproject.ui.components.OutfitItemsRow
 import com.jeiu.fashionproject.data.WearDates
 import com.jeiu.fashionproject.data.WearLogStore
 import com.jeiu.fashionproject.ui.components.ClothingThumb
@@ -40,15 +44,19 @@ import java.util.Calendar
 @Composable
 fun WearCalendarScreen(
     onBack: () -> Unit,
-    onRecord: (date: String) -> Unit     // 그날 기록 쓰기/수정 화면으로
+    onRecord: (date: String) -> Unit,    // 그날 기록 쓰기/수정 화면으로
+    onOutfitBook: () -> Unit = {}         // 코디 일정 화면으로
 ) {
     val context = LocalContext.current
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
         WearLogStore.load(context)
+        OutfitPlanStore.load(context)
     }
     val items by WardrobeStore.items.collectAsState()
     val logs by WearLogStore.logs.collectAsState()
+    val plans by OutfitPlanStore.plans.collectAsState()
+    val plannedDates = plans.map { it.date }.toSet()
     val itemsById = items.associateBy { it.id }
 
     val today = WearDates.today()
@@ -127,6 +135,7 @@ fun WearCalendarScreen(
                                         isSelected = date == selectedDate,
                                         isToday = date == today,
                                         hasLog = date in loggedDates,
+                                        hasPlan = date in plannedDates,
                                         onClick = { selectedDate = date }
                                     )
                                 }
@@ -148,6 +157,22 @@ fun WearCalendarScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(WearDates.label(selectedDate), style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                // 코디 일정 (그날 입기로 정해 둔 코디)
+                plans.find { it.date == selectedDate }?.let { plan ->
+                    val planItems = plan.itemIds.mapNotNull { itemsById[it] }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📅 입기로 한 코디", style = MaterialTheme.typography.bodyMedium, color = Brown,
+                            fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = onOutfitBook) { Text("일정 보기", color = Camel) }
+                    }
+                    OutfitItemsRow(planItems, size = 56)
+                    if (selectedDate <= today) {
+                        val followed = OutfitPlanStore.followed(plan, logs.find { it.date == selectedDate })
+                        Text(when (followed) { true -> "✓ 일정대로 입었어요"; false -> "다른 옷을 입었어요"; null -> "아직 착용 기록이 없어요" },
+                            style = MaterialTheme.typography.labelSmall, color = if (followed == true) Camel else MediumGray)
+                    }
+                    HorizontalDivider(color = LightGray)
+                }
                 if (log == null) {
                     Text("이 날은 기록이 없어요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
                     if (selectedDate <= today) {
@@ -223,6 +248,32 @@ fun WearCalendarScreen(
                         Text("${stat.count}회", style = MaterialTheme.typography.titleSmall, color = Brown, fontWeight = FontWeight.SemiBold)
                     }
                 }
+
+                // 옷값 · 착용당 비용 (옷 수정 화면에서 가격을 넣은 옷만)
+                HorizontalDivider(color = LightGray)
+                Text("옷값 · 착용당 비용", style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                val cost = remember(items, logs) { CostPerWear.report(items, logs) }
+                if (cost.isEmpty) {
+                    Text("옷장에서 옷을 눌러 [수정] → 가격을 넣으면 한 번 입을 때 드는 돈을 계산해 드려요",
+                        style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                } else {
+                    Text(
+                        "가격을 넣은 옷 ${cost.pricedCount}벌 · 합계 ${CostPerWear.won(cost.totalValue)}" +
+                            (cost.averagePerWear?.let { " · 평균 1회 ${CostPerWear.won(it)}" } ?: ""),
+                        style = MaterialTheme.typography.bodySmall, color = MediumGray
+                    )
+                    if (cost.bestValue.isNotEmpty()) {
+                        Text("가성비 좋은 옷", style = MaterialTheme.typography.bodyMedium, color = Brown, fontWeight = FontWeight.SemiBold)
+                        cost.bestValue.forEach { e -> CostRow(e.item, "${e.wears}회 · 1회 ${CostPerWear.won(e.perWear)}") }
+                    }
+                    if (cost.leastWorn.isNotEmpty()) {
+                        Text("본전을 아직 못 뽑은 옷", style = MaterialTheme.typography.bodyMedium, color = Brown, fontWeight = FontWeight.SemiBold)
+                        cost.leastWorn.forEach { e -> CostRow(e.item, "${CostPerWear.won(e.price)} · ${e.wears}회 입음") }
+                    }
+                    if (cost.unpricedCount > 0) {
+                        Text("가격을 안 넣은 옷 ${cost.unpricedCount}벌은 빼고 계산했어요", style = MaterialTheme.typography.labelSmall, color = MediumGray)
+                    }
+                }
             }
         }
     }
@@ -246,7 +297,17 @@ fun WearCalendarScreen(
 }
 
 @Composable
-private fun DayCell(day: Int, isSelected: Boolean, isToday: Boolean, hasLog: Boolean, onClick: () -> Unit) {
+private fun CostRow(item: WardrobeItem, detail: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        ClothingThumb(item = item, cutoutPadding = 4.dp, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)))
+        Text(item.name, style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack, maxLines = 1,
+            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(detail, style = MaterialTheme.typography.bodySmall, color = Brown)
+    }
+}
+
+@Composable
+private fun DayCell(day: Int, isSelected: Boolean, isToday: Boolean, hasLog: Boolean, hasPlan: Boolean, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clip(CircleShape).clickable(onClick = onClick).padding(2.dp)
@@ -265,13 +326,13 @@ private fun DayCell(day: Int, isSelected: Boolean, isToday: Boolean, hasLog: Boo
                 fontWeight = if (hasLog) FontWeight.Bold else FontWeight.Normal
             )
         }
-        // 기록 있는 날 점
+        // 기록 있는 날 점 (진한 색), 코디 일정만 있는 날 점 (연한 색)
         Box(
             modifier = Modifier
                 .padding(top = 2.dp)
                 .size(5.dp)
                 .clip(CircleShape)
-                .background(if (hasLog) Camel else Color.Transparent)
+                .background(if (hasLog) Camel else if (hasPlan) CamelLight else Color.Transparent)
         )
     }
 }

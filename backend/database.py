@@ -83,7 +83,7 @@ def database_status():
             conn.execute(text('SELECT client_id FROM body_measurements LIMIT 0'))
     except SQLAlchemyError:
         return {'ready': False, 'status': 'unavailable'}
-    # 002 · 003 마이그레이션이 빠졌는지도 알려 준다.
+    # 002 · 003 · 004 마이그레이션이 빠졌는지도 알려 준다.
     # 빠져 있어도 ready 는 True — 기존 기능은 그대로 동작하고, 새 항목만 저장되지 않는다.
     missing, hints = [], []
     for label, sql, migration in _SCHEMA_CHECKS:
@@ -103,6 +103,7 @@ def database_status():
 
 _M002 = '002_user_data_tables.sql'
 _M003 = '003_backup_and_recommendation_logs.sql'
+_M004 = '004_outfit_book_and_prices.sql'
 _SCHEMA_CHECKS = [
     ('users.gender', 'SELECT gender FROM users LIMIT 0', _M002),
     ('products.product_key', 'SELECT product_key FROM products LIMIT 0', _M002),
@@ -110,4 +111,7 @@ _SCHEMA_CHECKS = [
     ('taste_events', 'SELECT at_ms FROM taste_events LIMIT 0', _M002),
     ('clothing_photos', 'SELECT client_id FROM clothing_photos LIMIT 0', _M003),
     ('recommendation_logs', 'SELECT item_key FROM recommendation_logs LIMIT 0', _M003),
+    ('clothes.price', 'SELECT price, brand FROM clothes LIMIT 0', _M004),
+    ('saved_outfits', 'SELECT client_key FROM saved_outfits LIMIT 0', _M004),
+    ('outfit_plans', 'SELECT date FROM outfit_plans LIMIT 0', _M004),
 ]

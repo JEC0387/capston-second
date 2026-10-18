@@ -144,8 +144,15 @@ fun AppNavigation() {
                         }
                     },
                     weatherViewModel = weatherViewModel,
-                    gender = gender
+                    gender = gender,
+                    onOutfitBook = { navController.navigate(Screen.OutfitBook.route(tab = 1)) }
                 )
+            }
+            composable(
+                Screen.OutfitBook.route,
+                arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })
+            ) { entry ->
+                OutfitBookScreen(onBack = { navController.popBackStack() }, initialTab = entry.arguments?.getInt("tab") ?: 0)
             }
             composable(Screen.Wardrobe.route) {
                 WardrobeScreen(
@@ -183,7 +190,8 @@ fun AppNavigation() {
             composable(Screen.WearCalendar.route) {
                 WearCalendarScreen(
                     onBack = { navController.popBackStack() },
-                    onRecord = { date -> navController.navigate(Screen.WearLog.route(date)) }
+                    onRecord = { date -> navController.navigate(Screen.WearLog.route(date)) },
+                    onOutfitBook = { navController.navigate(Screen.OutfitBook.route(tab = 1)) }
                 )
             }
             composable(
@@ -267,6 +275,7 @@ fun AppNavigation() {
                     onStylePreference = { navController.navigate(Screen.StylePreference.route) },
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onBodyHistory = { navController.navigate(Screen.BodyHistory.route) },
+                    onOutfitBook = { navController.navigate(Screen.OutfitBook.route()) },
                     onLogout = {
                         navController.navigate(Screen.Onboarding.route) {
                             popUpTo(0) { inclusive = true }

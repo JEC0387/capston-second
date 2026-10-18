@@ -1,7 +1,7 @@
 """
 DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 생성된다.
 
-테이블 12개
+테이블 14개
   users              사용자 (폰마다 1명 — 앱이 보내는 기기 번호로 구분) + 성별 · 선호 스타일
   clothes            옷장 옷 (앱 WardrobeStore 와 같은 내용, client_id = 앱의 옷 id)
   wear_logs          착용 기록 (앱 WearLogStore — 날짜별로 입은 옷 id 목록)
@@ -14,6 +14,8 @@ DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 �
   size_charts        브랜드별 사이즈표 (사이즈 추천용, CSV 로 채움)
   clothing_photos    옷장 옷 사진 백업 (다른 폰으로 복원할 때 사용, 사람 · 체형 사진은 넣지 않음)
   recommendation_logs 앱이 보여 준 추천 코디 기록 (👍 · 실제 착용과 비교해 추천 성능을 잰다)
+  saved_outfits      저장한 코디 (룩북 — 추천 카드의 🔖)
+  outfit_plans       코디 일정 (날짜마다 입기로 정한 코디 하나)
 
 동기화 원칙: 앱(폰)에 저장된 내용이 기준이고, 서버 DB 는 그 내용을 그대로 따라 저장한다.
 """
@@ -71,6 +73,8 @@ class Clothing(Base):
     added_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     favorited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # 하트 누른 시각
     kept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))       # "계속 둘게요" 시각
+    brand: Mapped[Optional[str]] = mapped_column(String(50))   # 브랜드 (선택 입력)
+    price: Mapped[Optional[int]] = mapped_column(Integer)      # 산 가격(원, 선택 입력) — 착용당 비용
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -250,3 +254,32 @@ class RecommendationLog(Base):
     item_ids: Mapped[list] = mapped_column(JSON, default=list)
     item_key: Mapped[str] = mapped_column(String(512))
     shown_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SavedOutfit(Base):
+    """저장한 코디 (앱 SavedOutfitStore). client_key = 옷 id 를 정렬해 + 로 이은 값 (같은 조합 = 같은 코디)."""
+    __tablename__ = "saved_outfits"
+    __table_args__ = (UniqueConstraint("user_id", "client_key", name="uq_saved_outfit_user_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client_key: Mapped[str] = mapped_column(String(600))
+    item_ids: Mapped[list] = mapped_column(JSON, default=list)   # clothes.client_id
+    style: Mapped[Optional[str]] = mapped_column(String(20))
+    pattern: Mapped[Optional[str]] = mapped_column(String(20))
+    note: Mapped[Optional[str]] = mapped_column(String(100))
+    position: Mapped[int] = mapped_column(Integer, default=0)    # 폰 목록 순서 (0 = 최근 저장)
+    saved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class OutfitPlan(Base):
+    """코디 일정 (앱 OutfitPlanStore) — 날짜마다 입기로 정한 코디 하나."""
+    __tablename__ = "outfit_plans"
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_outfit_plan_user_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    date: Mapped[str] = mapped_column(String(10))                # yyyy-MM-dd
+    item_ids: Mapped[list] = mapped_column(JSON, default=list)
+    note: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

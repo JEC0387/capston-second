@@ -37,7 +37,9 @@ data class WardrobeItem(
     val cutoutUri: String? = null,      // 배경 제거 (ML Kit 누끼)
     val garmentUri: String? = null,     // 옷만 (DeepFashion2 윤곽으로 오려냄)
     val style: String? = null,          // 사용자가 고른 스타일 (null이면 StyleTagger가 자동으로 붙인 스타일 사용)
-    val isOwned: Boolean = true         // 추천용 관심상품은 false. 옷장에는 저장하지 않는 임시 후보 메타데이터
+    val isOwned: Boolean = true,        // 추천용 관심상품은 false. 옷장에는 저장하지 않는 임시 후보 메타데이터
+    val brand: String? = null,          // 브랜드 (선택 입력)
+    val price: Int? = null              // 산 가격(원, 선택 입력) — 착용당 비용 계산에 쓴다
 ) {
     /** 이 옷이 쓰는 사진 주소 전부 (보여주는 사진 + 보관한 버전들) */
     fun photoUris(): Set<String> = setOfNotNull(imageUri, originalUri, cutoutUri, garmentUri)
@@ -193,7 +195,9 @@ object WardrobeStore {
         originalUri = o.optStringOrNull("originalUri"),
         cutoutUri = o.optStringOrNull("cutoutUri"),
         garmentUri = o.optStringOrNull("garmentUri"),
-        style = o.optStringOrNull("style")
+        style = o.optStringOrNull("style"),
+        brand = o.optStringOrNull("brand"),
+        price = if (o.has("price") && !o.isNull("price")) o.getInt("price") else null
     )
 
     private fun JSONObject.optStringOrNull(key: String): String? =
@@ -228,6 +232,8 @@ object WardrobeStore {
                     .put("cutoutUri", item.cutoutUri)
                     .put("garmentUri", item.garmentUri)
                     .put("style", item.style)
+                    .put("brand", item.brand)
+                    .put("price", item.price)
             )
         }
         return arr.toString()

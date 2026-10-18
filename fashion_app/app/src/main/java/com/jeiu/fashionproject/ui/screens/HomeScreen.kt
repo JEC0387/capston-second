@@ -43,6 +43,10 @@ import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.RecommendationLog
+import com.jeiu.fashionproject.data.SavedOutfitStore
+import com.jeiu.fashionproject.data.OutfitPlanStore
+import com.jeiu.fashionproject.ui.components.PlannedOutfitCard
+import com.jeiu.fashionproject.ui.components.rememberOutfitBookActions
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
@@ -90,7 +94,8 @@ fun HomeScreen(
     onAddClothing: () -> Unit,
     onShopClick: (presetQuery: String?) -> Unit,
     weatherViewModel: WeatherViewModel,
-    gender: Gender? = null
+    gender: Gender? = null,
+    onOutfitBook: () -> Unit = {}          // 저장한 코디 · 코디 일정 화면
 ) {
     val weatherState by weatherViewModel.state.collectAsState()
     val context = LocalContext.current
@@ -148,6 +153,11 @@ fun HomeScreen(
     }
     var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
     val wearToday = rememberWearToday(wearLogs)
+    // 🔖 저장한 코디 · 📅 코디 일정
+    val book = rememberOutfitBookActions()
+    val savedOutfits by SavedOutfitStore.items.collectAsState()
+    val plans by OutfitPlanStore.plans.collectAsState()
+    val todayPlan = plans.find { it.date == WearDates.today() }
     var showNotifDialog by remember { mutableStateOf(false) }
     var shopKeyword by remember { mutableStateOf<String?>(null) }
 
@@ -285,6 +295,21 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // 오늘 계획한 코디 (코디 일정에 오늘 정해 둔 코디가 있을 때만)
+        todayPlan?.let { plan ->
+            val byId = wardrobe.associateBy { it.id }
+            val planItems = plan.itemIds.mapNotNull { byId[it] }
+            PlannedOutfitCard(
+                title = "오늘 입기로 한 코디",
+                items = planItems,
+                missing = plan.itemIds.size - planItems.size,
+                wear = wearToday,
+                onOpen = onOutfitBook,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+            Spacer(modifier = Modifier.height(20.dp))
+        }
+
         // 오늘의 AI 코디
         Row(
             modifier = Modifier
@@ -327,7 +352,10 @@ fun HomeScreen(
                                 ratings = ratings + (outfit.id to like)
                                 TastePreferenceStore.rateOutfit(context, outfit, like)
                             },
-                            wear = wearToday
+                            wear = wearToday,
+                            saved = book.isSaved(savedOutfits, outfit),
+                            onToggleSave = { book.toggleSave(outfit) },
+                            onPlan = { book.requestPlan(outfit.items) }
                         )
                     }
                 }
@@ -451,6 +479,7 @@ fun HomeScreen(
     }
 
     wearToday.Dialog()
+    book.Dialog()
 
     if (showNotifDialog) {
         AlertDialog(

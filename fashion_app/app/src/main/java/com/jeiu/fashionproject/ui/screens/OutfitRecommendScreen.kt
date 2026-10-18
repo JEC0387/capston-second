@@ -27,6 +27,8 @@ import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.RecommendationLog
+import com.jeiu.fashionproject.data.SavedOutfitStore
+import com.jeiu.fashionproject.ui.components.rememberOutfitBookActions
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
@@ -145,6 +147,9 @@ fun OutfitRecommendScreen(
         else -> if (situation == Situation.TRAVEL) travelDay?.date ?: today else today
     }
     val wearToday = rememberWearToday(wearLogs)
+    // 🔖 저장한 코디 · 📅 코디 일정
+    val book = rememberOutfitBookActions()
+    val savedOutfits by SavedOutfitStore.items.collectAsState()
     // 보여 준 추천 코디를 기록 → 👍 · 실제 착용과 비교해 추천 성능을 잰다 (서버 recommendation_logs)
     LaunchedEffect(recommendation, recommendDate) {
         val ok = recommendation as? OutfitEngine.Result.Ok ?: return@LaunchedEffect
@@ -310,7 +315,11 @@ fun OutfitRecommendScreen(
                             },
                             modifier = Modifier.fillMaxWidth(),
                             photoHeight = 300.dp,
-                            wear = wearToday.takeIf { recommendDate == today }
+                            wear = wearToday.takeIf { recommendDate == today },
+                            saved = book.isSaved(savedOutfits, outfit),
+                            onToggleSave = { book.toggleSave(outfit) },
+                            // 5일 예보 탭이면 그 날짜가 먼저 골라져 있다
+                            onPlan = { book.requestPlan(outfit.items, recommendDate) }
                         )
                     }
                 }
@@ -318,6 +327,7 @@ fun OutfitRecommendScreen(
         }
     }
     wearToday.Dialog()
+    book.Dialog()
     searchKeyword?.let { keyword -> ShopSearchSheet(keyword = keyword, onDismiss = { searchKeyword = null }) }
 }
 
