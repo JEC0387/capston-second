@@ -65,6 +65,13 @@ object StylePreferenceStore {
         p.putInt("rated_count", _ratedCount.value).apply()
     }
 
+    /** 백업 코드로 복원할 때 — 서버에서 받은 스타일 점수로 바꿔 쓴다 (앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, scores: Map<String, Int>, ratedCount: Int) {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear()
+        styles.forEach { p.putInt("score_$it", scores[it] ?: 0) }
+        p.putInt("rated_count", ratedCount).commit()
+    }
+
     /** 현재 점수 기준 선호 스타일 순위 */
     fun ranking(): List<Pair<String, Int>> =
         _scores.value.entries.sortedByDescending { it.value }.map { it.key to it.value }

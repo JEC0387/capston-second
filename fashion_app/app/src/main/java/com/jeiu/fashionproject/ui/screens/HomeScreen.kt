@@ -42,6 +42,7 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
@@ -136,6 +137,14 @@ fun HomeScreen(
     val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile) {
         OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
             taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile)
+    }
+    // 보여 준 추천 코디를 기록 → 👍 · 실제 착용과 비교해 추천 성능을 잰다 (서버 recommendation_logs)
+    // (날씨를 받기 전 임시 코디는 세지 않는다)
+    LaunchedEffect(recommendation) {
+        if (weatherInfo == null) return@LaunchedEffect
+        (recommendation as? OutfitEngine.Result.Ok)?.let {
+            RecommendationLog.record(context, WearDates.today(), "home", "OWNED", it.outfits)
+        }
     }
     var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
     val wearToday = rememberWearToday(wearLogs)

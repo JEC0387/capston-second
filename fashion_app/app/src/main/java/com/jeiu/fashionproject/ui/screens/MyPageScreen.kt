@@ -23,6 +23,12 @@ import androidx.compose.runtime.collectAsState
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.ui.components.TasteReportCard
+import com.jeiu.fashionproject.ui.components.BackupRestoreDialog
+import com.jeiu.fashionproject.ui.components.RecommendationStatsCard
+import com.jeiu.fashionproject.data.RecommendationLog
+import com.jeiu.fashionproject.data.WearLogStore
+import com.jeiu.fashionproject.data.WardrobeStore
+import com.jeiu.fashionproject.data.ProductInterestStore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,6 +70,7 @@ fun MyPageScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showNotifDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
     var showVersionDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
@@ -93,19 +100,30 @@ fun MyPageScreen(
     val styleScores by StylePreferenceStore.scores.collectAsState()
     val styleRatedCount by StylePreferenceStore.ratedCount.collectAsState()
     val taste by TastePreferenceStore.scores.collectAsState()
+    val tasteEvents by TastePreferenceStore.events.collectAsState()
+    val recEntries by RecommendationLog.entries.collectAsState()
+    val wearLogs by WearLogStore.logs.collectAsState()
+    val recSummary = remember(recEntries, tasteEvents, wearLogs) { RecommendationLog.summarize(recEntries, tasteEvents, wearLogs) }
 
     // 서버 프로필 (없으면 기본값 폴백)
     var profile by remember { mutableStateOf<com.jeiu.fashionproject.data.ServerProfile?>(null) }
     LaunchedEffect(Unit) {
         StylePreferenceStore.load(context)
         TastePreferenceStore.load(context)
+        RecommendationLog.load(context)
+        WearLogStore.load(context)
+        WardrobeStore.load(context)
+        ProductInterestStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val nickname = profile?.nickname ?: "나의 스타일"
     val email = profile?.email ?: "style@fashion.ai"
-    val wardrobeCount = profile?.wardrobeCount?.toString() ?: "12"
-    val outfitCount = profile?.outfitCount?.toString() ?: "8"
-    val favoriteCount = profile?.favoriteCount?.toString() ?: "24"
+    // 서버에 연결되지 않으면 폰에 있는 기록으로 센다 (예전에는 고정 숫자 12 · 8 · 24 를 보여 줬음)
+    val wardrobeItems by WardrobeStore.items.collectAsState()
+    val interestIds by ProductInterestStore.ids.collectAsState()
+    val wardrobeCount = (profile?.wardrobeCount ?: wardrobeItems.size).toString()
+    val outfitCount = (profile?.outfitCount ?: wearLogs.size).toString()
+    val favoriteCount = (profile?.favoriteCount ?: (wardrobeItems.count { it.favoritedAt != null } + interestIds.size)).toString()
     var showGenderDialog by remember { mutableStateOf(false) }
     val shownBodyType = bodyTypeKo ?: profile?.bodyType
 
@@ -225,6 +243,9 @@ fun MyPageScreen(
             Text("내 취향 리포트", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack)
             TasteReportCard(styleScores, styleRatedCount, taste)
 
+            Text("AI 추천 성과", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack)
+            RecommendationStatsCard(recSummary)
+
             // 취향 태그
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -291,6 +312,8 @@ fun MyPageScreen(
                 onClick = { showNotifDialog = true }
             )
             HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.CloudUpload, label = "데이터 백업 · 복원", onClick = { showBackupDialog = true })
+            HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.DeleteOutline, label = "현재 세션 체형 데이터 삭제", onClick = {
@@ -352,6 +375,10 @@ fun MyPageScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showBackupDialog) {
+        BackupRestoreDialog(onDismiss = { showBackupDialog = false })
     }
 
     if (showGenderDialog) {

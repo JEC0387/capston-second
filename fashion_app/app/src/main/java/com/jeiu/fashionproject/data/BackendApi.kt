@@ -46,14 +46,17 @@ object BackendApi {
 
     // ── 공용 HTTP 헬퍼 ──────────────────────────────────────────────
 
-    /** GET 요청 → 응답 본문 문자열. 실패 시 null (호출부가 로컬 폴백) */
-    suspend fun getJson(path: String): String? = withContext(Dispatchers.IO) {
+    /**
+     * GET 요청 → 응답 본문 문자열. 실패 시 null (호출부가 로컬 폴백)
+     * @param asDevice 백업 코드로 복원할 때만 — 이 폰 대신 다른 기기 번호로 조회
+     */
+    suspend fun getJson(path: String, asDevice: String? = null): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 3_000
-                readTimeout = 5_000
-                addDeviceHeader()
+                readTimeout = 10_000
+                if (asDevice != null) setRequestProperty("X-Device-Id", asDevice) else addDeviceHeader()
             }
             val code = conn.responseCode
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
@@ -64,13 +67,13 @@ object BackendApi {
     }
 
     /** JSON 본문으로 POST → 응답 본문 문자열. 실패 시 null */
-    suspend fun postJson(path: String, jsonBody: String): String? = withContext(Dispatchers.IO) {
+    suspend fun postJson(path: String, jsonBody: String, readTimeoutMs: Int = 5_000): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 3_000
-                readTimeout = 5_000
+                readTimeout = readTimeoutMs
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 addDeviceHeader()
             }
@@ -83,13 +86,43 @@ object BackendApi {
         }.getOrNull()
     }
 
+    /** GET 으로 파일(사진) 받기 → (바이트, Content-Type). 없거나 실패하면 null. 복원할 때 옷 사진용 (최대 3MB) */
+    suspend fun getBytes(path: String, asDevice: String? = null): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 3_000
+                readTimeout = 15_000
+                if (asDevice != null) setRequestProperty("X-Device-Id", asDevice) else addDeviceHeader()
+            }
+            try {
+                if (conn.responseCode !in 200..299) return@runCatching null
+                val type = conn.contentType?.substringBefore(';')?.trim().orEmpty()
+                val bytes = conn.inputStream.use { input ->
+                    val out = java.io.ByteArrayOutputStream()
+                    val buf = ByteArray(16 * 1024)
+                    while (true) {
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        if (out.size() > 3 * 1024 * 1024) return@runCatching null
+                    }
+                    out.toByteArray()
+                }
+                bytes to type
+            } finally {
+                conn.disconnect()
+            }
+        }.getOrNull()
+    }
+
     /** DELETE 요청 → 성공(2xx)이면 true, 서버 연결 실패·오류면 false */
-    suspend fun delete(path: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun delete(path: String, readTimeoutMs: Int = 5_000): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "DELETE"
                 connectTimeout = 3_000
-                readTimeout = 5_000
+                readTimeout = readTimeoutMs
                 addDeviceHeader()
             }
             val code = conn.responseCode

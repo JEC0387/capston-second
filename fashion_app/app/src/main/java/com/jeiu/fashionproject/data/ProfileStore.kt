@@ -24,6 +24,13 @@ object ProfileStore {
         }.getOrDefault(emptyList())
     }
 
+    /** 백업 코드로 복원할 때 — 서버의 선호 스타일을 폰에만 써 둔다 (앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, styles: List<String>) {
+        val valid = styles.filter { it in STYLE_OPTIONS }.distinct()
+        if (valid.isEmpty()) return
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_STYLES, JSONArray(valid).toString()).commit()
+    }
+
     /** 선호 스타일 저장 (폰 + 서버). 고른 순서를 그대로 지킨다. */
     fun savePreferredStyles(context: Context, styles: List<String>) {
         val valid = styles.filter { it in STYLE_OPTIONS }.distinct()
