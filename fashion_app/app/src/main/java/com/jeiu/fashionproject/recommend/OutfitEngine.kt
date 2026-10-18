@@ -65,7 +65,8 @@ object OutfitEngine {
         today: String = WearDates.today(),
         count: Int = 4,
         needOuter: Boolean = false,  // 일교차가 큰 날처럼 낮 기온과 상관없이 겉옷을 더해야 할 때
-        taste: TasteScores = TasteScores()   // 색 · 종류 · 조합 방식 취향 (4단계)
+        taste: TasteScores = TasteScores(),  // 색 · 종류 · 조합 방식 취향 (4단계)
+        bodyProfile: BodyProfile? = null
     ): Result {
         val conditions = WeatherRules.Conditions(
             temp = weather?.temp,
@@ -113,7 +114,7 @@ object OutfitEngine {
         val stats = WearAnalyzer.stats(logs)
         val candidates = bases.flatMap { (main, bottom) ->
             shoes.flatMap { shoe ->
-                outerOptions.map { outer -> score(main, bottom, shoe, outer, conditions, situation, stats, styleScores, taste, today) }
+                outerOptions.map { outer -> score(main, bottom, shoe, outer, conditions, situation, stats, styleScores, taste, today, bodyProfile = bodyProfile) }
             }
         }
 
@@ -153,7 +154,7 @@ object OutfitEngine {
         val outerOptions: List<WardrobeItem?> = when (WeatherRules.outerNeed(conditions)) {
             WeatherRules.OuterNeed.NONE -> listOf(null)
             WeatherRules.OuterNeed.OPTIONAL -> listOf(null) + outers
-            WeatherRules.OuterNeed.REQUIRED -> outers.ifEmpty { listOf(null) }
+            WeatherRules.OuterNeed.REQUIRED -> outers
         }
         val tops = usable.filter { it.category == "상의" }
         val bottoms = usable.filter { it.category == "하의" }
@@ -199,7 +200,8 @@ object OutfitEngine {
         styleScores: Map<String, Int>,
         taste: TasteScores,
         today: String,
-        withHistory: Boolean = true   // false면 착용 기록 점수를 빼고 계산 ("이것만 사면"용)
+        withHistory: Boolean = true,  // false면 착용 기록 점수를 빼고 계산 ("이것만 사면"용)
+        bodyProfile: BodyProfile? = null
     ): Outfit {
         val all = listOfNotNull(outer, main, bottom, shoe)
         var score = 0.0
@@ -218,7 +220,7 @@ object OutfitEngine {
         // 착용 기록 — 최근에 입은 옷은 감점, 오래 안 입은 옷은 가산점
         var wearScore = 0.0
         var unwornPick: Pair<WardrobeItem, Int>? = null
-        if (withHistory) all.forEach { item ->
+        if (withHistory) all.filter { it.isOwned }.forEach { item ->
             val lastWorn = stats[item.id]?.lastWorn
             if (lastWorn != null && WearDates.daysBetween(lastWorn, today) in 0..RECENTLY_WORN_DAYS) {
                 wearScore += RECENTLY_WORN_SCORE
@@ -278,7 +280,8 @@ object OutfitEngine {
             }
         }.take(3)
 
-        return Outfit(all, score, reasons, style, color.pattern)
+        val bodyAdjustment = BodyAwareOutfitScorer.evaluate(bodyProfile, all)
+        return Outfit(all, score + bodyAdjustment.score, reasons + listOfNotNull(bodyAdjustment.reason), style, color.pattern)
     }
 
     /**

@@ -30,12 +30,15 @@ OnboardingScreen     → GET  /api/styles
 문서:  http://localhost:8000/docs  (Swagger 자동 생성)
 """
 import io
+from contextlib import asynccontextmanager
+from database import initialize_database, database_status, optional_db
+from db_api import app as db_router, catalog_rows
 import shutil
 import uuid
 from pathlib import Path
 
 import cv2
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -45,15 +48,19 @@ import detection
 import fashion_detection
 import weather
 from schemas import (
-    AddClothingRequest, BodyAnalysisResult, ClothingClassifyResponse, ClothingItem, HomeResponse,
-    ObjectDetectionResponse, Product, ProductDetail, Profile,
-    RatePreferenceRequest, ShopResponse, StyleAnalysisResponse, StyleScore,
-    StylePreferenceResponse, StyleSuggestionResponse, UpdateStylesRequest,
-    VirtualFittingResponse, WardrobeResponse, WeatherNowResponse,
+    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse,
+    ObjectDetectionResponse, ProductDetail, ShopResponse, StyleAnalysisResponse, StyleSuggestionResponse, VirtualFittingResponse, WeatherNowResponse,
     WeatherOutfitResponse,
 )
 
+@asynccontextmanager
+async def lifespan(_):
+    initialize_database()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="FashionProject API",
     description="AI 기반 개인 맞춤 패션 추천 서비스 백엔드",
     version="1.0.0",
@@ -102,64 +109,14 @@ def get_weather_outfits():
 # 옷장
 # ──────────────────────────────────────────────
 
-@app.get("/api/wardrobe", response_model=WardrobeResponse, tags=["옷장"])
-def get_wardrobe(category: str = "전체"):
-    """내 옷장 조회. ?category=상의 처럼 카테고리 필터 가능"""
-    items = data.WARDROBE_ITEMS
-    if category != "전체":
-        items = [i for i in items if i["category"] == category]
-    return {
-        "totalCount": len(data.WARDROBE_ITEMS),
-        "categories": data.WARDROBE_CATEGORIES,
-        "items": items,
-    }
 
 
-@app.post("/api/wardrobe", response_model=ClothingItem, status_code=201, tags=["옷장"])
-def add_clothing(req: AddClothingRequest):
-    """옷장에 의류 추가 ('+ 의류 추가' 버튼)"""
-    new_id = max(i["id"] for i in data.WARDROBE_ITEMS) + 1
-    item = {
-        "id": new_id,
-        "name": req.name,
-        "category": req.category,
-        "color": req.color,
-        "imageUrl": req.imageUrl or f"https://loremflickr.com/300/380/clothing?lock={new_id + 100}",
-        "isFavorite": False,
-    }
-    data.WARDROBE_ITEMS.append(item)
-    return item
 
 
-@app.post("/api/wardrobe/{item_id}/favorite", response_model=ClothingItem, tags=["옷장"])
-def toggle_favorite(item_id: int):
-    """옷장 아이템 즐겨찾기(하트) 토글"""
-    for item in data.WARDROBE_ITEMS:
-        if item["id"] == item_id:
-            item["isFavorite"] = not item["isFavorite"]
-            return item
-    raise HTTPException(404, "해당 의류를 찾을 수 없습니다")
 
 
-@app.delete("/api/wardrobe/{item_id}", status_code=204, tags=["옷장"])
-def delete_clothing(item_id: int):
-    """옷장에서 의류 삭제"""
-    for i, item in enumerate(data.WARDROBE_ITEMS):
-        if item["id"] == item_id:
-            data.WARDROBE_ITEMS.pop(i)
-            return
-    raise HTTPException(404, "해당 의류를 찾을 수 없습니다")
 
 
-@app.get("/api/wardrobe/favorites", response_model=WardrobeResponse, tags=["옷장"])
-def get_favorites():
-    """즐겨찾기(하트)한 의류만 조회 — 앱에서 하트 옷을 상단에 모아 보여줄 때 사용"""
-    favs = [i for i in data.WARDROBE_ITEMS if i.get("isFavorite")]
-    return {
-        "totalCount": len(favs),
-        "categories": data.WARDROBE_CATEGORIES,
-        "items": favs,
-    }
 
 
 # ──────────────────────────────────────────────
@@ -265,9 +222,9 @@ async def classify_clothing(
 
 
 @app.get("/api/style-suggestions", response_model=StyleSuggestionResponse, tags=["AI 분석"])
-def get_style_suggestions():
-    """체형별 스타일 제안 (추천 스타일 / 피해야 할 스타일 / 추천 상품)"""
-    recommended_products = [p for p in data.PRODUCTS if p["badge"] == "AI추천"]
+def get_style_suggestions(db=Depends(optional_db)):
+    """체형별 스타일 제안 (추천 스타일 / 피해야 할 스타일 / 추천 상품 — 쇼핑 카탈로그의 AI추천 상품)"""
+    recommended_products = [p for p in catalog_rows(db)[0] if p["badge"] == "AI추천"]
     return {
         "bodyType": data.BODY_ANALYSIS_RESULT["bodyType"],
         "summary": data.BODY_ANALYSIS_RESULT["summary"],
@@ -292,9 +249,12 @@ def get_style_analysis():
 # ──────────────────────────────────────────────
 
 @app.get("/api/products", response_model=ShopResponse, tags=["쇼핑"])
-def get_products(search: str = ""):
-    """추천 쇼핑 상품 목록. ?search=니트 처럼 검색 가능"""
-    products = data.PRODUCTS
+def get_products(search: str = "", db=Depends(optional_db)):
+    """
+    쇼핑 상품 목록 (앱 ShopCatalog 와 같은 상품). ?search=셔츠 처럼 상품명 · 브랜드 검색.
+    DB products 표(seed_catalog.py 로 채움)가 있으면 DB 에서, 없으면 data.SHOP_CATALOG 에서 읽는다.
+    """
+    products, _ = catalog_rows(db)
     if search:
         products = [p for p in products if search in p["name"] or search in p["brand"]]
     return {
@@ -304,28 +264,22 @@ def get_products(search: str = ""):
 
 
 @app.get("/api/products/{product_id}", response_model=ProductDetail, tags=["쇼핑"])
-def get_product_detail(product_id: int):
-    """상품 상세 (색상/사이즈 옵션, 할인율, 최저가 정보 포함)"""
-    product = next((p for p in data.PRODUCTS if p["id"] == product_id), None)
+def get_product_detail(product_id: int, db=Depends(optional_db)):
+    """상품 상세 (할인율 · 구매 링크). id 는 /api/products 응답의 id."""
+    products, _ = catalog_rows(db)
+    product = next((p for p in products if p["id"] == product_id), None)
     if product is None:
         raise HTTPException(404, "상품을 찾을 수 없습니다")
-
-    extra = data.PRODUCT_DETAIL_EXTRA.get(product_id, {})
     discount = None
     if product["originalPrice"]:
         discount = round((1 - product["price"] / product["originalPrice"]) * 100)
-
     return {
         **product,
-        "name": extra.get("name", product["name"]),
-        "description": extra.get("description", ""),
-        "colors": extra.get("colors", ["#EDE3D5", "#F5F2EE", "#C5C5C0", "#3A3A3A"]),
-        "sizes": extra.get("sizes", ["XS", "S", "M", "L", "XL"]),
+        "description": "",
+        "colors": [product["bgColor"]],
+        "sizes": [],
         "discountPercent": discount,
-        "lowestPriceInfo": extra.get(
-            "lowestPriceInfo",
-            f"최저가: {product['price']:,}원 · 네이버쇼핑, 무신사, 29CM 등 비교",
-        ),
+        "lowestPriceInfo": f"판매가: {product['price']:,}원 · {product.get('mallName') or '쇼핑몰'}",
     }
 
 
@@ -333,11 +287,6 @@ def get_product_detail(product_id: int):
 # 프로필 / 온보딩
 # ──────────────────────────────────────────────
 
-@app.get("/api/profile", response_model=Profile, tags=["프로필"])
-def get_profile():
-    """마이페이지 프로필 (통계 + 체형 + 선호 스타일)"""
-    data.PROFILE["wardrobeCount"] = len(data.WARDROBE_ITEMS)
-    return data.PROFILE
 
 
 @app.get("/api/styles", response_model=list[str], tags=["프로필"])
@@ -346,14 +295,6 @@ def get_style_options():
     return data.STYLE_OPTIONS
 
 
-@app.post("/api/profile/styles", response_model=Profile, tags=["프로필"])
-def update_preferred_styles(req: UpdateStylesRequest):
-    """온보딩 '시작하기' - 선호 스타일 저장"""
-    invalid = [s for s in req.styles if s not in data.STYLE_OPTIONS]
-    if invalid:
-        raise HTTPException(400, f"유효하지 않은 스타일: {invalid}")
-    data.PROFILE["preferredStyles"] = req.styles
-    return data.PROFILE
 
 
 # ──────────────────────────────────────────────
@@ -389,24 +330,8 @@ def _preference_payload() -> dict:
     }
 
 
-@app.get("/api/style-preference", response_model=StylePreferenceResponse, tags=["AI 분석"])
-def get_style_preference():
-    """취향 학습 현황(스타일별 점수·누적 평가 수·최상위 스타일) 조회"""
-    return _preference_payload()
 
 
-@app.post("/api/style-preference/rate", response_model=StylePreferenceResponse, tags=["AI 분석"])
-def rate_style_preference(req: RatePreferenceRequest):
-    """
-    코디 카드 좋아요/싫어요 평가 반영.
-    like=true → +2점, like=false → -1점 (앱 StylePreferenceStore와 동일 가중치)
-    """
-    state = data.STYLE_PREFERENCE_STATE
-    if req.style not in state["scores"]:
-        raise HTTPException(400, f"알 수 없는 스타일: {req.style}")
-    state["scores"][req.style] += 2 if req.like else -1
-    state["ratedCount"] += 1
-    return _preference_payload()
 
 
 # ──────────────────────────────────────────────
@@ -426,3 +351,10 @@ def get_fitting_items():
 @app.get("/", include_in_schema=False)
 def root():
     return {"service": "FashionProject API", "docs": "/docs"}
+
+
+app.include_router(db_router)
+
+@app.get("/api/health/database", tags=["상태"])
+def database_health():
+    return database_status()

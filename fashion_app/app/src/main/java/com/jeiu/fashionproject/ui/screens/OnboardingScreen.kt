@@ -12,17 +12,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jeiu.fashionproject.R
+import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.ui.theme.*
 
 @Composable
 fun OnboardingScreen(onStart: () -> Unit) {
-    val styleOptions = listOf("캐주얼", "미니멀", "스트릿", "페미닌", "빈티지", "스포티", "클래식", "아메카지")
-    val selected = remember { mutableStateListOf<String>() }
+    val context = LocalContext.current
+    val styleOptions = ProfileStore.STYLE_OPTIONS
+    // 예전에 고른 스타일이 있으면 미리 선택해 둔다
+    val selected = remember { mutableStateListOf<String>().apply { addAll(ProfileStore.preferredStyles(context)) } }
 
     Column(
         modifier = Modifier
@@ -154,7 +158,11 @@ fun OnboardingScreen(onStart: () -> Unit) {
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
-                onClick = onStart,
+                onClick = {
+                    // 고른 스타일을 폰 + 서버 DB에 저장 (선택 해제도 저장)
+                    ProfileStore.savePreferredStyles(context, selected.toList())
+                    onStart()
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(52.dp),

@@ -2,8 +2,9 @@
 API 응답/요청 스키마 정의.
 앱(Compose)의 각 화면 data class와 1:1로 대응되도록 설계.
 """
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from typing import Literal, Optional
+from datetime import date
 
 
 # ---------- 공통 ----------
@@ -67,12 +68,24 @@ class WeatherOutfitResponse(BaseModel):
 # ---------- 옷장 화면 ----------
 
 class ClothingItem(BaseModel):
-    id: int
+    id: int                 # DB 번호
     name: str
     category: str           # 상의 / 하의 / 아우터 / 신발
     color: str
     imageUrl: str
     isFavorite: bool = False
+    # 앱 WardrobeItem 과 같은 추가 정보 (DB 연동 후 추가, 없어도 됨)
+    clientId: Optional[str] = None      # 앱의 옷 id (sample_01, UUID …)
+    colorName: Optional[str] = None
+    subCategory: Optional[str] = None
+    detailType: Optional[str] = None
+    season: Optional[str] = None
+    style: Optional[str] = None
+    isCutout: bool = False
+    aiTagged: bool = False
+    addedAt: Optional[int] = None       # Unix 밀리초
+    favoritedAt: Optional[int] = None
+    keptAt: Optional[int] = None
 
 
 class WardrobeResponse(BaseModel):
@@ -178,6 +191,11 @@ class Product(BaseModel):
     bgColor: str
     badge: Optional[str] = None      # "AI추천" / "베스트" / None
     imageUrl: str
+    # DB 카탈로그 연동 후 추가 (없어도 됨)
+    productKey: Optional[str] = None # 앱 ShopCatalog 상품 id (구매 링크) — 관심 상품과 같은 값
+    productUrl: Optional[str] = None
+    category: Optional[str] = None
+    mallName: Optional[str] = None
 
 
 class ShopResponse(BaseModel):
@@ -203,6 +221,13 @@ class Profile(BaseModel):
     favoriteCount: int
     bodyType: Optional[str] = None
     preferredStyles: list[str] = []
+    gender: Optional[str] = None     # FEMALE / MALE (마이페이지 성별 설정)
+    interestCount: int = 0           # 관심 상품 수
+
+
+class GenderRequest(BaseModel):
+    """마이페이지 성별 설정 (null 이면 설정 해제)"""
+    gender: Optional[Literal["FEMALE", "MALE"]] = None
 
 
 class UpdateStylesRequest(BaseModel):
@@ -257,3 +282,218 @@ class VirtualFittingResponse(BaseModel):
 
 
 StyleSuggestionResponse.model_rebuild()
+
+
+class WardrobeSyncItem(BaseModel):
+    """앱 WardrobeItem 과 필드 이름·뜻이 같다. 시각은 모두 Unix 밀리초."""
+    id: str = Field(min_length=1, max_length=64)
+    name: str
+    category: str
+    colorName: str = ""
+    colorValue: int = 0xFFEDE3D5        # ARGB (앱 Color 값)
+    imageUri: str = ""
+    aiTagged: bool = False
+    subCategory: Optional[str] = None
+    detailType: Optional[str] = None
+    season: Optional[str] = None
+    addedAt: Optional[int] = None
+    favoritedAt: Optional[int] = None
+    isCutout: bool = False
+    keptAt: Optional[int] = None
+    originalUri: Optional[str] = None
+    cutoutUri: Optional[str] = None
+    garmentUri: Optional[str] = None
+    style: Optional[str] = None
+
+
+class WardrobeSyncRequest(BaseModel):
+    """폰 옷장 전체 목록. 서버는 이 목록과 똑같아지도록 추가·수정·삭제한다."""
+    items: list[WardrobeSyncItem]
+
+    @field_validator('items')
+    @classmethod
+    def unique_ids(cls, items):
+        if len({item.id for item in items}) != len(items):
+            raise ValueError('Duplicate wardrobe ids')
+        return items
+
+
+class SyncResult(BaseModel):
+    saved: int              # 추가·수정된 개수
+    deleted: int            # 폰에 없어서 지운 개수
+    total: int              # 동기화 후 DB 에 있는 개수
+
+
+class WearLogItem(BaseModel):
+    date: str               # yyyy-MM-dd
+    itemIds: list[str]      # 앱 옷 id 목록
+    memo: str = ""
+
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if len(value) != 10 or date.fromisoformat(value).isoformat() != value:
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+
+class WearLogSyncRequest(BaseModel):
+    logs: list[WearLogItem]
+
+    @field_validator('logs')
+    @classmethod
+    def valid_logs(cls, logs):
+        if len({log.date for log in logs}) != len(logs) or any(not log.itemIds for log in logs):
+            raise ValueError('Duplicate dates or empty log')
+        return logs
+
+
+class WearLogResponse(BaseModel):
+    totalCount: int
+    logs: list[WearLogItem]
+
+
+class BodyMeasurementIn(BaseModel):
+    clientId: str = Field(min_length=1, max_length=64)
+    model_config = ConfigDict(allow_inf_nan=False)
+    """앱 체형 분석 결과 저장 (사진은 보내지 않음 — 숫자만)."""
+    bodyType: str
+    confidence: int = Field(default=0, ge=0, le=100)
+    shoulderRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    waistRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    hipRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    legRatio: Optional[float] = Field(default=None, gt=0, le=2)
+    shoulderToHip: Optional[float] = Field(default=None, gt=0.099, le=5)
+    waistToHip: Optional[float] = Field(default=None, gt=0.099, le=5)
+    heightCm: Optional[float] = Field(default=None, gt=99.999, le=230)
+    shoulderCm: Optional[float] = Field(default=None, gt=14.999, le=80)    # 정면 너비 추정값 (둘레 아님)
+    waistCm: Optional[float] = Field(default=None, gt=9.999, le=100)
+    hipCm: Optional[float] = Field(default=None, gt=14.999, le=100)
+    legCm: Optional[float] = Field(default=None, gt=19.999, le=150)
+    torsoCm: Optional[float] = Field(default=None, gt=14.999, le=100)
+    measuredAt: Optional[int] = Field(default=None, ge=1, le=253402300799000)      # Unix 밀리초 (없으면 서버 시각)
+
+
+    @model_validator(mode='after')
+    def consistent_cm(self):
+        widths = [self.shoulderCm, self.waistCm, self.hipCm]
+        if any(v is not None for v in widths + [self.legCm, self.torsoCm]):
+            if self.heightCm is None or any(v is None for v in widths):
+                raise ValueError('cm measurements require height and all three widths')
+        return self
+
+
+class BodyMeasurementOut(BodyMeasurementIn):
+    clientId: Optional[str] = None  # Records created before idempotent sync have no client id.
+    id: int
+    isSample: bool = False                # 시연용 샘플 기록 (실제 측정 아님)
+
+
+class BodyMeasurementHistory(BaseModel):
+    totalCount: int
+    measurements: list[BodyMeasurementOut]   # 최근 것부터
+
+
+class SizeChartRow(BaseModel):
+    brand: str
+    category: str
+    sizeLabel: str
+    shoulderCm: Optional[float] = None
+    chestCm: Optional[float] = None
+    waistCm: Optional[float] = None
+    hipCm: Optional[float] = None
+    lengthCm: Optional[float] = None
+    measureType: str = "단면"
+    sourceUrl: str = ""
+
+
+class SizeChartResponse(BaseModel):
+    totalCount: int
+    rows: list[SizeChartRow]
+
+
+# ---------- 관심 상품 (앱 ProductInterestStore → DB) ----------
+
+class ProductInterestSyncRequest(BaseModel):
+    """폰의 관심 상품 id 목록 (누른 순서). 서버는 이 목록과 똑같아지도록 추가 · 삭제한다."""
+    productIds: list[str] = Field(max_length=500)
+
+    @field_validator('productIds')
+    @classmethod
+    def valid_ids(cls, ids):
+        cleaned = []
+        for value in ids:
+            value = (value or '').strip()
+            if not value or len(value) > 512:
+                raise ValueError('Product id must be 1~512 characters')
+            if value not in cleaned:
+                cleaned.append(value)
+        return cleaned
+
+
+class ProductInterestItem(BaseModel):
+    productKey: str
+    position: int
+    addedAt: Optional[int] = None    # Unix 밀리초 (서버에 처음 저장된 시각)
+    # 카탈로그(products)에 있는 상품이면 함께 채움
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    price: Optional[int] = None
+    imageUrl: Optional[str] = None
+    productUrl: Optional[str] = None
+
+
+class ProductInterestResponse(BaseModel):
+    totalCount: int
+    items: list[ProductInterestItem]
+
+
+class PopularInterest(BaseModel):
+    productKey: str
+    interestCount: int               # 이 상품을 관심 상품으로 담은 사용자 수
+    name: Optional[str] = None
+    brand: Optional[str] = None
+    imageUrl: Optional[str] = None
+
+
+class PopularInterestResponse(BaseModel):
+    items: list[PopularInterest]
+
+
+# ---------- 취향 평가 기록 (앱 TastePreferenceStore → DB) ----------
+
+class TasteEventItem(BaseModel):
+    at: int = Field(gt=0)            # Unix 밀리초 (평가한 시각)
+    source: Literal["outfit", "card", "worn"]
+    liked: bool
+    colors: list[str] = Field(default_factory=list, max_length=20)
+    kinds: list[str] = Field(default_factory=list, max_length=20)
+    pattern: Optional[str] = None
+    style: Optional[str] = None
+    itemIds: list[str] = Field(default_factory=list, max_length=20)
+    date: Optional[str] = None       # 착용 기록이면 yyyy-MM-dd
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if value is not None and (len(value) != 10 or date.fromisoformat(value).isoformat() != value):
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+
+class TasteEventSyncRequest(BaseModel):
+    """폰의 취향 평가 기록 전체. (평가 시각, 종류)가 같으면 같은 기록으로 본다."""
+    events: list[TasteEventItem] = Field(max_length=5000)
+
+
+class TasteSummary(BaseModel):
+    """DB 기록으로 다시 계산한 취향 점수 (👍 +2 / 👎 −1 / 착용 +1, 한 기록 안의 같은 색 · 종류는 한 번만)"""
+    totalCount: int
+    ratedCount: int
+    wornCount: int
+    colors: dict[str, int]
+    kinds: dict[str, int]
+    patterns: dict[str, int]
+    styles: dict[str, int]
+

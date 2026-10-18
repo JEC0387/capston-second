@@ -74,10 +74,7 @@ object ColorHarmony {
         return if (d > 180f) 360f - d else d
     }
 
-    /** 색 조합 방식 — 취향 학습에 쓰는 이름 (계획 4 — 4단계) */
     val patterns = listOf("무채색 조합", "톤온톤", "포인트 컬러")
-
-    /** @param pattern 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러, 해당 없으면 null) */
     data class Result(val score: Double, val reasons: List<String>, val pattern: String? = null)
 
     /**
@@ -87,9 +84,9 @@ object ColorHarmony {
      * @param all 코디에 들어간 옷 전부 (아우터·신발 포함)
      */
     fun evaluate(main: WardrobeItem, bottom: WardrobeItem?, all: List<WardrobeItem>): Result {
+        var pattern: String? = null
         var score = 0.0
         val reasons = mutableListOf<String>()
-        var pattern: String? = null
 
         // 1) 뉴트럴이 아닌 색이 몇 계열인지
         val colored = all.filterNot { isNeutral(it) }
@@ -113,25 +110,25 @@ object ColorHarmony {
                 reasons += "색이 많아 조금 복잡해 보여요"
             }
             colored.isEmpty() -> {
-                score += SCORE_ALL_NEUTRAL
                 pattern = "무채색 조합"
+                score += SCORE_ALL_NEUTRAL
                 reasons += "${josa(colorPair(main, bottom, all), "은", "는")} 어디든 어울리는 차분한 조합이에요"
             }
-            // 색 있는 옷이 하나인데 베이지처럼 같은 계열 뉴트럴 옷이 있으면(베이지 + 브라운) 포인트가 아니라 톤온톤
+            // 색 있는 옷이 하나인데 베이지처럼 같은 계열 뉴트럴 옷이 있으면(베이지 + 브라운) 포인트가 아니라 톤온톤 (황상윤)
             families.size == 1 && colored.size == 1 && sameFamilyNeutral(colored.first(), all) != null -> {
-                score += SCORE_TONE_ON_TONE
                 pattern = "톤온톤"
+                score += SCORE_TONE_ON_TONE
                 val partner = sameFamilyNeutral(colored.first(), all)!!
                 reasons += "${partner.colorName}·${colored.first().colorName} 같은 계열로 맞춘 톤온톤이에요"
             }
             families.size == 1 && colored.size == 1 -> {
-                score += SCORE_POINT_COLOR
                 pattern = "포인트 컬러"
+                score += SCORE_POINT_COLOR
                 reasons += "뉴트럴 옷에 ${colored.first().colorName} 하나로 포인트를 줬어요"
             }
             families.size == 1 -> {
-                score += SCORE_TONE_ON_TONE
                 pattern = "톤온톤"
+                score += SCORE_TONE_ON_TONE
                 reasons += "${colored.map { it.colorName }.distinct().joinToString("·")} 같은 계열로 맞춘 톤온톤이에요"
             }
             // 2계열이면 가산·감점 없음

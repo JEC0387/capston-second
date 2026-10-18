@@ -15,6 +15,7 @@ import java.util.UUID
  * 샘플 옷·AI 등록 옷·직접 추가한 옷을 모두 이 저장소 하나에서 관리한다.
  * 앱 어디서든 보여줄 수 있도록 StateFlow로 공유하고,
  * SharedPreferences에 JSON으로 영속화해 앱을 재시작해도 유지한다.
+ * 바뀔 때마다 DbSync가 서버 DB(Supabase clothes 테이블)에도 같은 내용을 저장한다.
  */
 data class WardrobeItem(
     val id: String = UUID.randomUUID().toString(),  // 옷마다 고유 번호 (착용 기록에서 옷을 가리킬 때 사용)
@@ -36,8 +37,7 @@ data class WardrobeItem(
     val cutoutUri: String? = null,      // 배경 제거 (ML Kit 누끼)
     val garmentUri: String? = null,     // 옷만 (DeepFashion2 윤곽으로 오려냄)
     val style: String? = null,          // 사용자가 고른 스타일 (null이면 StyleTagger가 자동으로 붙인 스타일 사용)
-    // 마지막으로 고친 시각 — 나중에 DB와 맞출 때 폰과 DB 중 어느 쪽이 최신인지 판단하는 데 쓴다
-    val updatedAt: Long = System.currentTimeMillis()
+    val isOwned: Boolean = true         // 추천용 관심상품은 false. 옷장에는 저장하지 않는 임시 후보 메타데이터
 ) {
     /** 이 옷이 쓰는 사진 주소 전부 (보여주는 사진 + 보관한 버전들) */
     fun photoUris(): Set<String> = setOfNotNull(imageUri, originalUri, cutoutUri, garmentUri)
@@ -47,17 +47,9 @@ object WardrobeStore {
     private const val PREFS = "wardrobe_store"
     private const val KEY = "items"
     private const val KEY_SAMPLES_SEEDED = "samples_seeded"
-    private const val KEY_DELETED = "deleted"
 
     private val _items = MutableStateFlow<List<WardrobeItem>>(emptyList())
     val items: StateFlow<List<WardrobeItem>> = _items
-
-    /**
-     * 지운 옷 번호 → 지운 시각.
-     * 나중에 DB와 맞출 때 "이 옷은 폰에서 지웠어요"를 서버에 알려 주려고 남겨 둔다. (화면에서는 쓰지 않음)
-     */
-    private val _deleted = MutableStateFlow<Map<String, Long>>(emptyMap())
-    val deleted: StateFlow<Map<String, Long>> = _deleted
 
     private var loaded = false
 
@@ -65,9 +57,6 @@ object WardrobeStore {
         if (loaded) return
         loaded = true
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        _deleted.value = prefs.getString(KEY_DELETED, null)?.let { raw ->
-            runCatching { JSONObject(raw).let { o -> o.keys().asSequence().associateWith { o.getLong(it) } } }.getOrNull()
-        } ?: emptyMap()
         val raw = prefs.getString(KEY, null)
         var needsSave = false
 
@@ -127,6 +116,8 @@ object WardrobeStore {
         cleanUpOrphanPhotos(context)
         // 처음 켤 때 한 번만 샘플 옷을 약 6개월 전 등록으로 옮기고 지난 착용 기록을 넣는다
         SampleWearHistory.applyOnce(context)
+        // 앱을 켤 때 한 번, 서버 DB를 폰 옷장과 맞춘다 (서버를 나중에 켠 경우 대비)
+        DbSync.pushWardrobe(_items.value)
     }
 
     /**
@@ -144,15 +135,13 @@ object WardrobeStore {
     }
 
     fun add(context: Context, item: WardrobeItem) {
-        _items.value = _items.value + item.copy(updatedAt = System.currentTimeMillis())
+        _items.value = _items.value + item
         persist(context)
     }
 
-    /** 옷을 지운다. 지운 번호와 시각은 [deleted]에 남긴다 (나중에 DB에 전달용). */
     fun remove(context: Context, id: String) {
         _items.value.find { it.id == id }?.photoUris()?.forEach { deletePhoto(context, it) }
         _items.value = _items.value.filterNot { it.id == id }
-        _deleted.value = _deleted.value + (id to System.currentTimeMillis())
         persist(context)
     }
 
@@ -166,16 +155,14 @@ object WardrobeStore {
     /** 옷 정보를 고친다. 고친 뒤 더 이상 쓰지 않는 사진 파일은 지운다. */
     fun update(context: Context, item: WardrobeItem) {
         val old = _items.value.find { it.id == item.id }
-        val changed = item.copy(updatedAt = System.currentTimeMillis())
-        _items.value = _items.value.map { if (it.id == item.id) changed else it }
+        _items.value = _items.value.map { if (it.id == item.id) item else it }
         persist(context)
         old?.photoUris()?.minus(item.photoUris())?.forEach { deletePhoto(context, it) }
     }
 
     /** [계속 보관] — 지금부터 90일 동안 "안 입은 옷" 알림에서 뺀다. */
     fun keep(context: Context, id: String) {
-        val now = System.currentTimeMillis()
-        _items.value = _items.value.map { if (it.id == id) it.copy(keptAt = now, updatedAt = now) else it }
+        _items.value = _items.value.map { if (it.id == id) it.copy(keptAt = System.currentTimeMillis()) else it }
         persist(context)
     }
 
@@ -183,7 +170,7 @@ object WardrobeStore {
     fun toggleFavorite(context: Context, id: String) {
         _items.value = _items.value.map {
             if (it.id != id) it
-            else System.currentTimeMillis().let { now -> it.copy(favoritedAt = if (it.favoritedAt == null) now else null, updatedAt = now) }
+            else it.copy(favoritedAt = if (it.favoritedAt == null) System.currentTimeMillis() else null)
         }
         persist(context)
     }
@@ -206,9 +193,7 @@ object WardrobeStore {
         originalUri = o.optStringOrNull("originalUri"),
         cutoutUri = o.optStringOrNull("cutoutUri"),
         garmentUri = o.optStringOrNull("garmentUri"),
-        style = o.optStringOrNull("style"),
-        // 예전 버전에서 저장한 옷에는 수정 시각이 없으므로 등록 시각으로 대신한다
-        updatedAt = o.optLong("updatedAt", o.optLong("addedAt", System.currentTimeMillis()))
+        style = o.optStringOrNull("style")
     )
 
     private fun JSONObject.optStringOrNull(key: String): String? =
@@ -237,12 +222,11 @@ object WardrobeStore {
                     .put("cutoutUri", item.cutoutUri)
                     .put("garmentUri", item.garmentUri)
                     .put("style", item.style)
-                    .put("updatedAt", item.updatedAt)
             )
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY, arr.toString())
-            .putString(KEY_DELETED, JSONObject(_deleted.value).toString())
-            .apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, arr.toString()).apply()
+        // 서버 DB(Supabase)에도 같은 내용으로 저장 — 서버가 꺼져 있으면 조용히 건너뜀
+        DbSync.pushWardrobe(_items.value)
     }
 }

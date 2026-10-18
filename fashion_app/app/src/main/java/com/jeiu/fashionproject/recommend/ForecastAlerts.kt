@@ -55,13 +55,15 @@ object ForecastAlerts {
         situation: Situation? = null,
         count: Int = 4,
         today: String = WearDates.today(),
-        taste: TasteScores = TasteScores()
+        taste: TasteScores = TasteScores(),
+        bodyProfile: BodyProfile? = null
     ): DayPlan {
         val day = days[index]
         // 일교차가 크면 "겉옷을 챙기세요" 알림과 맞도록 코디에도 겉옷을 더한다
         val result = OutfitEngine.recommend(
             items, day.toWeatherInfo(), logs, styleScores, situation,
-            today = day.date, count = count, needOuter = day.maxTemp - day.minTemp >= BIG_RANGE, taste = taste
+            today = day.date, count = count, needOuter = day.maxTemp - day.minTemp >= BIG_RANGE, taste = taste,
+            bodyProfile = bodyProfile
         )
         val prevDay = days.getOrNull(index - 1)
         val previousTemp = when {

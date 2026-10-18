@@ -94,7 +94,7 @@ fun MissingItemScreen(onBack: () -> Unit) {
 
             // ① TOP 3
             item { SectionTitle("이것만 사면 코디가 늘어나요") }
-            if (r.suggestions.isEmpty()) item { Hint("지금 옷장으로 충분해요! 새로 사지 않아도 다양한 코디를 만들 수 있어요") }
+            if (r.suggestions.isEmpty()) item { Hint(if (r.goodCount == 0) "아이템 한 개만 추가해서 완성할 수 있는 코디가 없어요. 아래 상황별 필요한 옷을 확인해 주세요." else "현재 후보 중 코디 수를 늘려 주는 아이템을 찾지 못했어요.") }
             items(r.suggestions, key = { it.item.id }) { s ->
                 SuggestionCard(
                     rank = r.suggestions.indexOf(s) + 1,

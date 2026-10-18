@@ -4,19 +4,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -24,17 +17,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import android.content.Context
-import com.jeiu.fashionproject.data.WearDates
-import com.jeiu.fashionproject.data.WearLog
-import com.jeiu.fashionproject.data.WearLogStore
 import com.jeiu.fashionproject.recommend.OutfitEngine
 import com.jeiu.fashionproject.ui.theme.*
 
 /**
  * 옷장 코디 카드 (계획 4 — 추천).
  * 코디에 들어간 옷 사진을 모아 보여주고, 추천 이유와 👍👎 버튼을 단다.
- * [wear]를 주면 [오늘 이거 입었어요] 버튼도 단다 (누르면 오늘 착용 기록으로 저장 → 취향 +1 학습).
  *
  * 사진 배치: 옷이 4벌(아우터·상의·하의·신발)이면 왼쪽에 아우터·상의, 오른쪽에 하의·신발.
  *           3벌이면 왼쪽에 상의를 크게, 오른쪽에 하의·신발.
@@ -49,6 +37,7 @@ fun OutfitCard(
     onRate: (like: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     photoHeight: Dp = 200.dp,
+    interestedItemIds: Set<String> = emptySet(),
     wear: WearToday? = null
 ) {
     Card(
@@ -86,10 +75,15 @@ fun OutfitCard(
                 Text("${outfit.style} 코디", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
             }
             Text(
-                outfit.items.joinToString(" · ") { it.name },
+                outfit.items.joinToString(" · ") { if (it.id in interestedItemIds) "♥ ${it.name} (관심 옷)" else it.name },
                 style = MaterialTheme.typography.bodySmall, color = MediumGray,
                 maxLines = 2, overflow = TextOverflow.Ellipsis
             )
+            val interestedCount = outfit.items.count { it.id in interestedItemIds }
+            if (interestedCount > 0) {
+                Text("내 옷 ${outfit.items.size - interestedCount}개 + 관심 옷 ${interestedCount}개로 만든 코디",
+                    color = HeartPink, style = MaterialTheme.typography.labelSmall)
+            }
             // 추천 이유
             outfit.reasons.forEach { reason ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -97,11 +91,11 @@ fun OutfitCard(
                     Text(reason, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack)
                 }
             }
-            // 오늘 이거 입었어요
-            wear?.let { w ->
-                val worn = w.isWorn(outfit)
+            // 오늘 이거 입었어요 — 내 옷으로만 만든 코디일 때만 (관심 옷은 아직 갖고 있지 않으므로 착용 기록에 넣지 않음)
+            if (wear != null && outfit.items.none { it.id in interestedItemIds || !it.isOwned }) {
+                val worn = wear.isWorn(outfit)
                 OutlinedButton(
-                    onClick = { w.request(outfit) },
+                    onClick = { wear.request(outfit) },
                     enabled = !worn,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -142,9 +136,9 @@ fun OutfitCard(
 }
 
 /**
- * [오늘 이거 입었어요] 처리 (계획 4 — 4단계).
+ * [오늘 이거 입었어요] 처리 (계획 4 — 4단계, 황상윤).
  * 오늘 기록이 없으면 바로 저장하고, 다른 옷으로 이미 기록했으면 바꿀지 먼저 물어본다.
- * 저장은 WearLogStore.save를 쓰므로 새로 입은 옷만 취향 +1로 학습된다.
+ * 저장은 WearLogStore.save 를 쓰므로 취향 학습(착용 +1)과 서버 DB 동기화가 함께 된다.
  * 화면에서 [rememberWearToday]로 만들고, 같은 화면에 [Dialog]를 한 번 그려 준다.
  */
 class WearToday(private val context: Context, private val todayLog: WearLog?) {

@@ -20,7 +20,7 @@ data class WearLog(
     val memo: String = ""
 )
 
-/** 착용 기록 저장소 — WardrobeStore와 같은 방식(StateFlow + SharedPreferences JSON). */
+/** 착용 기록 저장소 — WardrobeStore와 같은 방식(StateFlow + SharedPreferences JSON, 바뀌면 서버 DB에도 저장). */
 object WearLogStore {
     private const val PREFS = "wear_log_store"
     private const val KEY = "logs"
@@ -49,26 +49,23 @@ object WearLogStore {
         }
         // 처음 켤 때 한 번만 샘플 옷의 지난 착용 기록을 넣는다
         SampleWearHistory.applyOnce(context)
+        DbSync.pushWearLogs(_logs.value)
     }
 
     fun logFor(date: String): WearLog? = _logs.value.find { it.date == date }
 
-    /**
-     * 그날 기록을 새로 쓰거나 고친다. 옷을 하나도 안 고르면 그날 기록을 지운다.
-     * 새로 추가된 옷만 "입었다 = 약한 좋아요(+1)"로 취향 학습한다. (같은 날 다시 저장해도 두 번 세지 않음)
-     */
+    /** 그날 기록을 새로 쓰거나 고친다. 옷을 하나도 안 고르면 그날 기록을 지운다. */
     fun save(context: Context, log: WearLog) {
-        val before = logFor(log.date)?.itemIds.orEmpty().toSet()
         val others = _logs.value.filterNot { it.date == log.date }
         _logs.value = (if (log.itemIds.isEmpty()) others else others + log).sortedBy { it.date }
         persist(context)
-        val added = log.itemIds.filter { it !in before }.toSet()
-        TastePreferenceStore.learnWorn(context, WardrobeStore.items.value.filter { it.id in added }, log.date)
+        TastePreferenceStore.learnWorn(context, WardrobeStore.items.value.filter { it.id in log.itemIds }, log.date)
     }
 
     fun delete(context: Context, date: String) {
         _logs.value = _logs.value.filterNot { it.date == date }
         persist(context)
+        TastePreferenceStore.learnWorn(context, emptyList(), date)
     }
 
     /** 기록이 없는 날짜에만 한꺼번에 넣는다 (직접 기록한 날은 건드리지 않음). 넣은 개수를 돌려준다. */
@@ -92,6 +89,8 @@ object WearLogStore {
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY, arr.toString()).apply()
+        // 서버 DB(Supabase wear_logs 테이블)에도 같은 내용으로 저장
+        DbSync.pushWearLogs(_logs.value)
     }
 }
 

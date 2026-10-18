@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,8 +39,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
-import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
+import com.jeiu.fashionproject.data.PrivacyConsent
+import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
 import com.jeiu.fashionproject.data.WearLogStore
@@ -47,10 +50,21 @@ import com.jeiu.fashionproject.data.advice
 import com.jeiu.fashionproject.data.isRainy
 import com.jeiu.fashionproject.data.isCloudy
 import com.jeiu.fashionproject.recommend.ForecastAlerts
+import com.jeiu.fashionproject.recommend.BodyProfile
+import com.jeiu.fashionproject.recommend.BodyProfileRepository
+import com.jeiu.fashionproject.recommend.BodyProfileAnalyzer
 import com.jeiu.fashionproject.recommend.OutfitEngine
 import com.jeiu.fashionproject.ui.components.NotEnoughClothesCard
 import com.jeiu.fashionproject.ui.components.OutfitCard
 import com.jeiu.fashionproject.ui.components.rememberWearToday
+import com.jeiu.fashionproject.ui.components.ServerStatusBadge
+import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.data.NaverImageSearchRepository
+import com.jeiu.fashionproject.data.ShopImageResult
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
+import com.jeiu.fashionproject.ui.components.outfitQuery
+import com.jeiu.fashionproject.ui.components.OutfitPhoto
+import com.jeiu.fashionproject.ui.components.OutfitPhotoImage
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.ForecastUiState
 import com.jeiu.fashionproject.ui.viewmodel.WeatherUiState
@@ -73,10 +87,21 @@ fun HomeScreen(
     onForecastClick: () -> Unit,
     onProductClick: () -> Unit,
     onAddClothing: () -> Unit,
-    weatherViewModel: WeatherViewModel
+    onShopClick: (presetQuery: String?) -> Unit,
+    weatherViewModel: WeatherViewModel,
+    gender: Gender? = null
 ) {
     val weatherState by weatherViewModel.state.collectAsState()
     val context = LocalContext.current
+    val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
+    var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
+    LaunchedEffect(sessionMeasurements) {
+        savedBodyProfile = null
+        if (BodyProfileAnalyzer.fromMeasurements(sessionMeasurements) == null)
+            savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
+    }
+    val bodyProfile: BodyProfile? = BodyProfileAnalyzer.fromMeasurements(sessionMeasurements)
+        ?: savedBodyProfile.takeIf { PrivacyConsent.canSaveRecords(context) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { weatherViewModel.fetchWeather() }
@@ -106,28 +131,44 @@ fun HomeScreen(
     val wearLogs by WearLogStore.logs.collectAsState()
     val weatherInfo = (weatherState as? WeatherUiState.Success)?.info
     // 👍👎·[오늘 이거 입었어요]를 눌러도 카드가 바로 바뀌지 않도록
-    // 취향 점수는 계산할 때의 값만 쓰고, 오늘 착용 기록은 빼고 계산한다
-    val pastLogs = wearLogs.filter { it.date != WearDates.today() }
-    val recommendation = remember(wardrobe, pastLogs, weatherInfo) {
-        OutfitEngine.recommend(
-            wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
-            taste = TastePreferenceStore.scores.value
-        )
+    // 취향 점수는 계산할 때의 값만 쓰고, 오늘 착용 기록은 빼고 계산한다 (황상윤)
+    val pastLogs = remember(wearLogs) { wearLogs.filter { it.date != WearDates.today() } }
+    val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile) {
+        OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
+            taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile)
     }
     var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
     val wearToday = rememberWearToday(wearLogs)
     var showNotifDialog by remember { mutableStateOf(false) }
+    var shopKeyword by remember { mutableStateOf<String?>(null) }
+
+    // 인기 상품: 20°C 이상이면 앱에 넣어둔 여름 상품(구매 링크 있음),
+    // 그보다 쌀쌀하면 계절 키워드로 네이버 이미지 검색 결과를 보여준다.
+    val seasonKeyword: String? = weatherInfo?.let {
+        when {
+            it.temp < 5 -> "한겨울"
+            it.temp < 12 -> "겨울"
+            it.temp < 20 -> "가을"
+            else -> null // 여름 상품 목록 사용
+        }
+    }
+    // 20대 대상 앱이라 검색어에 "20대"를 넣어 연령대가 다른 코디가 섞이지 않게 한다
+    val seasonShopQuery = seasonKeyword?.let { "20대 $it 코디" }          // 쇼핑 탭 검색창에 들어갈 말
+    val seasonQuery = seasonShopQuery?.let { outfitQuery(gender, it) }   // 실제 검색어(성별 포함)
+    val seasonItems by produceState<List<ShopImageResult>>(emptyList(), seasonQuery) {
+        value = if (seasonQuery == null) emptyList()
+        else runCatching { NaverImageSearchRepository.search(seasonQuery, display = 10) }.getOrDefault(emptyList())
+    }
 
     // 내일 코디 (계획 4 — 3단계) — 예보에서 내일을 찾아 코디와 알림 문구를 만든다
     val forecastState by weatherViewModel.forecast.collectAsState()
     val forecastDays = (forecastState as? ForecastUiState.Success)?.days.orEmpty()
-    val tomorrowPlan = remember(wardrobe, wearLogs, forecastDays, weatherInfo) {
+    val tomorrowPlan = remember(wardrobe, wearLogs, forecastDays, weatherInfo, bodyProfile) {
         val index = forecastDays.indexOfFirst { it.date == WearDates.daysAgo(-1) }
         if (index < 0) null
-        else ForecastAlerts.plan(
-            forecastDays, index, weatherInfo?.temp, wardrobe, wearLogs, StylePreferenceStore.scores.value,
-            count = 1, taste = TastePreferenceStore.scores.value
-        )
+        else ForecastAlerts.plan(forecastDays, index, weatherInfo?.temp, wardrobe, wearLogs,
+            StylePreferenceStore.scores.value, count = 1, taste = TastePreferenceStore.scores.value,
+            bodyProfile = bodyProfile)
     }
 
     Column(
@@ -152,6 +193,8 @@ fun HomeScreen(
                     color = CharcoalBlack,
                     fontWeight = FontWeight.Bold
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                ServerStatusBadge()
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -306,8 +349,12 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("인기 상품", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-            TextButton(onClick = onProductClick) {
+            Text(
+                if (seasonKeyword != null) "요즘 날씨 인기 스타일" else "인기 상품",
+                style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold
+            )
+            // 전체보기 → 쇼핑 탭으로 이동 (전에는 상품 하나짜리 상세 화면으로 가서 '전체'가 아니었음)
+            TextButton(onClick = { onShopClick(seasonShopQuery) }) {
                 Text("전체보기", style = MaterialTheme.typography.bodySmall, color = Camel)
             }
         }
@@ -318,7 +365,42 @@ fun HomeScreen(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(popularItems) { item ->
+            if (seasonKeyword != null) {
+                items(seasonItems) { result ->
+                    Card(
+                        modifier = Modifier
+                            .width(140.dp)
+                            .clickable { shopKeyword = outfitQuery(gender, seasonKeyword, "코디") },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(180.dp)
+                                    .background(CamelLight)
+                            ) {
+                                OutfitPhotoImage(
+                                    photo = OutfitPhoto(result.imageUrl, result.thumbnailUrl),
+                                    contentDescription = result.title,
+                                    contentScale = ContentScale.Fit,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            Text(
+                                result.title,
+                                modifier = Modifier.padding(10.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = CharcoalBlack,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2
+                            )
+                        }
+                    }
+                }
+            } else items(popularItems) { item ->
                 Card(
                     modifier = Modifier
                         .width(140.dp)
@@ -353,6 +435,10 @@ fun HomeScreen(
         }
 
         Spacer(modifier = Modifier.height(28.dp))
+    }
+
+    shopKeyword?.let { keyword ->
+        ShopSearchSheet(keyword = keyword, onDismiss = { shopKeyword = null })
     }
 
     wearToday.Dialog()

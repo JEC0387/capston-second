@@ -5,9 +5,10 @@ sealed class Screen(val route: String) {
     object Home : Screen("home")
     object Wardrobe : Screen("wardrobe")
     /** 코디 추천 (오늘 / 5일 예보 / 상황별) — 계획 4. tab을 주면 그 탭으로 열림 (0: 오늘, 1: 5일 예보, 2: 상황별) */
-    object OutfitRecommend : Screen("outfit_recommend?tab={tab}") {
-        fun route(tab: Int = 0) = "outfit_recommend?tab=$tab"
+    object OutfitRecommend : Screen("outfit_recommend?tab={tab}&scope={scope}") {
+        fun route(tab: Int = 0, scope: String = "OWNED") = "outfit_recommend?tab=$tab&scope=$scope"
     }
+    object WeatherOutfit : Screen("weather_outfit")
     object BodyAnalysis : Screen("body_analysis")
     object Shop : Screen("shop")
     object ProductDetail : Screen("product_detail")
@@ -26,6 +27,9 @@ sealed class Screen(val route: String) {
         fun route(date: String? = null) = if (date == null) "wear_log" else "wear_log?date=$date"
     }
     object WearCalendar : Screen("wear_calendar")
-    /** "이것만 사면 코디 완성" — 계획 4 (5단계) */
+    /** 체형 측정 기록 · 변화 그래프 (서버 DB 기록) */
+    object BodyHistory : Screen("body_history")
     object MissingItem : Screen("missing_item")
+    /** 무신사 랭킹 옷장 — 성별 맞춤 데모 옷 · 날씨 코디 · 가상 피팅 */
+    object MusinsaCloset : Screen("musinsa_closet")
 }

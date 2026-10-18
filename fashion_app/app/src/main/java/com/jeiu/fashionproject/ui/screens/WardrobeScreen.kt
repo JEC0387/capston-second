@@ -1,6 +1,14 @@
 package com.jeiu.fashionproject.ui.screens
 
 import android.net.Uri
+import android.content.Intent
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.jeiu.fashionproject.data.ProductInterestStore
+import com.jeiu.fashionproject.data.ShopCatalog
+import com.jeiu.fashionproject.recommend.ClothingScope
+import com.jeiu.fashionproject.recommend.OutfitSources
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -18,8 +26,9 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,24 +52,32 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun WardrobeScreen(
-    onProductClick: () -> Unit,
+    onOutfitRecommend: (ClothingScope) -> Unit,
+    onShop: () -> Unit,
+    onProductDetail: () -> Unit,
     onAddClothing: () -> Unit = {},
     onVirtualFitting: () -> Unit = {},
     onWearLog: () -> Unit = {},          // 오늘 입은 옷 기록
     onWearCalendar: () -> Unit = {},     // 착용 기록 달력
     onEditClothing: (id: String) -> Unit = {},  // 옷 정보 수정
-    onMissingItem: () -> Unit = {}              // "이것만 사면" 화면
+    onMissingItem: () -> Unit = {},             // "이것만 사면" 화면
+    onMusinsaCloset: () -> Unit = {}            // 무신사 랭킹 옷장 (성별 맞춤 데모 옷 · 가상 피팅)
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
+        ProductInterestStore.load(context)
         WearLogStore.load(context)
     }
     // 샘플 옷·AI 등록 옷·직접 추가한 옷이 모두 저장소 하나에 들어 있다.
     val allDisplayed by WardrobeStore.items.collectAsState()
     val logs by WearLogStore.logs.collectAsState()
     val categories = listOf("전체") + ClothingCategories.categories
-    var selectedCategory by remember { mutableStateOf("전체") }
+    val likedIds by ProductInterestStore.ids.collectAsState()
+    val interested = ShopCatalog.interested(likedIds)
+    var selectedScope by rememberSaveable { mutableStateOf(ClothingScope.ALL) }
+    var showScopeDialog by remember { mutableStateOf(false) }
+    var selectedCategory by rememberSaveable { mutableStateOf("전체") }
     var detailItemId by remember { mutableStateOf<String?>(null) }   // 상세 창에 보여줄 옷
 
     var showAddDialog by remember { mutableStateOf(false) }
@@ -72,11 +89,11 @@ fun WardrobeScreen(
         uri?.let { pendingUri = it; newItemName = ""; showAddDialog = true }
     }
 
-    val filtered = if (selectedCategory == "전체") allDisplayed else allDisplayed.filter { it.category == selectedCategory }
+    val filtered = OutfitSources.entries(allDisplayed, interested, selectedScope, selectedCategory)
 
-    // 하트를 누른 옷은 상단으로, 해제하면 원래 자리로.
-    // 하트를 누른 시각 순서대로 위쪽에 배치하고, 나머지는 기존 순서 유지.
-    val displayList = filtered.sortedBy { it.favoritedAt ?: Long.MAX_VALUE }
+    // 보유 옷 즐겨찾기는 기존 순서대로 위쪽에 유지한다.
+    // 관심상품 하트와 구분하도록 보유 옷 즐겨찾기는 별 표시를 사용한다.
+    val displayList = filtered.sortedBy { it.owned?.favoritedAt ?: Long.MAX_VALUE }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 헤더
@@ -87,7 +104,7 @@ fun WardrobeScreen(
         ) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("내 옷장", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                Text("${allDisplayed.size}개", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+                Text("${OutfitSources.entries(allDisplayed, interested, selectedScope).size}개", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onWearCalendar) {
@@ -123,6 +140,34 @@ fun WardrobeScreen(
             BuyThisCard(r, onClick = onMissingItem, modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp))
         }
 
+        // 무신사 랭킹 옷장으로 들어가는 카드
+        Card(
+            onClick = onMusinsaCloset,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = CamelLight)
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("무신사 랭킹 옷장", style = MaterialTheme.typography.labelLarge, color = Brown, fontWeight = FontWeight.SemiBold)
+                    Text("20대 인기 상품으로 날씨 코디 · 가상 피팅 해보기", style = MaterialTheme.typography.labelSmall, color = Brown)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Brown)
+            }
+        }
+
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ClothingScope.entries.forEach { scope ->
+                FilterChip(selected = selectedScope == scope, onClick = { selectedScope = scope },
+                    label = { Text(scope.label) })
+            }
+        }
+
         // 카테고리 탭
         ScrollableTabRow(
             selectedTabIndex = categories.indexOf(selectedCategory),
@@ -154,15 +199,55 @@ fun WardrobeScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // 의류 그리드
-        LazyVerticalGrid(
+        // Scope and category filters share one projection of the current interest state.
+        if (displayList.isEmpty()) {
+            Column(Modifier.weight(1f).fillMaxWidth().padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center) {
+                Text(OutfitSources.emptyMessage(selectedScope, selectedCategory), color = MediumGray)
+                if (selectedScope != ClothingScope.INTERESTED) {
+                    TextButton(onClick = onAddClothing) { Text("옷 등록하기") }
+                }
+                if (selectedScope != ClothingScope.OWNED) {
+                    TextButton(onClick = onShop) { Text("쇼핑 둘러보기") }
+                }
+            }
+        } else LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.weight(1f)
         ) {
-            items(displayList, key = { item -> item.id }) { item ->
+            items(displayList, key = { entry -> entry.key }) { entry ->
+                val product = entry.product
+                if (product != null) {
+                    Card(onClick = {
+                        if (product.purchaseUrl.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
+                        else onProductDetail()
+                    }, modifier = Modifier.fillMaxWidth().animateItem(), shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = White)) {
+                        Box(Modifier.fillMaxWidth().height(150.dp).background(Color(product.color))) {
+                            AsyncImage(model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
+                                contentDescription = product.name, contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize())
+                            IconButton(onClick = { ProductInterestStore.toggle(context, product.id) },
+                                modifier = Modifier.align(Alignment.TopEnd)) {
+                                Icon(Icons.Filled.Favorite, contentDescription = "관심 해제", tint = HeartPink)
+                            }
+                        }
+                        Column(Modifier.padding(12.dp)) {
+                            Text("♥ 관심 옷 · ${product.category}", color = HeartPink, style = MaterialTheme.typography.labelSmall)
+                            Text(product.name, color = CharcoalBlack, style = MaterialTheme.typography.bodySmall)
+                            if (OutfitSources.candidate(product, 1L) == null) {
+                                Text("추천에 필요한 정보가 부족해요", color = MediumGray,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    return@items
+                }
+                val item = entry.owned!!
                 val isFav = item.favoritedAt != null
                 Card(
                     onClick = { detailItemId = item.id },
@@ -185,8 +270,8 @@ fun WardrobeScreen(
                                 modifier = Modifier.align(Alignment.TopEnd)
                             ) {
                                 Icon(
-                                    if (isFav) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                    contentDescription = "즐겨찾기",
+                                    if (isFav) Icons.Filled.Star else Icons.Filled.StarBorder,
+                                    contentDescription = "내 옷 즐겨찾기",
                                     tint = HeartPink,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -204,6 +289,7 @@ fun WardrobeScreen(
                             }
                         }
                         Column(modifier = Modifier.padding(12.dp)) {
+                            Text("내 옷", style = MaterialTheme.typography.labelSmall, color = MediumGray)
                             Text(item.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium)
                         }
                     }
@@ -253,7 +339,7 @@ fun WardrobeScreen(
                     )
                 }
                 Button(
-                    onClick = onProductClick,
+                    onClick = { showScopeDialog = true },
                     modifier = Modifier.weight(1.4f).height(48.dp),
                     shape = RoundedCornerShape(12.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
@@ -269,6 +355,24 @@ fun WardrobeScreen(
                 }
             }
         }
+    }
+
+    if (showScopeDialog) {
+        AlertDialog(onDismissRequest = { showScopeDialog = false }, title = { Text("추천에 사용할 옷") },
+            text = {
+                Column {
+                    listOf(ClothingScope.OWNED, ClothingScope.ALL, ClothingScope.INTERESTED).forEach { scope ->
+                        TextButton(onClick = { showScopeDialog = false; onOutfitRecommend(scope) }) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text(scope.recommendationLabel, fontWeight = FontWeight.Bold, color = Brown)
+                                Text(scope.description, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                            }
+                        }
+                    }
+                }
+            }, confirmButton = {}, dismissButton = {
+                TextButton(onClick = { showScopeDialog = false }) { Text("취소") }
+            })
     }
 
     // 옷 상세 (옷 칸을 누르면 아래에서 올라옴)
@@ -433,7 +537,6 @@ private fun ClothingDetailSheet(
 @Composable
 private fun BuyThisCard(report: MissingItemFinder.Report, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val top = report.suggestions.firstOrNull()
-    if (top == null && report.orphans.isEmpty()) return
     Card(
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
@@ -447,6 +550,7 @@ private fun BuyThisCard(report: MissingItemFinder.Report, onClick: () -> Unit, m
         ) {
             Icon(Icons.Filled.ShoppingBag, contentDescription = null, tint = Brown, modifier = Modifier.size(20.dp))
             Column(Modifier.weight(1f)) {
+                if (top == null) Text("부족한 아이템 살펴보기", color = BrownDark)
                 top?.let {
                     Text(
                         "${it.item.name} 하나만 사면 코디 ${it.gain}개가 더 생겨요",

@@ -34,6 +34,7 @@ object StylePreferenceStore {
         // 2) 서버가 켜져 있으면 서버값으로 덮어쓰기
         ioScope.launch {
             val server = BackendApi.getStylePreference() ?: return@launch
+            if (server.ratedCount < _ratedCount.value) return@launch
             _scores.value = styles.associateWith { server.scores[it] ?: 0 }
             _ratedCount.value = server.ratedCount
             persist(context)
@@ -51,6 +52,7 @@ object StylePreferenceStore {
         // 서버에도 평가 전송 → 응답으로 동기화 (실패해도 로컬값 유지)
         ioScope.launch {
             val server = BackendApi.rateStylePreference(style, like) ?: return@launch
+            if (server.ratedCount < _ratedCount.value) return@launch
             _scores.value = styles.associateWith { server.scores[it] ?: 0 }
             _ratedCount.value = server.ratedCount
             persist(context)

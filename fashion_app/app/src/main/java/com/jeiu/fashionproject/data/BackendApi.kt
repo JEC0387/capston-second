@@ -37,6 +37,13 @@ object BackendApi {
 
     var BASE_URL = "http://10.0.2.2:8000"
 
+    /** 이 폰의 기기 번호 — 서버 DB가 폰마다 데이터를 따로 저장하도록 모든 요청에 붙인다 (DbSync.init 에서 설정). */
+    @Volatile var deviceId: String? = null
+
+    private fun HttpURLConnection.addDeviceHeader() {
+        deviceId?.let { setRequestProperty("X-Device-Id", it) }
+    }
+
     // ── 공용 HTTP 헬퍼 ──────────────────────────────────────────────
 
     /** GET 요청 → 응답 본문 문자열. 실패 시 null (호출부가 로컬 폴백) */
@@ -46,6 +53,7 @@ object BackendApi {
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 5_000
+                addDeviceHeader()
             }
             val code = conn.responseCode
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
@@ -64,6 +72,7 @@ object BackendApi {
                 connectTimeout = 3_000
                 readTimeout = 5_000
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                addDeviceHeader()
             }
             conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
@@ -72,6 +81,21 @@ object BackendApi {
             conn.disconnect()
             if (code in 200..299) body else null
         }.getOrNull()
+    }
+
+    /** DELETE 요청 → 성공(2xx)이면 true, 서버 연결 실패·오류면 false */
+    suspend fun delete(path: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                requestMethod = "DELETE"
+                connectTimeout = 3_000
+                readTimeout = 5_000
+                addDeviceHeader()
+            }
+            val code = conn.responseCode
+            conn.disconnect()
+            code in 200..299
+        }.getOrDefault(false)
     }
 
     /** 서버가 살아있는지 빠르게 확인 (홈 진입 시 1회) */
@@ -139,6 +163,7 @@ object BackendApi {
             connectTimeout = 5_000
             readTimeout = readTimeoutMs
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            addDeviceHeader()
         }
 
         val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
@@ -213,6 +238,9 @@ object BackendApi {
                 outfitCount = j.getInt("outfitCount"),
                 favoriteCount = j.getInt("favoriteCount"),
                 bodyType = if (j.isNull("bodyType")) null else j.optString("bodyType"),
+                preferredStyles = j.optJSONArray("preferredStyles")?.let { arr ->
+                    List(arr.length()) { arr.getString(it) }
+                } ?: emptyList(),
             )
         }.getOrNull()
     }
@@ -230,5 +258,6 @@ data class StylePrefData(
 
 data class ServerProfile(
     val nickname: String, val email: String, val wardrobeCount: Int,
-    val outfitCount: Int, val favoriteCount: Int, val bodyType: String?
+    val outfitCount: Int, val favoriteCount: Int, val bodyType: String?,
+    val preferredStyles: List<String> = emptyList()
 )

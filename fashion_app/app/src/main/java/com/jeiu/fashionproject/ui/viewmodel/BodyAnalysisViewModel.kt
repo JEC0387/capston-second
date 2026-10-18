@@ -10,8 +10,11 @@ import androidx.exifinterface.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import com.jeiu.fashionproject.data.DbSync
+import com.jeiu.fashionproject.data.BodyAnalysisCompletion
+import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.camera.GuidePoint
 import com.jeiu.fashionproject.ui.camera.Joint
 import kotlinx.coroutines.CancellationException
@@ -30,6 +33,7 @@ import com.google.mlkit.vision.pose.PoseLandmark
 import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.drop
 
 data class BodyAnalysisResult(
     val bodyTypeKo: String,
@@ -53,34 +57,45 @@ sealed class BodyAnalysisUiState {
     data class Error(val message: String) : BodyAnalysisUiState()
 }
 
-class BodyAnalysisViewModel(application: Application, private val savedStateHandle: SavedStateHandle) : AndroidViewModel(application) {
+class BodyAnalysisViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow<BodyAnalysisUiState>(BodyAnalysisUiState.Idle)
     val state: StateFlow<BodyAnalysisUiState> = _state
 
-    // SavedStateHandle survives camera navigation/configuration changes and system state restoration.
-    // No profile/DB write: the user can edit this on each new analysis.
-    val heightInput: StateFlow<String> = savedStateHandle.getStateFlow("body_height_cm", "")
+    // 입력 키도 분석 중에만 메모리에 둔다. 프로세스가 종료되면 다시 입력한다.
+    private val _heightInput = MutableStateFlow("")
+    val heightInput: StateFlow<String> = _heightInput
     fun updateHeightInput(text: String) {
-        if (BodyMeasurementCalculator.acceptsHeightInput(text)) savedStateHandle["body_height_cm"] = text
+        if (BodyMeasurementCalculator.acceptsHeightInput(text)) _heightInput.value = text
     }
     private val segmenterDelegate = lazy { BodySegmenter(getApplication()) }
     private val segmenter by segmenterDelegate
     private var analysisJob: Job? = null
+    private var currentPhotoUri: Uri? = null
     @Volatile private var cleared = false
+    init {
+        viewModelScope.launch {
+            BodyAnalysisSessionStore.clearGeneration.drop(1).collect { reset() }
+        }
+    }
 
     fun analyzeImage(context: Context, uri: Uri) {
         analysisJob?.cancel()
         val heightCm = BodyMeasurementCalculator.parseHeight(heightInput.value)
         if (heightCm == null) {
+            deleteTemporaryPhoto(uri)
             _state.value = BodyAnalysisUiState.Error("키를 100~230 cm 범위의 숫자로 입력한 뒤 다시 시도해주세요.")
             return
         }
+        currentPhotoUri = uri
         _state.value = BodyAnalysisUiState.Analyzing
         analysisJob = viewModelScope.launch {
             var bitmap: Bitmap? = null
             try {
-                val analysisBitmap = withContext(Dispatchers.IO) { loadBitmap(context, uri) }
+                val analysisBitmap = withContext(Dispatchers.IO) {
+                    cleanOldBodyPhotos(context, uri)
+                    loadBitmap(context, uri)
+                }
                 bitmap = analysisBitmap
                 // Exactly the same EXIF-normalized bitmap for BOTH models; no PreviewView coordinates.
                 val pose = detectPose(analysisBitmap)
@@ -102,11 +117,17 @@ class BodyAnalysisViewModel(application: Application, private val savedStateHand
                                 else null
                         )
                         _state.value = BodyAnalysisUiState.Success(result, uri)
+                        // 세션 값은 저장 선택·서버 상태와 독립적이다. 동의한 경우에만 숫자 기록을 전송 대기한다.
+                        BodyAnalysisCompletion.complete(result.measurements, PrivacyConsent.canSaveRecords(context)) {
+                            DbSync.saveBodyMeasurement(result)
+                        }
                     }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
+                deleteTemporaryPhoto(uri)
+                if (currentPhotoUri == uri) currentPhotoUri = null
                 _state.value = BodyAnalysisUiState.Error("이미지 분석에 실패했어요. 다른 전신 사진으로 다시 시도해주세요.")
             } finally {
                 bitmap?.recycle()
@@ -114,6 +135,13 @@ class BodyAnalysisViewModel(application: Application, private val savedStateHand
                 if (cleared && segmenterDelegate.isInitialized()) segmenter.close()
             }
         }
+    }
+
+    /** 예전에 찍은 체형 사진(앱 임시 폴더의 body_*.jpg)을 지운다. 지금 분석할 사진만 남긴다. */
+    private fun cleanOldBodyPhotos(context: Context, keep: Uri) {
+        val keepPath = keep.takeIf { it.scheme == "file" }?.path
+        context.cacheDir.listFiles { f -> f.name.startsWith("body_") && f.name.endsWith(".jpg") }
+            ?.forEach { if (it.absolutePath != keepPath) it.delete() }
     }
 
     // Wait for the native task to release its input before recycling, even after job cancellation.
@@ -132,15 +160,32 @@ class BodyAnalysisViewModel(application: Application, private val savedStateHand
         }
     }
 
-    fun reset() { analysisJob?.cancel(); _state.value = BodyAnalysisUiState.Idle }
+    fun reset() {
+        analysisJob?.cancel()
+        currentPhotoUri?.let(::deleteTemporaryPhoto)
+        currentPhotoUri = null
+        _state.value = BodyAnalysisUiState.Idle
+    }
 
     override fun onCleared() {
         cleared = true
         super.onCleared()
         analysisJob?.cancel()
+        currentPhotoUri?.let(::deleteTemporaryPhoto)
+        currentPhotoUri = null
         val job = analysisJob
         if (job != null) job.invokeOnCompletion { if (segmenterDelegate.isInitialized()) segmenter.close() }
         else if (segmenterDelegate.isInitialized()) segmenter.close()
+    }
+
+    /** 앱이 만든 캐시 사진만 삭제한다. 갤러리에서 선택한 URI에는 손대지 않는다. */
+    private fun deleteTemporaryPhoto(uri: Uri) {
+        val file = uri.takeIf { it.scheme == "file" }?.path?.let { java.io.File(it) } ?: return
+        val cache = getApplication<Application>().cacheDir
+        runCatching {
+            if (file.parentFile?.canonicalPath == cache.canonicalPath &&
+                file.name.startsWith("body_") && file.name.endsWith(".jpg")) file.delete()
+        }
     }
 
     private fun loadBitmap(context: Context, uri: Uri): Bitmap {

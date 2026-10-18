@@ -104,6 +104,8 @@ object TastePreferenceStore {
             runCatching { JSONArray(raw).let { arr -> List(arr.length()) { eventFromJson(arr.getJSONObject(it)) } } }.getOrNull()
         } ?: emptyList()
         _scores.value = _events.value.fold(base) { acc, e -> acc.plus(e) }
+        // 서버 DB(taste_events)에도 같은 기록을 맞춰 둔다 (폰이 기준)
+        DbSync.pushTasteEvents(_events.value)
     }
 
     /** 코디 카드 👍👎 — 스타일(기존 저장소)과 색·종류·조합 방식을 함께 학습한다 */
@@ -126,15 +128,16 @@ object TastePreferenceStore {
 
     /** 착용 기록 — 입은 옷의 색·종류에 약한 좋아요(+1) */
     fun learnWorn(context: Context, items: List<WardrobeItem>, date: String? = null) {
-        if (items.isEmpty()) return
-        record(
-            context,
-            TasteEvent(
-                at = System.currentTimeMillis(), source = TasteEvent.SOURCE_WORN, liked = true,
-                colors = items.map { it.colorName }, kinds = items.map { SituationRules.kindOf(it) },
-                itemIds = items.map { it.id }, date = date
-            )
-        )
+        load(context)
+        val event = items.takeIf { it.isNotEmpty() }?.let {
+            TasteEvent(System.currentTimeMillis(), TasteEvent.SOURCE_WORN, true,
+                it.map { item -> item.colorName }, it.map { item -> SituationRules.kindOf(item) },
+                itemIds = it.map { item -> item.id }, date = date)
+        }
+        if (date == null) { if (event != null) record(context, event); return }
+        _events.value = replaceWornEvents(_events.value, date, event)
+        _scores.value = _events.value.fold(base) { acc, e -> acc.plus(e) }
+        persist(context)
     }
 
     private fun record(context: Context, event: TasteEvent) {
@@ -143,18 +146,6 @@ object TastePreferenceStore {
         _scores.value = _scores.value.plus(event)
         persist(context)
     }
-
-    /** 기록 하나를 점수에 더한다. 한 기록 안에서 같은 색·종류는 한 번만 센다 */
-    private fun TasteScores.plus(e: TasteEvent): TasteScores = copy(
-        colors = colors.plusEach(e.colors.distinct(), e.delta),
-        kinds = kinds.plusEach(e.kinds.distinct(), e.delta),
-        patterns = if (e.pattern == null) patterns else patterns.plusEach(listOf(e.pattern), e.delta),
-        ratedCount = ratedCount + if (e.source == TasteEvent.SOURCE_WORN) 0 else 1,
-        wornCount = wornCount + if (e.source == TasteEvent.SOURCE_WORN) 1 else 0
-    )
-
-    private fun Map<String, Int>.plusEach(keys: List<String>, delta: Int): Map<String, Int> =
-        toMutableMap().apply { keys.forEach { this[it] = (this[it] ?: 0) + delta } }
 
     private fun JSONObject?.toIntMap(): Map<String, Int> =
         if (this == null) emptyMap() else keys().asSequence().associateWith { getInt(it) }
@@ -201,5 +192,22 @@ object TastePreferenceStore {
             )
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_EVENTS, arr.toString()).apply()
+        DbSync.pushTasteEvents(_events.value)
     }
 }
+
+/** 기록 하나를 점수에 더한다. 한 기록 안에서 같은 색·종류는 한 번만 센다 */
+internal fun TasteScores.plus(e: TasteEvent): TasteScores = copy(
+    colors = colors.plusEach(e.colors.distinct(), e.delta),
+    kinds = kinds.plusEach(e.kinds.distinct(), e.delta),
+    patterns = if (e.pattern == null) patterns else patterns.plusEach(listOf(e.pattern), e.delta),
+    ratedCount = ratedCount + if (e.source == TasteEvent.SOURCE_WORN) 0 else 1,
+    wornCount = wornCount + if (e.source == TasteEvent.SOURCE_WORN) 1 else 0
+)
+
+private fun Map<String, Int>.plusEach(keys: List<String>, delta: Int): Map<String, Int> =
+    toMutableMap().apply { keys.forEach { this[it] = (this[it] ?: 0) + delta } }
+
+/** A saved day replaces that day's weak preference, including removal; explicit ratings stay intact. */
+internal fun replaceWornEvents(events: List<TasteEvent>, date: String, event: TasteEvent?): List<TasteEvent> =
+    events.filterNot { it.source == TasteEvent.SOURCE_WORN && it.date == date } + listOfNotNull(event)

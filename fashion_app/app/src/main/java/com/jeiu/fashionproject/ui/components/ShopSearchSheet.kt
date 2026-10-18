@@ -52,7 +52,7 @@ fun ShopSearchSheet(keyword: String, onDismiss: () -> Unit) {
                 color = CharcoalBlack
             )
             Text(
-                "어디서 찾아볼까요?",
+                "비슷한 상품을 어디서 찾아볼까요?",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MediumGray
             )
