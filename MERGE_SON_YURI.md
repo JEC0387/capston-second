@@ -15,7 +15,7 @@
 - 옷장 탭(`WardrobeScreen`): 황상윤 버전(WardrobeStore · 착용 기록 · 관심 옷) 유지. 무신사 옷장은 별도 화면으로 분리
 - 카메라(`CameraPreviewScreen`): 이지민 버전(촬영 가이드 · 자동 촬영) 유지. 손유리의 **전면/후면 카메라 전환 버튼은 빠짐** → 필요하면 이지민 코드에 다시 추가
 - 체형 분석(`BodyAnalysisViewModel`): 팀 버전 유지 (손유리의 옛 판정 기준 수정은 팀 버전에 이미 반영된 내용)
-- CameraX 버전 1.3.4 유지 (손유리 쪽 1.4.2로 올리지 않음)
+- CameraX 1.4.2로 올림 (1.3.4의 libimage_processing_util_jni.so가 16KB 페이지 기기와 호환되지 않아서)
 
 ## local.properties에 추가할 키 (Git에 올리지 말 것)
 ```
