@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import com.jeiu.fashionproject.notify.WeatherAlertScheduler
 import com.jeiu.fashionproject.data.DayForecast
 import com.jeiu.fashionproject.data.WeatherInfo
 import com.jeiu.fashionproject.data.WeatherRepository
@@ -60,11 +61,17 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
         _forecast.value = ForecastUiState.Loading
         viewModelScope.launch {
             // 위치를 5초 안에 못 받으면(에뮬레이터·실내 등) 기본 좌표로 진행한다
-            val (lat, lon) = withTimeoutOrNull(LOCATION_TIMEOUT_MS) { getLocation() } ?: (DEFAULT_LAT to DEFAULT_LON)
+            val located = withTimeoutOrNull(LOCATION_TIMEOUT_MS) { getLocation() }
+            // 저녁 날씨 알림(백그라운드)은 위치를 새로 받기 어려워 마지막으로 받은 위치를 쓴다
+            located?.let { WeatherAlertScheduler.saveLocation(getApplication<Application>(), it.first, it.second) }
+            val (lat, lon) = located ?: (DEFAULT_LAT to DEFAULT_LON)
 
             launch {
                 runCatching { WeatherRepository.fetchForecast(lat, lon) }
-                    .onSuccess { _forecast.value = ForecastUiState.Success(it) }
+                    .onSuccess {
+                        _forecast.value = ForecastUiState.Success(it)
+                        WeatherAlertScheduler.rememberDayTemps(getApplication<Application>(), it)   // 알림의 "오늘보다 몇 도" 비교용
+                    }
                     .onFailure { _forecast.value = ForecastUiState.Error("예보를 불러오지 못했어요") }
             }
 

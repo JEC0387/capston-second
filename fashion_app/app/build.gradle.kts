@@ -92,6 +92,8 @@ dependencies {
     implementation(libs.camerax.camera2)
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
+    // 내일 날씨 알림 (매일 저녁 8시쯤 백그라운드 작업)
+    implementation(libs.androidx.work.runtime.ktx)
     // Force a 16KB-page-aligned release; the version transitively pulled in by
     // compose-ui (1.0.1) ships an unaligned libandroidx.graphics.path.so.
     implementation(libs.androidx.graphics.path)

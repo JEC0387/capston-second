@@ -1,6 +1,13 @@
 package com.jeiu.fashionproject.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -34,6 +41,7 @@ import com.jeiu.fashionproject.data.BodyRecords
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.notify.WeatherAlertScheduler
 import com.jeiu.fashionproject.ui.components.PrivacyPolicyDialog
 import com.jeiu.fashionproject.ui.components.ServerStatusBadge
 import com.jeiu.fashionproject.data.Gender
@@ -62,6 +70,26 @@ fun MyPageScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var saveRecords by remember { mutableStateOf(PrivacyConsent.canSaveRecords(context)) }
+    var weatherAlertOn by remember { mutableStateOf(WeatherAlertScheduler.isEnabled(context)) }
+
+    // 알림 권한 (안드로이드 13 이상은 허용을 받아야 알림을 보낼 수 있음)
+    var pendingNotifAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingNotifAction
+        pendingNotifAction = null
+        if (granted) action?.invoke()
+        else Toast.makeText(context, "알림 권한이 없어서 알림을 보낼 수 없어요. 휴대폰 설정 > 앱 > 알림에서 허용해 주세요.", Toast.LENGTH_LONG).show()
+    }
+    fun withNotifPermission(action: () -> Unit) {
+        val needsAsk = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsAsk) {
+            pendingNotifAction = action
+            notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
+            Toast.makeText(context, "휴대폰 설정에서 이 앱의 알림이 꺼져 있어요. 설정 > 앱 > 알림에서 켜 주세요.", Toast.LENGTH_LONG).show()
+        } else action()
+    }
     val styleScores by StylePreferenceStore.scores.collectAsState()
     val styleRatedCount by StylePreferenceStore.ratedCount.collectAsState()
     val taste by TastePreferenceStore.scores.collectAsState()
@@ -252,7 +280,11 @@ fun MyPageScreen(
         ) {
             Text("설정", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(8.dp))
-            MyMenuItem(icon = Icons.Filled.Notifications, label = "알림 설정", onClick = { showNotifDialog = true })
+            MyMenuItem(
+                icon = Icons.Filled.Notifications,
+                label = if (weatherAlertOn) "알림 설정 (내일 날씨 알림 켜짐)" else "알림 설정",
+                onClick = { showNotifDialog = true }
+            )
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
             HorizontalDivider(color = LightGray)
@@ -364,9 +396,49 @@ fun MyPageScreen(
         AlertDialog(
             onDismissRequest = { showNotifDialog = false },
             title = { Text("알림 설정", fontWeight = FontWeight.Bold) },
-            text = { Text("현재 모든 알림이 활성화되어 있습니다.\n시스템 설정에서 알림을 관리할 수 있습니다.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("내일 날씨 알림", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "매일 저녁 8시쯤 내일 날씨 변화와 추천 코디를 알려줘요",
+                                style = MaterialTheme.typography.labelSmall, color = MediumGray
+                            )
+                        }
+                        Switch(
+                            checked = weatherAlertOn,
+                            onCheckedChange = { on ->
+                                if (on) withNotifPermission {
+                                    WeatherAlertScheduler.setEnabled(context, true)
+                                    weatherAlertOn = true
+                                    Toast.makeText(context, "매일 저녁 8시쯤 내일 날씨를 알려드릴게요", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    WeatherAlertScheduler.setEnabled(context, false)
+                                    weatherAlertOn = false
+                                }
+                            },
+                            colors = SwitchDefaults.colors(checkedTrackColor = Camel)
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            withNotifPermission {
+                                WeatherAlertScheduler.sendTestNow(context)
+                                Toast.makeText(context, "잠시 후 테스트 알림이 와요 (예보를 받는 데 몇 초 걸려요)", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel)
+                    ) { Text("지금 테스트 알림 보내기") }
+                    Text(
+                        "예보를 받으려면 인터넷과 날씨 API 키가 필요해요. 위치는 앱에서 마지막으로 받은 위치를 써요.",
+                        style = MaterialTheme.typography.labelSmall, color = MediumGray
+                    )
+                }
+            },
             confirmButton = {
-                TextButton(onClick = { showNotifDialog = false }) { Text("확인", color = Camel) }
+                TextButton(onClick = { showNotifDialog = false }) { Text("닫기", color = Camel) }
             }
         )
     }

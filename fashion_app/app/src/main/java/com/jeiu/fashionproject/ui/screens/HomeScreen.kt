@@ -56,6 +56,7 @@ import com.jeiu.fashionproject.recommend.BodyProfileAnalyzer
 import com.jeiu.fashionproject.recommend.OutfitEngine
 import com.jeiu.fashionproject.ui.components.NotEnoughClothesCard
 import com.jeiu.fashionproject.ui.components.OutfitCard
+import com.jeiu.fashionproject.ui.components.rememberWearToday
 import com.jeiu.fashionproject.ui.components.ServerStatusBadge
 import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.NaverImageSearchRepository
@@ -129,12 +130,15 @@ fun HomeScreen(
     val wardrobe by WardrobeStore.items.collectAsState()
     val wearLogs by WearLogStore.logs.collectAsState()
     val weatherInfo = (weatherState as? WeatherUiState.Success)?.info
-    // 👍👎를 눌러도 카드가 바로 바뀌지 않도록 취향 점수는 계산할 때의 값만 쓴다
-    val recommendation = remember(wardrobe, wearLogs, weatherInfo, bodyProfile) {
-        OutfitEngine.recommend(wardrobe, weatherInfo, wearLogs, StylePreferenceStore.scores.value,
+    // 👍👎·[오늘 이거 입었어요]를 눌러도 카드가 바로 바뀌지 않도록
+    // 취향 점수는 계산할 때의 값만 쓰고, 오늘 착용 기록은 빼고 계산한다 (황상윤)
+    val pastLogs = remember(wearLogs) { wearLogs.filter { it.date != WearDates.today() } }
+    val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile) {
+        OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
             taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile)
     }
     var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
+    val wearToday = rememberWearToday(wearLogs)
     var showNotifDialog by remember { mutableStateOf(false) }
     var shopKeyword by remember { mutableStateOf<String?>(null) }
 
@@ -313,7 +317,8 @@ fun HomeScreen(
                             onRate = { like ->
                                 ratings = ratings + (outfit.id to like)
                                 TastePreferenceStore.rateOutfit(context, outfit, like)
-                            }
+                            },
+                            wear = wearToday
                         )
                     }
                 }
@@ -435,6 +440,8 @@ fun HomeScreen(
     shopKeyword?.let { keyword ->
         ShopSearchSheet(keyword = keyword, onDismiss = { shopKeyword = null })
     }
+
+    wearToday.Dialog()
 
     if (showNotifDialog) {
         AlertDialog(

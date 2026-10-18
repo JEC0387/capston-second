@@ -37,7 +37,8 @@ fun OutfitCard(
     onRate: (like: Boolean) -> Unit,
     modifier: Modifier = Modifier,
     photoHeight: Dp = 200.dp,
-    interestedItemIds: Set<String> = emptySet()
+    interestedItemIds: Set<String> = emptySet(),
+    wear: WearToday? = null
 ) {
     Card(
         modifier = modifier,
@@ -90,6 +91,23 @@ fun OutfitCard(
                     Text(reason, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack)
                 }
             }
+            // 오늘 이거 입었어요 — 내 옷으로만 만든 코디일 때만 (관심 옷은 아직 갖고 있지 않으므로 착용 기록에 넣지 않음)
+            if (wear != null && outfit.items.none { it.id in interestedItemIds || !it.isOwned }) {
+                val worn = wear.isWorn(outfit)
+                OutlinedButton(
+                    onClick = { wear.request(outfit) },
+                    enabled = !worn,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        if (worn) Icons.Filled.CheckCircle else Icons.Filled.Checkroom,
+                        contentDescription = null, tint = if (worn) MediumGray else Camel, modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (worn) "오늘 입은 코디로 기록했어요" else "오늘 이거 입었어요", color = if (worn) MediumGray else Brown)
+                }
+            }
             // 👍 👎
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (rated != null) {
@@ -115,4 +133,46 @@ fun OutfitCard(
             }
         }
     }
+}
+
+/**
+ * [오늘 이거 입었어요] 처리 (계획 4 — 4단계, 황상윤).
+ * 오늘 기록이 없으면 바로 저장하고, 다른 옷으로 이미 기록했으면 바꿀지 먼저 물어본다.
+ * 저장은 WearLogStore.save 를 쓰므로 취향 학습(착용 +1)과 서버 DB 동기화가 함께 된다.
+ * 화면에서 [rememberWearToday]로 만들고, 같은 화면에 [Dialog]를 한 번 그려 준다.
+ */
+class WearToday(private val context: Context, private val todayLog: WearLog?) {
+    private var pending by mutableStateOf<OutfitEngine.Outfit?>(null)
+
+    fun isWorn(outfit: OutfitEngine.Outfit): Boolean =
+        todayLog?.itemIds?.toSet() == outfit.items.map { it.id }.toSet()
+
+    fun request(outfit: OutfitEngine.Outfit) {
+        if (todayLog == null || todayLog.itemIds.isEmpty()) save(outfit) else pending = outfit
+    }
+
+    private fun save(outfit: OutfitEngine.Outfit) {
+        WearLogStore.save(context, WearLog(WearDates.today(), outfit.items.map { it.id }, todayLog?.memo.orEmpty()))
+        pending = null
+    }
+
+    @Composable
+    fun Dialog() {
+        val outfit = pending ?: return
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("오늘 기록을 바꿀까요?") },
+            text = { Text("오늘은 이미 다른 옷으로 기록했어요. 이 코디로 바꿔 기록할까요?\n(${outfit.items.joinToString(" · ") { it.name }})") },
+            confirmButton = { TextButton(onClick = { save(outfit) }) { Text("바꾸기", color = Camel) } },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("취소", color = MediumGray) } }
+        )
+    }
+}
+
+/** 오늘 착용 기록이 바뀔 때마다 새로 만든다 */
+@Composable
+fun rememberWearToday(logs: List<WearLog>): WearToday {
+    val context = LocalContext.current
+    val todayLog = logs.find { it.date == WearDates.today() }
+    return remember(todayLog) { WearToday(context, todayLog) }
 }

@@ -17,3 +17,6 @@ venv/
 **/.env.*
 !**/.env.example
 integration-logs/
+# AI 성능 측정 — 옷 사진(용량)과 팀원 몸 치수 원본(개인정보)은 올리지 않는다 (결과 표 results/ 는 올림)
+backend/evaluation/clothes/
+backend/evaluation/body_measure.csv

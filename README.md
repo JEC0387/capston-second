@@ -1,0 +1,54 @@
+# AI 기반 옷 추천 쇼핑몰 앱
+
+내 옷장 · 체형 · 날씨 · 취향을 분석해 코디를 추천하고, 부족한 옷은 쇼핑으로 이어 주는 안드로이드 앱입니다.
+
+- 팀: **교수님의 최애들** — 정의찬(팀장), 이지민, 손유리, 황상윤
+- 지도교수: 안홍섭
+
+## 주요 기능
+
+| 분야 | 기능 |
+|---|---|
+| 옷장 | AI 옷 등록(배경 제거 → DeepFashion2 옷 종류 분류 → 옷만 오려내기 → 대표 색), 착용 기록 · 달력 · 통계, 안 입는 옷 알림, `전체 / 내 옷 / 관심 옷` 필터, 무신사 랭킹 데모 옷장 |
+| 코디 추천 | 옷장 옷 조합 엔진(색 · 날씨 · 상황 · 착용 기록 · 취향 · 체형 점수), 5일 예보 코디, 상황별(면접 · 데이트 · 여행 · 운동) 코디, 추천 범위(내 옷 / 내 옷 + 관심 옷 / 관심 옷), [오늘 이거 입었어요], "이것만 사면 코디 완성" |
+| 체형 | 촬영 가이드 + 키 기준 cm 측정, 체형 분류, 측정 기록 · 변화 그래프, 체형 기반 사이즈 추천, 개인정보 동의 · 기록 삭제 |
+| 취향 | 코디 👍👎 · 취향 카드 · 착용 기록으로 스타일 · 색 · 종류 · 색 조합 방식 학습, 내 취향 리포트, 스타일 분석(옷장 + 착용 기록) |
+| 쇼핑 | 추천 상품(실제 구매 링크) · 관심 상품 하트, 네이버 이미지 검색 · 쇼핑인사이트, 성별 맞춤 |
+| 기타 | 가상 피팅(사진 겹치기 + FASHN 입어보기), 내일 날씨 푸시 알림(저녁 8시), 서버 연결 상태 표시 |
+| 서버 · DB | FastAPI + Supabase(PostgreSQL) — 옷장 · 착용 기록 · 체형 기록 · 취향 기록 · 관심 상품 · 성별 · 상품 카탈로그 저장, AI 옷 분류 API |
+
+## 폴더 구조
+
+```
+capston-second/
+├── fashion_app/   안드로이드 앱 (Kotlin · Jetpack Compose) — Android Studio로 이 폴더를 연다
+├── backend/       서버 (Python FastAPI) + DB 연결(db_api.py) + AI 성능 측정 도구(evaluation/)
+├── 수정사항.md     실행 방법 · 기능별 수정 내역 · 알려진 한계
+├── HANDOFF.md · INTEGRATION_REPORT.md · MERGE_SON_YURI.md   통합 · 인계 기록
+└── BODY_DATA_PRIVACY.md   체형 데이터 처리 방식 (개인정보)
+```
+
+## 실행 방법 (요약)
+
+1. **서버**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000
+   ```
+   DB를 쓰려면 `backend/.env.example` 을 `backend/.env` 로 복사해 Supabase 주소(`DATABASE_URL`)를 넣고,
+   `backend/DB_INTEGRATION.md` 순서대로 마이그레이션 · `python seed_catalog.py` 를 실행합니다.
+   DB 없이도 서버와 AI 기능은 동작합니다. → http://localhost:8000/docs
+2. **앱**: `fashion_app/local.properties` 에 키를 넣고 Android Studio로 `fashion_app` 폴더를 열어 실행
+   ```
+   OWM_API_KEY=...        # 날씨
+   NAVER_API_KEY_ID=...   # 네이버 이미지 검색 · 쇼핑인사이트
+   NAVER_API_KEY=...
+   FASHN_API_KEY=...      # 가상 피팅 '입어보기' (없으면 버튼 숨김)
+   ```
+   에뮬레이터는 서버 주소 `http://10.0.2.2:8000` 이 기본값입니다.
+
+자세한 내용: [`수정사항.md`](수정사항.md) · [`backend/DB_INTEGRATION.md`](backend/DB_INTEGRATION.md) ·
+[`backend/README.md`](backend/README.md) · [`backend/evaluation/README.md`](backend/evaluation/README.md)
+
+> `.env`(DB 비밀번호)와 `local.properties`(API 키)는 깃허브에 올리지 않습니다. 팀원에게는 개인톡으로 전달하세요.
