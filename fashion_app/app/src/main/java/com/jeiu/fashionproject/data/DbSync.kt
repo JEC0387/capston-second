@@ -106,7 +106,7 @@ object DbSync {
     }
 
     fun saveBodyMeasurement(result: BodyAnalysisResult) {
-        if (!::prefs.isInitialized || !PrivacyConsent.canSaveRecords(context)) return
+        if (!::prefs.isInitialized || !PrivacyConsent.canSaveRecords(context) || !BodyAnalysisPersistence.mayStore(result)) return
         val body = runCatching {
             val m = result.measurements
             JSONObject()

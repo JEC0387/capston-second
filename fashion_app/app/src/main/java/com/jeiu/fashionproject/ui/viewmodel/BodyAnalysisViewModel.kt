@@ -17,9 +17,16 @@ import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.camera.GuidePoint
 import com.jeiu.fashionproject.ui.camera.Joint
+import com.jeiu.fashionproject.ui.camera.PoseQualityRules
+import com.jeiu.fashionproject.ui.camera.GuideStatus
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -40,10 +47,10 @@ data class BodyAnalysisResult(
     val shoulderRatio: Float,
     val waistRatio: Float,
     val hipRatio: Float,
-    val legRatio: Float,
+    val legRatio: Float?,
     val characteristics: List<String>,
     val styleAdvice: List<String>,
-    val confidence: Int = 0,              // 분석 신뢰도 (0~100%)
+    val confidence: Int = 0,              // 입력 관절 검출 참고값 (0~100), 판정 정확도 아님
     val shoulderToHip: Float = 1f,        // 기존 어깨:힙 비율 유지
     val waistToHip: Float = 1f,
     val measurements: BodyMeasurements? = null,
@@ -52,8 +59,9 @@ data class BodyAnalysisResult(
 
 sealed class BodyAnalysisUiState {
     object Idle : BodyAnalysisUiState()
-    object Analyzing : BodyAnalysisUiState()
+    data class Analyzing(val requestId: Long) : BodyAnalysisUiState()
     data class Success(val result: BodyAnalysisResult, val imageUri: Uri) : BodyAnalysisUiState()
+    data class Partial(val message: String, val imageUri: Uri, val measurements: BodyMeasurements? = null) : BodyAnalysisUiState()
     data class Error(val message: String) : BodyAnalysisUiState()
 }
 
@@ -71,6 +79,9 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
     private val segmenterDelegate = lazy { BodySegmenter(getApplication()) }
     private val segmenter by segmenterDelegate
     private var analysisJob: Job? = null
+    private var timeoutJob: Job? = null
+    private val requestGate = AnalysisRequestGate()
+    private val pipelineMutex = Mutex()
     private var currentPhotoUri: Uri? = null
     @Volatile private var cleared = false
     init {
@@ -80,59 +91,103 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun analyzeImage(context: Context, uri: Uri) {
+        if (cleared) return
+        val request = requestGate.begin()
         analysisJob?.cancel()
+        timeoutJob?.cancel()
+        currentPhotoUri?.takeIf { it != uri }?.let(::deleteTemporaryPhoto)
+        currentPhotoUri = uri
         val heightCm = BodyMeasurementCalculator.parseHeight(heightInput.value)
-        if (heightCm == null) {
+        if (!PrivacyConsent.hasAgreed(context) || heightCm == null) {
+            requestGate.invalidate()
             deleteTemporaryPhoto(uri)
-            _state.value = BodyAnalysisUiState.Error("키를 100~230 cm 범위의 숫자로 입력한 뒤 다시 시도해주세요.")
+            currentPhotoUri = null
+            _state.value = BodyAnalysisUiState.Error(if (heightCm == null)
+                "키를 100~230 cm 범위의 숫자로 입력한 뒤 다시 시도해주세요."
+                else "체형 사진 이용 안내에 동의한 뒤 사진을 선택해주세요.")
             return
         }
-        currentPhotoUri = uri
-        _state.value = BodyAnalysisUiState.Analyzing
+        _state.value = BodyAnalysisUiState.Analyzing(request)
         analysisJob = viewModelScope.launch {
-            var bitmap: Bitmap? = null
-            try {
-                val analysisBitmap = withContext(Dispatchers.IO) {
-                    cleanOldBodyPhotos(context, uri)
-                    loadBitmap(context, uri)
-                }
-                bitmap = analysisBitmap
-                // Exactly the same EXIF-normalized bitmap for BOTH models; no PreviewView coordinates.
-                val pose = detectPose(analysisBitmap)
-                ensureActive()
-                when (validatePose(pose)) {
-                    PoseQuality.NO_PERSON -> _state.value = BodyAnalysisUiState.Error("사람을 감지하지 못했어요.\n정면 전신 사진을 업로드해 주세요.")
-                    PoseQuality.NOT_FULL_BODY -> _state.value = BodyAnalysisUiState.Error("전신이 모두 보이지 않아요.\n머리부터 발끝까지 나오게 촬영해 주세요.")
-                    PoseQuality.NOT_FRONT -> _state.value = BodyAnalysisUiState.Error("정면 자세가 아니에요.\n카메라를 정면으로 보고 똑바로 서서 촬영해 주세요.")
-                    PoseQuality.OK -> {
-                        val widths = withContext(Dispatchers.Default) {
-                            if (segmenter.isAvailable) measureRealWidths(pose, analysisBitmap) else null
+            // Cancelled queued requests never allocate bitmaps; native ownership is serialized.
+            pipelineMutex.withLock {
+                var bitmap: Bitmap? = null
+                try {
+                    ensureActive()
+                    if (!requestGate.isCurrent(request)) return@withLock
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        cleanOldBodyPhotos(context, uri)
+                        // Store ownership before dispatch back: prompt cancellation cannot leak the bitmap.
+                        bitmap = loadBitmap(context, uri)
+                    }
+                    ensureActive()
+                    val image = checkNotNull(bitmap)
+                    val imageIssue = withContext(NonCancellable + Dispatchers.Default) {
+                        val luma = IntArray(64 * 64) { index ->
+                            val x = ((index % 64) * image.width / 64).coerceAtMost(image.width - 1)
+                            val y = ((index / 64) * image.height / 64).coerceAtMost(image.height - 1)
+                            val color = image.getPixel(x,y)
+                            (((color shr 16 and 255)*299 + (color shr 8 and 255)*587 + (color and 255)*114)/1000)
                         }
-                        val cm = BodyMeasurementCalculator.calculate(heightCm, widths, System.currentTimeMillis())
-                        // Keep the existing classification/fallback even when cm evidence is insufficient.
-                        val result = calculateBodyType(pose, widths).copy(
-                            measurements = cm,
-                            measurementIssue = if (cm == null)
-                                "cm 측정에 필요한 전신 경계를 확인하지 못했어요. 머리와 발끝에 여유를 두고, 정면에서 팔을 몸과 떨어뜨려 다시 촬영해주세요."
-                                else null
-                        )
-                        _state.value = BodyAnalysisUiState.Success(result, uri)
-                        // 세션 값은 저장 선택·서버 상태와 독립적이다. 동의한 경우에만 숫자 기록을 전송 대기한다.
-                        BodyAnalysisCompletion.complete(result.measurements, PrivacyConsent.canSaveRecords(context)) {
-                            DbSync.saveBodyMeasurement(result)
+                        ImageInputQuality.evaluate(image.width,image.height,luma)
+                    }
+                    ensureActive()
+                    if (imageIssue != null) {
+                        requestGate.publish(request) { _state.value = BodyAnalysisUiState.Error(imageIssue.message) }
+                        return@withLock
+                    }
+                    val pose = detectPose(image)
+                    ensureActive()
+                    if (!requestGate.isCurrent(request)) return@withLock
+                    val quality = PoseQualityRules.evaluate(posePoints(pose),image.width.toFloat(),image.height.toFloat())
+                    if (quality != GuideStatus.READY) {
+                        requestGate.publish(request) { _state.value = BodyAnalysisUiState.Error(quality.message) }
+                        return@withLock
+                    }
+                    val silhouette = withContext(NonCancellable + Dispatchers.Default) {
+                        if (segmenter.isAvailable) segmenter.inspectWidths(image,posePoints(pose))
+                        else SilhouetteMeasurement(issue=SilhouetteIssue.MODEL_UNAVAILABLE)
+                    }
+                    ensureActive()
+                    val widths = silhouette.widths
+                    val cm = BodyMeasurementCalculator.calculate(heightCm,widths,System.currentTimeMillis())
+                    val classification = BodyTypeClassifier.classify(widths)
+                    requestGate.publish(request) {
+                        if (classification.type == null || cm == null) {
+                            _state.value = BodyAnalysisUiState.Partial(silhouette.issue?.message ?: classification.issue?.message
+                                ?: "cm 환산이 불확실해요. 머리와 발끝에 여유를 두고 다시 촬영해주세요.",uri,cm)
+                        } else {
+                            val result = calculateBodyType(pose,widths!!,cm,classification.type)
+                            _state.value = BodyAnalysisUiState.Success(result,uri)
+                            BodyAnalysisCompletion.complete(cm,PrivacyConsent.canSaveRecords(context)) {
+                                DbSync.saveBodyMeasurement(result)
+                            }
                         }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    if (isActive) requestGate.publish(request) {
+                        _state.value = BodyAnalysisUiState.Error("이미지 분석에 실패했어요. 다른 정면 전신 사진을 선택해주세요.")
+                    }
+                } finally {
+                    bitmap?.recycle()
+                    if (requestGate.owns(request)) {
+                        timeoutJob?.cancel()
+                        if (_state.value is BodyAnalysisUiState.Error) {
+                            deleteTemporaryPhoto(uri)
+                            if (currentPhotoUri == uri) currentPhotoUri = null
+                        }
+                    } else if (uri != currentPhotoUri) deleteTemporaryPhoto(uri)
+                    if (cleared && segmenterDelegate.isInitialized()) segmenter.close()
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                deleteTemporaryPhoto(uri)
-                if (currentPhotoUri == uri) currentPhotoUri = null
-                _state.value = BodyAnalysisUiState.Error("이미지 분석에 실패했어요. 다른 전신 사진으로 다시 시도해주세요.")
-            } finally {
-                bitmap?.recycle()
-                // Also closes an older cancelled job that was still initializing the native segmenter.
-                if (cleared && segmenterDelegate.isInitialized()) segmenter.close()
+            }
+        }
+        timeoutJob = viewModelScope.launch {
+            delay(45_000)
+            if (requestGate.isCurrent(request) && _state.value is BodyAnalysisUiState.Analyzing) {
+                cancelRequest(request)
+                _state.value = BodyAnalysisUiState.Error("분석 시간이 길어졌어요. 다른 사진으로 다시 시도해주세요.")
             }
         }
     }
@@ -141,7 +196,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
     private fun cleanOldBodyPhotos(context: Context, keep: Uri) {
         val keepPath = keep.takeIf { it.scheme == "file" }?.path
         context.cacheDir.listFiles { f -> f.name.startsWith("body_") && f.name.endsWith(".jpg") }
-            ?.forEach { if (it.absolutePath != keepPath) it.delete() }
+            ?.forEach { if (it.absolutePath != keepPath && it.lastModified() < System.currentTimeMillis()-60*60*1000L) it.delete() }
     }
 
     // Wait for the native task to release its input before recycling, even after job cancellation.
@@ -160,7 +215,13 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun cancelRequest(requestId: Long) {
+        if (requestGate.isCurrent(requestId) && _state.value is BodyAnalysisUiState.Analyzing) reset()
+    }
+
     fun reset() {
+        requestGate.invalidate()
+        timeoutJob?.cancel()
         analysisJob?.cancel()
         currentPhotoUri?.let(::deleteTemporaryPhoto)
         currentPhotoUri = null
@@ -169,6 +230,8 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
 
     override fun onCleared() {
         cleared = true
+        requestGate.invalidate()
+        timeoutJob?.cancel()
         super.onCleared()
         analysisJob?.cancel()
         currentPhotoUri?.let(::deleteTemporaryPhoto)
@@ -232,7 +295,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    private fun measureRealWidths(pose: Pose, bitmap: Bitmap): BodyWidths? {
+    private fun posePoints(pose: Pose): Map<Joint, GuidePoint> {
         val types = mapOf(
             Joint.NOSE to PoseLandmark.NOSE,
             Joint.LEFT_EYE to PoseLandmark.LEFT_EYE, Joint.RIGHT_EYE to PoseLandmark.RIGHT_EYE,
@@ -247,130 +310,27 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
         val points = types.mapNotNull { (joint, type) -> pose.getPoseLandmark(type)?.let {
             joint to GuidePoint(it.position.x, it.position.y, it.inFrameLikelihood)
         } }.toMap()
-        return segmenter.measureWidths(bitmap, points)
+        return points
     }
-    private enum class PoseQuality { NO_PERSON, NOT_FULL_BODY, NOT_FRONT, OK }
-
-    // 체형 판별에 꼭 필요한 핵심 랜드마크
-    private val requiredLandmarks = listOf(
-        PoseLandmark.LEFT_SHOULDER, PoseLandmark.RIGHT_SHOULDER,
-        PoseLandmark.LEFT_HIP, PoseLandmark.RIGHT_HIP,
-        PoseLandmark.LEFT_ANKLE, PoseLandmark.RIGHT_ANKLE
-    )
-
-    /** 사진이 체형 분석에 적합한지(전신·정면·신뢰도) 검증한다. */
-    private fun validatePose(pose: Pose): PoseQuality {
-        if (pose.allPoseLandmarks.isEmpty()) return PoseQuality.NO_PERSON
-        if (pose.allPoseLandmarks.any { !it.position.x.isFinite() || !it.position.y.isFinite() || !it.inFrameLikelihood.isFinite() }) return PoseQuality.NOT_FULL_BODY
-
-        // 1) 핵심 랜드마크가 모두 충분한 신뢰도로 잡혔는지 (전신 여부)
-        for (type in requiredLandmarks) {
-            val lm = pose.getPoseLandmark(type) ?: return PoseQuality.NOT_FULL_BODY
-            if (lm.inFrameLikelihood < 0.5f) return PoseQuality.NOT_FULL_BODY
-        }
-
-        val ls = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)!!
-        val rs = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)!!
-        val lh = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)!!
-        val rh = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)!!
-
-        // 2) 정면 자세 검증: 옆으로 서면 좌우 어깨 사이 가로폭이 매우 좁아진다.
-        //    어깨 가로폭이 (어깨~힙 세로길이) 대비 일정 비율 이상이어야 정면으로 본다.
-        val shoulderSpan = kotlin.math.abs(ls.position.x - rs.position.x)
-        val hipSpan = kotlin.math.abs(lh.position.x - rh.position.x)
-        val torsoHeight = kotlin.math.abs(
-            ((lh.position.y + rh.position.y) / 2f) - ((ls.position.y + rs.position.y) / 2f)
-        ).coerceAtLeast(1f)
-        if (shoulderSpan / torsoHeight < 0.25f && hipSpan / torsoHeight < 0.25f) {
-            return PoseQuality.NOT_FRONT
-        }
-
-        return PoseQuality.OK
-    }
-
-    /** 좌우 랜드마크 가로 거리 (어깨/힙 너비는 가로폭이 더 정확) */
-    private fun horizontalWidth(a: PoseLandmark?, b: PoseLandmark?): Float {
-        if (a == null || b == null) return 0f
-        return kotlin.math.abs(a.position.x - b.position.x)
-    }
-
-    private fun calculateBodyType(pose: Pose, realWidths: BodyWidths? = null): BodyAnalysisResult {
-        val ls = pose.getPoseLandmark(PoseLandmark.LEFT_SHOULDER)
-        val rs = pose.getPoseLandmark(PoseLandmark.RIGHT_SHOULDER)
-        val lh = pose.getPoseLandmark(PoseLandmark.LEFT_HIP)
-        val rh = pose.getPoseLandmark(PoseLandmark.RIGHT_HIP)
-        val lk = pose.getPoseLandmark(PoseLandmark.LEFT_KNEE)
-        val rk = pose.getPoseLandmark(PoseLandmark.RIGHT_KNEE)
-        val la = pose.getPoseLandmark(PoseLandmark.LEFT_ANKLE)
-        val ra = pose.getPoseLandmark(PoseLandmark.RIGHT_ANKLE)
-        val nose = pose.getPoseLandmark(PoseLandmark.NOSE)
-
-        // ── 너비 측정 ──
-        // 세그멘테이션 실측값이 있으면 그것을 사용(허리까지 실측 → 정확),
-        // 없으면 포즈 관절 가로폭으로 추정(허리는 좁은 쪽 78%로 근사).
-        val usedSegmentation = realWidths != null
-        val shoulderWidth: Float
-        val hipWidth: Float
-        val waistWidth: Float
-        if (realWidths != null) {
-            shoulderWidth = realWidths.shoulder
-            hipWidth = realWidths.hip.coerceAtLeast(1f)
-            waistWidth = if (realWidths.waist > 0f) realWidths.waist
-                         else minOf(realWidths.shoulder, realWidths.hip) * 0.78f
-        } else {
-            shoulderWidth = horizontalWidth(ls, rs)
-            hipWidth = horizontalWidth(lh, rh).coerceAtLeast(1f)
-            waistWidth = minOf(shoulderWidth, hipWidth) * 0.78f
-        }
-
-        // ── 세로 비율 (키 대비 다리 길이): 엉덩이~발목 사용, 무릎으로 보정 ──
-        val headY = nose?.position?.y ?: ((ls?.position?.y ?: 0f))
-        val ankleY = when {
-            la != null && ra != null -> (la.position.y + ra.position.y) / 2f
-            lk != null && rk != null -> {
-                // 발목이 안 잡히면 무릎 위치로 다리 길이를 보수적으로 추정
-                val kneeY = (lk.position.y + rk.position.y) / 2f
-                val hY = if (lh != null && rh != null) (lh.position.y + rh.position.y) / 2f else 0f
-                hY + (kneeY - hY) * 2f   // 엉덩이~무릎 거리를 2배로 발목 추정
-            }
-            else -> 1f
-        }
-        val hipY = if (lh != null && rh != null) (lh.position.y + rh.position.y) / 2f else 0f
-        val bodyHeight = (ankleY - headY).coerceAtLeast(1f)
-        val legLength = (ankleY - hipY).coerceAtLeast(0f)
-        val legRatio = (legLength / bodyHeight).coerceIn(0.3f, 0.95f)
-
-        val maxWidth = maxOf(shoulderWidth, hipWidth, waistWidth).coerceAtLeast(1f)
+    private fun calculateBodyType(pose: Pose, realWidths: BodyWidths, cm: BodyMeasurements, type: BodyType): BodyAnalysisResult {
+        val shoulderWidth = realWidths.shoulder
+        val waistWidth = realWidths.waist
+        val hipWidth = realWidths.hip
+        val maxWidth = maxOf(shoulderWidth, waistWidth, hipWidth)
         val shoulderRatio = shoulderWidth / maxWidth
         val waistRatio = waistWidth / maxWidth
         val hipRatio = hipWidth / maxWidth
-
         val shToHip = shoulderWidth / hipWidth
-        val shoulderHipAvg = (shoulderWidth + hipWidth) / 2f
-        val waistDefinition = waistWidth / shoulderHipAvg.coerceAtLeast(1f)
-
-        // ── 신뢰도 계산: 랜드마크 평균 likelihood + 좌우 대칭(자세 반듯함) ──
-        val keyLandmarks = listOfNotNull(ls, rs, lh, rh, lk, rk, la, ra)
-        val avgLikelihood = if (keyLandmarks.isNotEmpty())
-            keyLandmarks.map { it.inFrameLikelihood }.average().toFloat() else 0f
-        // 어깨선·힙선이 수평에 가까울수록(좌우 y 차이 작을수록) 자세가 반듯함
-        val shoulderTilt = if (ls != null && rs != null)
-            kotlin.math.abs(ls.position.y - rs.position.y) / shoulderWidth.coerceAtLeast(1f) else 1f
-        val hipTilt = if (lh != null && rh != null)
-            kotlin.math.abs(lh.position.y - rh.position.y) / hipWidth else 1f
-        val symmetryScore = (1f - ((shoulderTilt + hipTilt) / 2f)).coerceIn(0f, 1f)
-        // 세그멘테이션 실측을 사용하면 허리까지 실제로 쟀으므로 신뢰도 가산
-        val segBonus = if (usedSegmentation) 1.12f else 1.0f
-        val confidence = ((avgLikelihood * 0.6f + symmetryScore * 0.4f) * 100 * segBonus)
-            .toInt().coerceIn(40, 99)
-
+        // Both UI and cm use mask crown-to-soles height and the same hip-to-ankle segment.
+        val legRatio = cm.legLengthCm?.div(cm.heightCm)
+        val confidence = (pose.allPoseLandmarks.map { it.inFrameLikelihood }.average() * 100).toInt()
         val bodyTypeKo: String
         val characteristics: List<String>
         val styleAdvice: List<String>
 
         when {
             // 1) 어깨가 힙보다 뚜렷하게 넓다 → 역삼각형
-            shToHip >= 1.08f -> {
+            type == BodyType.INVERTED_TRIANGLE -> {
                 bodyTypeKo = "역삼각형"
                 characteristics = listOf(
                     "어깨가 힙보다 ${((shToHip - 1f) * 100).toInt()}%가량 넓어요",
@@ -384,7 +344,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
                 )
             }
             // 2) 힙이 어깨보다 뚜렷하게 넓다 → 삼각형(서양배형)
-            shToHip <= 0.92f -> {
+            type == BodyType.TRIANGLE -> {
                 bodyTypeKo = "삼각형"
                 characteristics = listOf(
                     "힙이 어깨보다 ${(((1f / shToHip) - 1f) * 100).toInt()}%가량 넓어요",
@@ -398,7 +358,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
                 )
             }
             // 3) 어깨·힙이 비슷하고 허리가 잘록 → 모래시계형
-            waistDefinition <= 0.80f -> {
+            type == BodyType.HOURGLASS -> {
                 bodyTypeKo = "모래시계형"
                 characteristics = listOf(
                     "어깨와 힙의 너비가 비슷해요",
@@ -428,7 +388,7 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
         }
 
         // 다리 비율이 길면 특징에 한 줄 추가
-        val finalCharacteristics = if (legRatio >= 0.52f)
+        val finalCharacteristics = if (legRatio != null && legRatio >= 0.52f)
             characteristics + "다리 비율이 길어 롱 팬츠가 잘 어울려요"
         else characteristics
 
@@ -442,7 +402,8 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
             styleAdvice = styleAdvice,
             confidence = confidence,
             shoulderToHip = shToHip,
-            waistToHip = waistWidth / hipWidth
+            waistToHip = waistWidth / hipWidth,
+            measurements = cm
         )
     }
 }

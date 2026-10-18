@@ -188,6 +188,11 @@ fun MyPageScreen(
                     )
                 }
             }
+            if (shownBodyType != null) {
+                Text(if (bodyTypeKo != null) "이번 사진에서 추정한 분류예요." else "저장된 기록의 분류예요. 이번 사진의 새 분석 결과가 아니에요.",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            }
+
 
             Text("내 취향 리포트", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack)
             TasteReportCard(styleScores, styleRatedCount, taste)

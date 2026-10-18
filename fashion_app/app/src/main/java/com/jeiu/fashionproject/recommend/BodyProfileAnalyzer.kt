@@ -9,7 +9,7 @@ data class BodyProfile(val legToHeightRatio: Double, val torsoToLegRatio: Double
 
 object BodyProfileAnalyzer {
     fun fromMeasurements(measurements: BodyMeasurements?): BodyProfile? = measurements?.let {
-        fromLengths(it.heightCm, it.legLengthCm, it.torsoLengthCm)
+        if (BodyMeasurementCalculator.isValid(it)) fromLengths(it.heightCm, it.legLengthCm, it.torsoLengthCm) else null
     }
 
     fun fromLengths(heightCm: Float?, legCm: Float?, torsoCm: Float?): BodyProfile? {
@@ -23,6 +23,9 @@ object BodyProfileAnalyzer {
     fun latestValid(records: List<BodyRecord>?): BodyProfile? = records.orEmpty()
         .asSequence()
         .filter { !it.isSample && it.measuredAt > 0L }
+        .filter { record -> listOf(record.shoulderCm,record.waistCm,record.hipCm).all { value ->
+            value == null || (value.isFinite() && value in 12f..85f)
+        } }
         .sortedByDescending { it.measuredAt }
         .mapNotNull { fromLengths(it.heightCm, it.legCm, it.torsoCm) }
         .firstOrNull()

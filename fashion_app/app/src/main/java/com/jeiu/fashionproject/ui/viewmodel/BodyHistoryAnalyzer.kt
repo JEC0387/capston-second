@@ -22,7 +22,13 @@ enum class BodyMetric(val label: String, val shortLabel: String, val isRatio: Bo
         SHOULDER_CM -> r.shoulderCm
         WAIST_CM -> r.waistCm
         HIP_CM -> r.hipCm
-    }?.takeIf { it.isFinite() && it > 0f }
+    }?.takeIf { value ->
+        value.isFinite() && when (this) {
+            LEG -> value in .25f.. .65f
+            SHOULDER_HIP, WAIST_HIP -> value in .25f..2f
+            else -> value in 12f..85f
+        }
+    }
 
     fun format(v: Float): String =
         if (isRatio) String.format(Locale.US, "%.2f", v) else String.format(Locale.US, "%.1fcm", v)
@@ -33,7 +39,7 @@ data class MetricChange(
     val metric: BodyMetric,
     val before: Float,
     val after: Float,
-    val significant: Boolean,   // 측정 오차보다 큰 변화인지
+    val significant: Boolean,   // 표시 알림 기준 초과 여부. 실제 신체 변화/측정 오차 검증이 아님
     val text: String            // 예: "허리:엉덩이 비율 −2% (0.86 → 0.84)"
 )
 
@@ -41,8 +47,7 @@ data class MetricChange(
  * 측정 기록 분석 (계획 1 — 7. 측정 기록 & 변화). 화면과 분리한 순수 계산이라 단위 테스트가 가능하다.
  *
  * - 비율은 "몇 % 달라졌는지"(상대 변화), cm 는 "몇 cm 달라졌는지"로 비교한다.
- * - 촬영 자세 · 옷차림 때문에 생기는 작은 차이는 변화로 보지 않는다
- *   (비율 1% 미만, cm 0.5cm 미만 → "거의 같음").
+ * - 비율 1%, cm 0.5cm는 기존 표시 기준일 뿐 실제 오차/신체 변화의 유의성을 뜻하지 않는다.
  */
 object BodyHistoryAnalyzer {
     const val RATIO_THRESHOLD_PERCENT = 1f
@@ -70,8 +75,12 @@ object BodyHistoryAnalyzer {
     }
 
     fun change(metric: BodyMetric, before: Float, after: Float): MetricChange {
+        if (!before.isFinite() || !after.isFinite() || before <= 0f || after <= 0f) {
+            return MetricChange(metric,before,after,false,"유효한 비교 값이 없어요")
+        }
         return if (metric.isRatio) {
             val percent = (after - before) / before * 100f
+            if (!percent.isFinite()) return MetricChange(metric,before,after,false,"유효한 비교 값이 없어요")
             val rounded = percent.roundToInt()
             val significant = abs(percent) >= RATIO_THRESHOLD_PERCENT && rounded != 0
             val diff = if (significant) "${sign(rounded)}${abs(rounded)}%" else "변화 없음"
@@ -93,7 +102,7 @@ object BodyHistoryAnalyzer {
         if (sorted.size == 1) return "첫 기록이에요. 다음에 다시 측정하면 변화를 비교해 드려요."
         val changes = compareLatest(records).filter { it.significant }
         val typeChange = sorted[sorted.size - 2].bodyType.takeIf { it.isNotBlank() && it != sorted.last().bodyType }
-            ?.let { "체형이 $it → ${sorted.last().bodyType}(으)로 바뀌었어요. " } ?: ""
+            ?.let { "사진 추정 분류가 $it → ${sorted.last().bodyType}(으)로 달라졌어요. " } ?: ""
         if (changes.isEmpty()) return typeChange + "지난번과 거의 같아요."
         val parts = changes.take(3).joinToString(", ") { c ->
             val m = c.metric
@@ -105,7 +114,7 @@ object BodyHistoryAnalyzer {
                 "${m.label} ${sign(d)}${String.format(Locale.US, "%.1f", abs(d))}cm"
             }
         }
-        return typeChange + "지난번보다 $parts"
+        return typeChange + "지난번보다 기록상 $parts (촬영 오차가 포함될 수 있어요)"
     }
 
     /** 체형 판정이 몇 번씩 나왔는지 (많은 순) */
