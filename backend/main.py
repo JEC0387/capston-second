@@ -1,0 +1,364 @@
+"""
+FashionProject 백엔드 (FastAPI)
+
+앱 화면 ↔ 엔드포인트 매핑
+─────────────────────────────────────────────
+HomeScreen           → GET  /api/home
+WeatherViewModel     → GET  /api/weather             (실시간 날씨 + 조언)
+WeatherOutfitScreen  → GET  /api/outfits/weather
+WardrobeScreen       → GET  /api/wardrobe
+                       GET  /api/wardrobe/favorites  (하트 옷만)
+                       POST /api/wardrobe
+                       POST /api/wardrobe/{id}/favorite
+                       DELETE /api/wardrobe/{id}
+AddClothingScreen    → POST /api/clothing/classify   (DeepFashion2 옷 종류 분류)
+                       POST /api/object-detection    (YOLOv8 COCO 객체 탐지, 기존)
+BodyAnalysisScreen   → POST /api/body-analysis        (전신 사진 업로드)
+StylePreferenceScreen→ GET  /api/style-preference
+                       POST /api/style-preference/rate (좋아요/싫어요)
+VirtualFittingScreen → GET  /api/virtual-fitting/items
+StyleSuggestionScreen→ GET  /api/style-suggestions
+StyleAnalysisScreen  → GET  /api/style-analysis
+ShopScreen           → GET  /api/products
+ProductDetailScreen  → GET  /api/products/{id}
+MyPageScreen         → GET  /api/profile
+OnboardingScreen     → GET  /api/styles
+                       POST /api/profile/styles
+─────────────────────────────────────────────
+
+실행:  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+문서:  http://localhost:8000/docs  (Swagger 자동 생성)
+"""
+import io
+from contextlib import asynccontextmanager
+from database import initialize_database, database_status, optional_db
+from db_api import app as db_router, catalog_rows
+import shutil
+import uuid
+from pathlib import Path
+
+import cv2
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from PIL import Image
+
+import data
+import detection
+import fashion_detection
+import weather
+from schemas import (
+    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse,
+    ObjectDetectionResponse, ProductDetail, ShopResponse, StyleAnalysisResponse, StyleSuggestionResponse, VirtualFittingResponse, WeatherNowResponse,
+    WeatherOutfitResponse,
+)
+
+@asynccontextmanager
+async def lifespan(_):
+    initialize_database()
+    # DB 에 아직 적용하지 않은 마이그레이션이 있으면 서버 창에 알려 준다 (그 기능만 저장이 안 됨)
+    status = database_status()
+    if status.get("missing"):
+        print(f"[DB] 빠진 표 · 칸: {', '.join(status['missing'])} → backend 폴더에서 python apply_migrations.py 실행")
+    yield
+
+
+app = FastAPI(
+    lifespan=lifespan,
+    title="FashionProject API",
+    description="AI 기반 개인 맞춤 패션 추천 서비스 백엔드",
+    version="1.0.0",
+)
+
+# 앱(에뮬레이터/실기기)에서 접근할 수 있도록 CORS 전체 허용 (개발용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 업로드된 전신 사진 저장 폴더 (정적 서빙)
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+# ──────────────────────────────────────────────
+# 홈
+# ──────────────────────────────────────────────
+
+@app.get("/api/home", response_model=HomeResponse, tags=["홈"])
+def get_home():
+    """홈 화면에 필요한 데이터 일괄 조회 (날씨 + 오늘의 코디 + 인기 상품)"""
+    return {
+        "greeting": "안녕하세요",
+        "weather": data.WEATHER,
+        "todayOutfits": data.TODAY_OUTFITS,
+        "popularItems": data.POPULAR_ITEMS,
+    }
+
+
+# ──────────────────────────────────────────────
+# 날씨 코디
+# ──────────────────────────────────────────────
+
+@app.get("/api/outfits/weather", response_model=WeatherOutfitResponse, tags=["코디 추천"])
+def get_weather_outfits():
+    """오늘 날씨 기반 AI 추천 코디 3종"""
+    return {"weather": data.WEATHER, "outfits": data.WEATHER_OUTFITS}
+
+
+# ──────────────────────────────────────────────
+# 옷장
+# ──────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+# ──────────────────────────────────────────────
+# AI 체형 분석
+# ──────────────────────────────────────────────
+
+@app.post("/api/body-analysis", response_model=BodyAnalysisResult, tags=["AI 분석"])
+async def analyze_body(photo: UploadFile = File(...)):
+    """
+    전신 사진 업로드 → AI 체형 분석 결과 반환.
+
+    현재는 사진을 서버에 저장만 하고 고정 결과(모래시계형)를 반환.
+    추후 이 함수 안에서 OpenCV/MediaPipe 분석 코드를 호출하도록 교체:
+
+        result = analyze_with_mediapipe(saved_path)   # ← 여기만 바꾸면 됨
+    """
+    if photo.content_type not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(400, "jpg/png/webp 이미지만 업로드할 수 있습니다")
+
+    ext = Path(photo.filename or "photo.jpg").suffix or ".jpg"
+    saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
+    with saved_path.open("wb") as f:
+        shutil.copyfileobj(photo.file, f)
+
+    # TODO: 여기서 실제 체형 분석 모델 호출 (Python + OpenCV — 기획서 기술 스택)
+    return data.BODY_ANALYSIS_RESULT
+
+
+@app.post("/api/object-detection", response_model=ObjectDetectionResponse, tags=["AI 분석"])
+async def detect_objects(
+    photo: UploadFile = File(...),
+    conf_threshold: float = Form(0.25),
+):
+    """
+    이미지 업로드 → YOLOv8 객체 탐지 결과 반환.
+
+    object_detect 프로젝트(Streamlit 앱)의 탐지 기능을 API로 통합한 엔드포인트.
+    - multipart/form-data, 필드명 `photo` (jpg/png/webp/bmp)
+    - `conf_threshold` 폼 필드로 신뢰도 임계값 조절 가능 (기본 0.25, 0.1~0.9)
+    - 응답: 객체 목록 + 라벨별 개수 통계 + 바운딩 박스가 그려진 결과 이미지 URL
+
+    활용 예: 옷장에 의류 사진 등록 시 의류/액세서리 자동 인식,
+    전신 사진에서 인물(person) 검출 후 체형 분석 파이프라인 연결 등.
+    """
+    if photo.content_type not in ("image/jpeg", "image/png", "image/webp", "image/bmp"):
+        raise HTTPException(400, "jpg/png/webp/bmp 이미지만 업로드할 수 있습니다")
+    if not 0.1 <= conf_threshold <= 0.9:
+        raise HTTPException(400, "conf_threshold는 0.1 ~ 0.9 사이여야 합니다")
+
+    try:
+        image = Image.open(io.BytesIO(await photo.read()))
+        image.load()
+    except Exception:
+        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다")
+
+    detections, counts, result_img = detection.detect_objects(
+        image, conf_threshold=conf_threshold
+    )
+
+    # 결과 이미지를 uploads/에 저장하고 정적 URL로 제공
+    result_name = f"detect_{uuid.uuid4().hex}.jpg"
+    result_path = UPLOAD_DIR / result_name
+    bgr = result_img[:, :, ::-1]  # RGB → BGR (cv2.imwrite용)
+    if not cv2.imwrite(str(result_path), bgr):
+        raise HTTPException(500, "결과 이미지 저장에 실패했습니다")
+
+    return {
+        "totalCount": len(detections),
+        "detections": detections,
+        "counts": counts,
+        "resultImageUrl": f"/uploads/{result_name}",
+    }
+
+
+@app.post("/api/clothing/classify", response_model=ClothingClassifyResponse, tags=["AI 분석"])
+async def classify_clothing(
+    photo: UploadFile = File(...),
+    conf_threshold: float = Form(0.3),
+):
+    """
+    옷 사진 업로드 → 옷 종류 후보 목록 (크게 잡힌 순서).
+
+    - DeepFashion2 YOLOv8-seg: 옷 13종류 + 옷 윤곽 마스크(흑백 PNG, base64)
+    - COCO YOLOv8: 가방류(handbag / backpack / suitcase)만 추가
+    - multipart/form-data, 필드명 `photo`
+    앱은 누끼 결과를 흰 배경으로 채워서 보낸다.
+    """
+    if photo.content_type not in ("image/jpeg", "image/png", "image/webp", "image/bmp"):
+        raise HTTPException(400, "jpg/png/webp/bmp 이미지만 업로드할 수 있습니다")
+    if not 0.1 <= conf_threshold <= 0.9:
+        raise HTTPException(400, "conf_threshold는 0.1 ~ 0.9 사이여야 합니다")
+
+    try:
+        image = Image.open(io.BytesIO(await photo.read()))
+        image.load()
+    except Exception:
+        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다")
+
+    try:
+        return fashion_detection.classify_clothing(image, conf_threshold=conf_threshold)
+    except FileNotFoundError as e:
+        raise HTTPException(503, str(e))
+
+
+@app.get("/api/style-suggestions", response_model=StyleSuggestionResponse, tags=["AI 분석"])
+def get_style_suggestions(db=Depends(optional_db)):
+    """체형별 스타일 제안 (추천 스타일 / 피해야 할 스타일 / 추천 상품 — 쇼핑 카탈로그의 AI추천 상품)"""
+    recommended_products = [p for p in catalog_rows(db)[0] if p["badge"] == "AI추천"]
+    return {
+        "bodyType": data.BODY_ANALYSIS_RESULT["bodyType"],
+        "summary": data.BODY_ANALYSIS_RESULT["summary"],
+        "recommendedStyles": data.RECOMMENDED_STYLES,
+        "avoidStyles": data.AVOID_STYLES,
+        "recommendedProducts": recommended_products,
+    }
+
+
+@app.get("/api/style-analysis", response_model=StyleAnalysisResponse, tags=["AI 분석"])
+def get_style_analysis():
+    """스타일 분석 결과 (도넛 차트 분포 + 키워드 + AI 코멘트)"""
+    return {
+        "breakdown": data.STYLE_BREAKDOWN,
+        "keywords": data.STYLE_KEYWORDS,
+        "aiComment": data.STYLE_AI_COMMENT,
+    }
+
+
+# ──────────────────────────────────────────────
+# 쇼핑
+# ──────────────────────────────────────────────
+
+@app.get("/api/products", response_model=ShopResponse, tags=["쇼핑"])
+def get_products(search: str = "", db=Depends(optional_db)):
+    """
+    쇼핑 상품 목록 (앱 ShopCatalog 와 같은 상품). ?search=셔츠 처럼 상품명 · 브랜드 검색.
+    DB products 표(seed_catalog.py 로 채움)가 있으면 DB 에서, 없으면 data.SHOP_CATALOG 에서 읽는다.
+    """
+    products, _ = catalog_rows(db)
+    if search:
+        products = [p for p in products if search in p["name"] or search in p["brand"]]
+    return {
+        "banner": "AI가 내 체형·취향을 분석해 추천한 상품이에요",
+        "products": products,
+    }
+
+
+@app.get("/api/products/{product_id}", response_model=ProductDetail, tags=["쇼핑"])
+def get_product_detail(product_id: int, db=Depends(optional_db)):
+    """상품 상세 (할인율 · 구매 링크). id 는 /api/products 응답의 id."""
+    products, _ = catalog_rows(db)
+    product = next((p for p in products if p["id"] == product_id), None)
+    if product is None:
+        raise HTTPException(404, "상품을 찾을 수 없습니다")
+    discount = None
+    if product["originalPrice"]:
+        discount = round((1 - product["price"] / product["originalPrice"]) * 100)
+    return {
+        **product,
+        "description": "",
+        "colors": [product["bgColor"]],
+        "sizes": [],
+        "discountPercent": discount,
+        "lowestPriceInfo": f"판매가: {product['price']:,}원 · {product.get('mallName') or '쇼핑몰'}",
+    }
+
+
+# ──────────────────────────────────────────────
+# 프로필 / 온보딩
+# ──────────────────────────────────────────────
+
+
+
+@app.get("/api/styles", response_model=list[str], tags=["프로필"])
+def get_style_options():
+    """온보딩 - 선택 가능한 스타일 목록"""
+    return data.STYLE_OPTIONS
+
+
+
+
+# ──────────────────────────────────────────────
+# 실시간 날씨 (WeatherViewModel)
+# ──────────────────────────────────────────────
+
+@app.get("/api/weather", response_model=WeatherNowResponse, tags=["날씨"])
+def get_weather(lat: float = weather.DEFAULT_LAT, lon: float = weather.DEFAULT_LON):
+    """
+    위도·경도로 실시간 날씨 조회 → 온도·습도·상태 + 옷차림 조언.
+
+    앱 WeatherViewModel이 기기 위치(lat/lon)로 호출.
+    서버 환경변수 OWM_API_KEY 가 설정돼 있으면 실제 OpenWeatherMap을 호출하고,
+    없으면 기본값(맑음 22도)으로 응답한다.
+    """
+    w = weather.fetch_weather(lat, lon)
+    advice = weather.make_advice(w["temp"], w["humidity"], w["conditionId"])
+    return {**w, "advice": advice}
+
+
+# ──────────────────────────────────────────────
+# 스타일 취향 학습 (StylePreferenceScreen)
+# ──────────────────────────────────────────────
+
+def _preference_payload() -> dict:
+    state = data.STYLE_PREFERENCE_STATE
+    ranked = sorted(state["scores"].items(), key=lambda kv: kv[1], reverse=True)
+    top = ranked[0][0] if ranked else data.STYLE_PREFERENCE_STYLES[0]
+    return {
+        "scores": [{"style": s, "score": sc} for s, sc in ranked],
+        "ratedCount": state["ratedCount"],
+        "topStyle": top,
+    }
+
+
+
+
+
+
+# ──────────────────────────────────────────────
+# 가상 피팅 (VirtualFittingScreen)
+# ──────────────────────────────────────────────
+
+@app.get("/api/virtual-fitting/items", response_model=VirtualFittingResponse, tags=["가상 피팅"])
+def get_fitting_items():
+    """가상 피팅에서 입어볼 후보 의류 목록 (옷장 등록 의류 + 샘플)"""
+    wardrobe = [
+        {"id": i["id"], "name": i["name"], "category": i["category"], "imageUrl": i["imageUrl"]}
+        for i in data.WARDROBE_ITEMS
+    ]
+    return {"items": wardrobe + data.FITTING_SAMPLES}
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return {"service": "FashionProject API", "docs": "/docs"}
+
+
+app.include_router(db_router)
+
+@app.get("/api/health/database", tags=["상태"])
+def database_health():
+    return database_status()

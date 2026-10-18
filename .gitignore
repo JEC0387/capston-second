@@ -1,0 +1,22 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.claude/
+.vscode/
+.idea/
+
+# 빌드 결과물 · 내 컴퓨터 전용 설정 · 비밀 값 (깃허브에 올리지 않음)
+*.zip
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/uploads/
+**/.env
+**/.env.*
+!**/.env.example
+integration-logs/
+# AI 성능 측정 — 옷 사진(용량)과 팀원 몸 치수 원본(개인정보)은 올리지 않는다 (결과 표 results/ 는 올림)
+backend/evaluation/clothes/
+backend/evaluation/body_measure.csv
