@@ -24,6 +24,8 @@ import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.ui.components.TasteReportCard
 import com.jeiu.fashionproject.ui.components.BackupRestoreDialog
+import com.jeiu.fashionproject.ui.components.ServerAddressDialog
+import com.jeiu.fashionproject.data.ServerSettings
 import com.jeiu.fashionproject.ui.components.RecommendationStatsCard
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.WearLogStore
@@ -72,6 +74,7 @@ fun MyPageScreen(
     val scope = rememberCoroutineScope()
     var showNotifDialog by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
+    var showServerDialog by remember { mutableStateOf(false) }
     var showVersionDialog by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
@@ -317,6 +320,9 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.CloudUpload, label = "데이터 백업 · 복원", onClick = { showBackupDialog = true })
             HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Dns, label = "서버 주소 (${ServerSettings.current.removePrefix("http://")})",
+                onClick = { showServerDialog = true })
+            HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.DeleteOutline, label = "현재 세션 체형 데이터 삭제", onClick = {
@@ -378,6 +384,10 @@ fun MyPageScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    if (showServerDialog) {
+        ServerAddressDialog(onDismiss = { showServerDialog = false })
     }
 
     if (showBackupDialog) {

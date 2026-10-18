@@ -12,8 +12,8 @@ import java.net.URL
 /**
  * FastAPI 백엔드 연동 클라이언트.
  *
- * - 에뮬레이터에서 PC의 localhost는 10.0.2.2 로 접근한다.
- * - 실기기 테스트 시 BASE_URL을 PC의 내부 IP(예: http://192.168.0.x:8000)로 변경.
+ * - 에뮬레이터에서 PC의 localhost는 10.0.2.2 로 접근한다 (기본값).
+ * - 실제 폰은 마이페이지 > 서버 주소 에서 PC의 내부 IP(예: http://192.168.0.x:8000)를 넣는다 (ServerSettings).
  * - 백엔드 실행: backend 폴더에서  python -m uvicorn main:app --host 0.0.0.0 --port 8000
  */
 data class DetectedObject(val label: String, val confidence: Float, val bbox: List<Int>)
@@ -35,7 +35,8 @@ data class ClothingCandidate(
 
 object BackendApi {
 
-    var BASE_URL = "http://10.0.2.2:8000"
+    /** 서버 주소 — 앱 시작 때 ServerSettings.load 가 저장된 값(없으면 BuildConfig.SERVER_URL)으로 바꾼다 */
+    @Volatile var BASE_URL = "http://10.0.2.2:8000"
 
     /** 이 폰의 기기 번호 — 서버 DB가 폰마다 데이터를 따로 저장하도록 모든 요청에 붙인다 (DbSync.init 에서 설정). */
     @Volatile var deviceId: String? = null

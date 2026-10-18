@@ -26,9 +26,7 @@ capston-second/
 ├── fashion_app/   안드로이드 앱 (Kotlin · Jetpack Compose) — Android Studio로 이 폴더를 연다
 ├── backend/       서버 (Python FastAPI) + DB 연결(db_api.py) + AI 성능 측정 도구(evaluation/)
 ├── 수정사항.md     실행 방법 · 기능별 수정 내역 · 알려진 한계
-├── HANDOFF.md · INTEGRATION_REPORT.md · MERGE_SON_YURI.md   통합 · 인계 기록
-├── BODY_ANALYSIS_FIX_* · REAL_DEVICE_FIX_* · PRESENTATION_*   이지민 실기기 · 체형 분석 수정 기록, 발표 전 점검표
-├── BODY_DATA_PRIVACY.md · AI_TRYON_STATUS.md   체형 데이터 · AI 입어보기 사진 처리 방식 (개인정보)
+├── docs/          개인정보 처리 방식 · 발표 전 점검표 · 통합 · 인계 · 실기기 수정 기록 (목록: docs/README.md)
 └── .github/workflows/   GitHub Actions — 올릴 때마다 테스트 · APK 자동 빌드
 ```
 
@@ -53,6 +51,8 @@ capston-second/
    FASHN_API_KEY=...      # 가상 피팅 '입어보기' (없으면 버튼 숨김)
    ```
    에뮬레이터는 서버 주소 `http://10.0.2.2:8000` 이 기본값입니다.
+   **실제 폰**은 앱 마이페이지 > **서버 주소**에 PC 의 와이파이 IP(예: `192.168.0.10`)를 넣고 [연결 확인] → [저장]
+   (폰과 PC 는 같은 와이파이, 서버는 `--host 0.0.0.0` 으로 실행).
 
 자세한 내용: [`수정사항.md`](수정사항.md) · [`backend/DB_INTEGRATION.md`](backend/DB_INTEGRATION.md) ·
 [`backend/README.md`](backend/README.md) · [`backend/evaluation/README.md`](backend/evaluation/README.md)

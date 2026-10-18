@@ -1,11 +1,13 @@
 """Optional PostgreSQL persistence. Missing/unavailable DB never disables image APIs."""
 import logging
 import os
+import time
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import HTTPException
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -115,3 +117,31 @@ _SCHEMA_CHECKS = [
     ('saved_outfits', 'SELECT client_key FROM saved_outfits LIMIT 0', _M004),
     ('outfit_plans', 'SELECT date FROM outfit_plans LIMIT 0', _M004),
 ]
+
+
+# ── 마이그레이션을 아직 적용하지 않은 DB 에서도 기존 기능이 멈추지 않도록 ──
+# 새 표 · 칸이 있는지 확인해서, 없으면 그 기능만 건너뛴다 (옷장 · 착용 기록 같은 기존 저장은 계속 동작).
+# 있는 것은 계속 기억하고, 없는 것은 30초마다 다시 확인한다 (서버를 켠 채로 apply_migrations.py 를 돌려도 반영).
+_schema_cache: dict = {}
+_RECHECK_SECONDS = 30
+
+
+def schema_has(db, table: str, column: Optional[str] = None) -> bool:
+    bind = db.get_bind()
+    key = (id(bind), table, column)
+    now = time.monotonic()
+    hit = _schema_cache.get(key)
+    if hit is not None and (hit[0] or now - hit[1] < _RECHECK_SECONDS):
+        return hit[0]
+    try:
+        insp = inspect(bind)
+        ok = insp.has_table(table) and (column is None or any(c['name'] == column for c in insp.get_columns(table)))
+    except SQLAlchemyError:
+        ok = False
+    _schema_cache[key] = (ok, now)
+    return ok
+
+
+def reset_schema_cache():
+    """테스트용 — 표 구성을 바꾼 뒤 다시 확인하게 한다"""
+    _schema_cache.clear()

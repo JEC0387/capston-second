@@ -24,6 +24,9 @@ android {
         versionName = "1.0-presentation"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "OWM_API_KEY", "\"${localProperties.getProperty("OWM_API_KEY", "")}\"")
+        // 서버(FastAPI) 기본 주소. 실제 폰은 local.properties 에 SERVER_URL=http://PC의IP:8000 을 넣거나
+        // 앱 마이페이지 > 서버 주소 에서 바꾼다. 비워 두면 에뮬레이터 주소(10.0.2.2).
+        buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "http://10.0.2.2:8000")}\"")
 
         // NAVER API HUB(NCP) — 데이터랩 쇼핑인사이트 + 이미지 검색이 같은 키를 쓴다.
         // (옛 developers.naver.com 쇼핑 검색 API는 종료되어 더 못 쓴다.)

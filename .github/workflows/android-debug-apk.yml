@@ -12,10 +12,12 @@ on:
     paths:
       - .github/workflows/android-debug-apk.yml
       - fashion_app/**
+      - backend/**
   pull_request:
     paths:
       - .github/workflows/android-debug-apk.yml
       - fashion_app/**
+      - backend/**
   workflow_dispatch:
 
 permissions:

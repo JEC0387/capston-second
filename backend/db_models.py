@@ -42,7 +42,9 @@ class User(Base):
     height_cm: Mapped[Optional[float]] = mapped_column(Float)
     body_type: Mapped[Optional[str]] = mapped_column(String(20))
     preferred_styles: Mapped[list] = mapped_column(JSON, default=list)
-    gender: Mapped[Optional[str]] = mapped_column(String(10))  # FEMALE / MALE (마이페이지 성별 설정, 없으면 미설정)
+    # FEMALE / MALE (마이페이지 성별 설정). 002 마이그레이션 칸이라 필요할 때만 읽는다(deferred) —
+    # 002 를 적용하지 않은 DB 에서도 사용자 조회가 멈추지 않도록
+    gender: Mapped[Optional[str]] = mapped_column(String(10), deferred=True)
     sample_records_added: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)  # 시연용 측정 기록을 넣었는지
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -73,8 +75,9 @@ class Clothing(Base):
     added_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     favorited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))  # 하트 누른 시각
     kept_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))       # "계속 둘게요" 시각
-    brand: Mapped[Optional[str]] = mapped_column(String(50))   # 브랜드 (선택 입력)
-    price: Mapped[Optional[int]] = mapped_column(Integer)      # 산 가격(원, 선택 입력) — 착용당 비용
+    # 004 마이그레이션 칸 — 필요할 때만 읽는다(deferred), 004 를 적용하지 않은 DB 에서도 옷장 조회 · 저장이 되도록
+    brand: Mapped[Optional[str]] = mapped_column(String(50), deferred=True)   # 브랜드 (선택 입력)
+    price: Mapped[Optional[int]] = mapped_column(Integer, deferred=True)      # 산 가격(원, 선택 입력) — 착용당 비용
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

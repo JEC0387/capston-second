@@ -9,9 +9,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, undefer
+from sqlalchemy import inspect as sa_inspect
 import data
-from database import get_db
+from database import get_db, schema_has
 from db_models import (BodyMeasurement, Clothing, ClothingPhoto, OutfitPlan, Product, ProductInterest, ProductLike,
     RecommendationLog, SavedOutfit, SizeChart, StyleRating, TasteEvent, User, WearLog)
 from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, WardrobeSyncRequest,
@@ -74,6 +75,21 @@ def cut(text: Optional[str], n: int) -> Optional[str]:
     return text[:n] if text else text
 
 
+def loaded(obj, name: str):
+    """deferred 칸을 DB 에 다시 묻지 않고, 이미 읽어 둔 값만 돌려준다 (안 읽었으면 None)"""
+    return None if name in sa_inspect(obj).unloaded else getattr(obj, name)
+
+
+def require_table(db: Session, table: str) -> None:
+    """마이그레이션을 아직 적용하지 않아 표가 없으면 503 + 안내 (앱은 대기열에 두었다가 나중에 다시 보낸다)"""
+    if not schema_has(db, table):
+        raise HTTPException(503, f"DB 에 {table} 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+
+
+def has_prices(db: Session) -> bool:
+    return schema_has(db, "clothes", "price") and schema_has(db, "clothes", "brand")
+
+
 def clothing_out(c: Clothing, has_photo: bool = False) -> dict:
     return {
         "id": c.id,
@@ -97,13 +113,15 @@ def clothing_out(c: Clothing, has_photo: bool = False) -> dict:
         "cutoutUri": c.cutout_uri,
         "garmentUri": c.garment_uri,
         "hasPhoto": has_photo,
-        "brand": c.brand,
-        "price": c.price,
+        "brand": loaded(c, "brand"),
+        "price": loaded(c, "price"),
     }
 
 
 def photo_ids(db: Session, user: User) -> set[str]:
-    """사진 백업이 있는 옷 client_id 목록"""
+    """사진 백업이 있는 옷 client_id 목록 (003 을 적용하지 않은 DB 면 빈 목록)"""
+    if not schema_has(db, "clothing_photos"):
+        return set()
     return set(db.scalars(select(ClothingPhoto.client_id).where(ClothingPhoto.user_id == user.id)))
 
 
@@ -144,6 +162,8 @@ def latest_body_type(db: Session, user: User) -> Optional[str]:
 def user_clothes(db: Session, user: User, category: str = "전체") -> list[Clothing]:
     """하트 누른 옷이 위(누른 순서대로), 나머지는 등록 순서"""
     q = select(Clothing).where(Clothing.user_id == user.id)
+    if has_prices(db):
+        q = q.options(undefer(Clothing.brand), undefer(Clothing.price))
     if category != "전체":
         q = q.where(Clothing.category == category)
     q = q.order_by(Clothing.favorited_at.is_(None), Clothing.favorited_at, Clothing.id)
@@ -161,6 +181,7 @@ def sync_wardrobe(req: WardrobeSyncRequest, db: Session = Depends(get_db),
     → 폰이 기준이고 서버는 그대로 따라 저장한다. 사진 파일은 올리지 않고 주소만 저장.
     """
     existing = {c.client_id: c for c in db.scalars(select(Clothing).where(Clothing.user_id == user.id))}
+    prices = has_prices(db)
     seen: set[str] = set()
     saved = 0
     for it in req.items:
@@ -188,8 +209,9 @@ def sync_wardrobe(req: WardrobeSyncRequest, db: Session = Depends(get_db),
         c.added_at = to_dt(it.addedAt)
         c.favorited_at = to_dt(it.favoritedAt)
         c.kept_at = to_dt(it.keptAt)
-        c.brand = cut((it.brand or "").strip(), 50) or None
-        c.price = it.price if it.price is not None and 0 < it.price <= 100_000_000 else None
+        if prices:   # 004 를 적용하지 않은 DB 면 가격 · 브랜드만 건너뛴다
+            c.brand = cut((it.brand or "").strip(), 50) or None
+            c.price = it.price if it.price is not None and 0 < it.price <= 100_000_000 else None
         saved += 1
 
     deleted = 0
@@ -197,10 +219,11 @@ def sync_wardrobe(req: WardrobeSyncRequest, db: Session = Depends(get_db),
         if client_id not in seen:
             db.delete(c)
             deleted += 1
-    # 폰에서 지운 옷의 사진 백업도 함께 지운다
-    for p in db.scalars(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id)):
-        if p.client_id not in seen:
-            db.delete(p)
+    # 폰에서 지운 옷의 사진 백업도 함께 지운다 (003 을 적용한 DB 만)
+    if schema_has(db, "clothing_photos"):
+        for p in db.scalars(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id)):
+            if p.client_id not in seen:
+                db.delete(p)
     db.commit()
     return {"saved": saved, "deleted": deleted, "total": len(seen)}
 
@@ -416,7 +439,8 @@ def _profile_payload(db: Session, user: User) -> dict:
     outfits = db.scalar(select(func.count()).select_from(WearLog).where(WearLog.user_id == user.id))
     fav_clothes = db.scalar(select(func.count()).select_from(Clothing)
                             .where(Clothing.user_id == user.id, Clothing.favorited_at.is_not(None)))
-    interests = db.scalar(select(func.count()).select_from(ProductInterest).where(ProductInterest.user_id == user.id))
+    interests = (db.scalar(select(func.count()).select_from(ProductInterest).where(ProductInterest.user_id == user.id))
+                 if schema_has(db, "product_interests") else 0)
     return {
         "nickname": user.nickname,
         "email": user.email or "",
@@ -425,7 +449,7 @@ def _profile_payload(db: Session, user: User) -> dict:
         "favoriteCount": fav_clothes + interests,    # 하트 옷 + 관심 상품
         "bodyType": latest_body_type(db, user),
         "preferredStyles": user.preferred_styles or [],
-        "gender": user.gender,
+        "gender": user.gender if schema_has(db, "users", "gender") else None,
         "interestCount": interests,
     }
 
@@ -490,6 +514,8 @@ def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_
 @app.post("/api/profile/gender", response_model=Profile, tags=["프로필"])
 def update_gender(req: GenderRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """마이페이지 성별 설정 저장 (FEMALE / MALE, null 이면 해제) — 앱 UserPreferencesViewModel 과 같은 값"""
+    if not schema_has(db, "users", "gender"):
+        raise HTTPException(503, "DB 에 성별 칸이 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
     user.gender = req.gender
     db.commit()
     return _profile_payload(db, user)
@@ -512,6 +538,7 @@ def sync_product_interests(req: ProductInterestSyncRequest, db: Session = Depend
     폰의 관심 상품 목록(누른 순서)을 받아 DB 를 똑같이 맞춘다 (앱 ProductInterestStore 가 바뀔 때마다 호출).
     새 상품은 추가, 순서는 갱신, 폰에 없는 상품은 삭제. 처음 저장된 시각(added_at)은 유지한다.
     """
+    require_table(db, "product_interests")
     existing = {r.product_key: r for r in db.scalars(select(ProductInterest).where(ProductInterest.user_id == user.id))}
     saved = 0
     for position, key in enumerate(req.productIds):
@@ -536,6 +563,7 @@ def sync_product_interests(req: ProductInterestSyncRequest, db: Session = Depend
 @app.get("/api/product-interests", response_model=ProductInterestResponse, tags=["쇼핑"])
 def get_product_interests(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """내 관심 상품 (누른 순서). 카탈로그(products)에 있는 상품은 이름 · 가격 · 사진도 함께."""
+    require_table(db, "product_interests")
     rows = list(db.scalars(select(ProductInterest).where(ProductInterest.user_id == user.id)
                            .order_by(ProductInterest.position, ProductInterest.id)))
     catalog = _catalog_by_key(db, [r.product_key for r in rows])
@@ -557,6 +585,7 @@ def popular_interests(limit: int = 10, db: Session = Depends(get_db)):
     여러 사용자가 관심 상품으로 많이 담은 상품 순위 (기기 번호 불필요, 개인 정보 없이 개수만).
     발표 · 쇼핑 화면의 "많이 찜한 상품"용.
     """
+    require_table(db, "product_interests")
     rows = db.execute(
         select(ProductInterest.product_key, func.count(func.distinct(ProductInterest.user_id)).label("n"))
         .group_by(ProductInterest.product_key)
@@ -584,6 +613,7 @@ def sync_taste_events(req: TasteEventSyncRequest, db: Session = Depends(get_db),
     (평가 시각, 종류)가 같으면 같은 기록 — 새 기록만 추가하고, 폰에서 사라진 기록은 삭제한다.
     (같은 날 착용 기록을 다시 저장하면 앱이 그날 착용 평가를 바꿔 쓰기 때문)
     """
+    require_table(db, "taste_events")
     existing = {(e.at_ms, e.source): e for e in db.scalars(select(TasteEvent).where(TasteEvent.user_id == user.id))}
     seen = set()
     saved = 0
@@ -617,6 +647,7 @@ def sync_taste_events(req: TasteEventSyncRequest, db: Session = Depends(get_db),
 @app.get("/api/taste-events/summary", response_model=TasteSummary, tags=["취향 학습"])
 def taste_summary(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """DB 에 쌓인 평가 기록으로 색 · 종류 · 조합 방식 · 스타일 점수를 다시 계산 (앱과 같은 규칙)"""
+    require_table(db, "taste_events")
     colors: dict[str, int] = {}
     kinds: dict[str, int] = {}
     patterns: dict[str, int] = {}
@@ -705,6 +736,7 @@ def upload_clothing_photo(req: ClothingPhotoIn, db: Session = Depends(get_db),
     먼저 /api/wardrobe/sync 로 옷이 저장돼 있어야 한다 — 없으면 404 (앱은 나중에 다시 보낸다).
     같은 옷의 사진을 다시 보내면 바꿔 쓴다.
     """
+    require_table(db, "clothing_photos")
     try:
         raw = base64.b64decode(req.data, validate=True)
     except (binascii.Error, ValueError):
@@ -736,6 +768,7 @@ def upload_clothing_photo(req: ClothingPhotoIn, db: Session = Depends(get_db),
          responses={200: {"content": {"image/png": {}, "image/jpeg": {}, "image/webp": {}}}})
 def get_clothing_photo(client_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """백업한 옷 사진 받기 (복원용). 내 기기 번호의 사진만 받을 수 있다."""
+    require_table(db, "clothing_photos")
     row = db.scalar(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id,
                                                 ClothingPhoto.client_id == client_id))
     if row is None:
@@ -750,6 +783,7 @@ def get_clothing_photo(client_id: str, db: Session = Depends(get_db), user: User
 @app.get("/api/taste-events", response_model=TasteEventListResponse, tags=["취향 학습"])
 def list_taste_events(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """취향 평가 기록 전체 (오래된 순) — 백업 코드로 복원할 때 폰에 다시 넣는다"""
+    require_table(db, "taste_events")
     rows = list(db.scalars(select(TasteEvent).where(TasteEvent.user_id == user.id)
                            .order_by(TasteEvent.at_ms, TasteEvent.id)))
     return {"totalCount": len(rows), "events": [{
@@ -773,6 +807,7 @@ def sync_recommendations(req: RecommendationLogSyncRequest, db: Session = Depend
     폰이 보여 준 추천 코디 기록을 받아 새 기록만 더한다.
     폰은 최근 기록만 들고 있으므로, 폰에서 사라진 오래된 기록도 DB 에는 남겨 둔다 (지우지 않음).
     """
+    require_table(db, "recommendation_logs")
     existing = set(db.execute(select(RecommendationLog.date, RecommendationLog.context, RecommendationLog.item_key)
                               .where(RecommendationLog.user_id == user.id)).tuples())
     saved = 0
@@ -860,12 +895,14 @@ def recommendation_stats(db: Session, user_id: Optional[int] = None) -> dict:
 @app.get("/api/recommendations/stats", response_model=RecommendationStats, tags=["추천 기록"])
 def my_recommendation_stats(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """내 추천 성능 — 보여 준 코디 중 👍 · 실제로 입은 비율 (홈 / 오늘 / 5일 예보 / 상황별)"""
+    require_table(db, "recommendation_logs")
     return recommendation_stats(db, user.id)
 
 
 @app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"])
 def all_recommendation_stats(db: Session = Depends(get_db)):
     """모든 사용자를 합친 추천 성능 (발표 · AI 성능 측정표용, 개인 정보 없이 개수와 비율만)"""
+    require_table(db, "recommendation_logs")
     return recommendation_stats(db)
 
 
@@ -882,6 +919,9 @@ def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_u
     deleted: dict[str, int] = {}
     for model in (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
                   ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan):
+        if not schema_has(db, model.__tablename__):   # 아직 만들지 않은 표는 지울 것도 없음
+            deleted[model.__tablename__] = 0
+            continue
         result = db.execute(delete(model).where(model.user_id == user.id))
         deleted[model.__tablename__] = result.rowcount or 0
     db.execute(delete(User).where(User.id == user.id))
@@ -898,6 +938,7 @@ def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_u
 def sync_saved_outfits(req: SavedOutfitSyncRequest, db: Session = Depends(get_db),
                        user: User = Depends(current_user)):
     """폰의 저장한 코디 목록(최근 저장 순)과 DB 를 똑같이 맞춘다. 같은 옷 조합은 하나로 본다."""
+    require_table(db, "saved_outfits")
     existing = {r.client_key: r for r in db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user.id))}
     seen: set[str] = set()
     saved = 0
@@ -932,6 +973,7 @@ def sync_saved_outfits(req: SavedOutfitSyncRequest, db: Session = Depends(get_db
 @app.get("/api/saved-outfits", response_model=SavedOutfitResponse, tags=["코디 저장 · 일정"])
 def get_saved_outfits(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """저장한 코디 (최근 저장 순)"""
+    require_table(db, "saved_outfits")
     rows = list(db.scalars(select(SavedOutfit).where(SavedOutfit.user_id == user.id)
                            .order_by(SavedOutfit.position, SavedOutfit.id)))
     return {"totalCount": len(rows), "outfits": [{
@@ -944,6 +986,7 @@ def get_saved_outfits(db: Session = Depends(get_db), user: User = Depends(curren
 def sync_outfit_plans(req: OutfitPlanSyncRequest, db: Session = Depends(get_db),
                       user: User = Depends(current_user)):
     """폰의 코디 일정 전체(날짜마다 하나)와 DB 를 똑같이 맞춘다."""
+    require_table(db, "outfit_plans")
     existing = {r.date: r for r in db.scalars(select(OutfitPlan).where(OutfitPlan.user_id == user.id))}
     saved = 0
     for p in req.plans:
@@ -972,6 +1015,7 @@ def sync_outfit_plans(req: OutfitPlanSyncRequest, db: Session = Depends(get_db),
 @app.get("/api/outfit-plans", response_model=OutfitPlanResponse, tags=["코디 저장 · 일정"])
 def get_outfit_plans(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """코디 일정 (날짜 순)"""
+    require_table(db, "outfit_plans")
     rows = list(db.scalars(select(OutfitPlan).where(OutfitPlan.user_id == user.id).order_by(OutfitPlan.date)))
     return {"totalCount": len(rows), "plans": [{
         "date": r.date, "itemIds": r.item_ids or [], "note": r.note or "", "createdAt": to_ms(r.created_at),
@@ -983,6 +1027,8 @@ def get_outfit_plans(db: Session = Depends(get_db), user: User = Depends(current
 # ──────────────────────────────────────────────
 
 def _count(db: Session, model) -> int:
+    if not schema_has(db, model.__tablename__):
+        return 0
     return db.scalar(select(func.count()).select_from(model)) or 0
 
 
@@ -1000,12 +1046,14 @@ def overview_stats(db: Session = Depends(get_db)):
     모든 사용자를 합친 DB 현황 — 발표 · 보고서용 (기기 번호 불필요, 개인 정보 없이 개수 · 순위만).
     옷 종류 · 색 순위, 선호 스타일 순위, 가격을 넣은 옷 평균 가격, 코디 일정대로 입은 비율.
     """
-    priced = [p for p in db.scalars(select(Clothing.price).where(Clothing.price.is_not(None))) if p and p > 0]
+    priced = ([p for p in db.scalars(select(Clothing.price).where(Clothing.price.is_not(None))) if p and p > 0]
+              if has_prices(db) else [])
     styles = [s for row in db.scalars(select(User.preferred_styles)) for s in (row or [])]
     wear = {(w.user_id, w.date): set(w.item_ids or []) for w in db.scalars(select(WearLog))}
     today = datetime.now(timezone.utc).date().isoformat()
     plan_days = followed = 0
-    for p in db.scalars(select(OutfitPlan).where(OutfitPlan.date < today)):
+    plans = db.scalars(select(OutfitPlan).where(OutfitPlan.date < today)) if schema_has(db, "outfit_plans") else []
+    for p in plans:
         got = wear.get((p.user_id, p.date))
         if got is None:
             continue
