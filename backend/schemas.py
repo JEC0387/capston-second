@@ -86,6 +86,11 @@ class ClothingItem(BaseModel):
     addedAt: Optional[int] = None       # Unix 밀리초
     favoritedAt: Optional[int] = None
     keptAt: Optional[int] = None
+    # 복원용 (백업 코드로 다른 폰에 옷장을 되살릴 때)
+    originalUri: Optional[str] = None
+    cutoutUri: Optional[str] = None
+    garmentUri: Optional[str] = None
+    hasPhoto: bool = False              # 사진 백업(clothing_photos)이 있는지
 
 
 class WardrobeResponse(BaseModel):
@@ -497,3 +502,78 @@ class TasteSummary(BaseModel):
     patterns: dict[str, int]
     styles: dict[str, int]
 
+
+
+# ---------- 옷 사진 백업 (복원용) ----------
+
+class ClothingPhotoIn(BaseModel):
+    """앱이 줄여서 올리는 옷 사진 한 장 (base64). 사람 · 체형 사진은 받지 않는다 — 옷장 옷 사진만."""
+    clientId: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_.:-]+$")
+    mime: Literal["image/png", "image/jpeg", "image/webp"]
+    data: str = Field(min_length=8, max_length=2_900_000)   # base64 (원본 약 2MB 이하)
+
+
+class ClothingPhotoOut(BaseModel):
+    clientId: str
+    mime: str
+    size: int
+    sha256: str
+
+
+# ---------- 추천 기록 (추천 성능 측정) ----------
+
+class RecommendationLogItem(BaseModel):
+    date: str                                     # yyyy-MM-dd (추천한 날)
+    context: str = Field(min_length=1, max_length=30, pattern=r"^[A-Za-z0-9_:-]+$")
+    scope: str = Field(default="OWNED", max_length=12)
+    rank: int = Field(default=0, ge=0, le=50)
+    itemIds: list[str] = Field(min_length=1, max_length=8)
+    shownAt: int = Field(gt=0)                    # Unix 밀리초
+
+    @field_validator('date')
+    @classmethod
+    def valid_date(cls, value):
+        if len(value) != 10 or date.fromisoformat(value).isoformat() != value:
+            raise ValueError('Expected yyyy-MM-dd')
+        return value
+
+    @field_validator('itemIds')
+    @classmethod
+    def valid_ids(cls, value):
+        if any(not i or len(i) > 64 for i in value):
+            raise ValueError('item id must be 1-64 chars')
+        return value
+
+
+class RecommendationLogSyncRequest(BaseModel):
+    """폰이 기억하는 최근 추천 기록. 이미 있는 기록은 그대로 두고 새 기록만 더한다 (지우지 않음)."""
+    logs: list[RecommendationLogItem] = Field(max_length=2000)
+
+
+class RecommendationStatsGroup(BaseModel):
+    shown: int            # 보여 준 코디 수
+    liked: int            # 그 코디에 👍
+    disliked: int         # 그 코디에 👎
+    worn: int             # 추천한 날 ~ 2일 뒤 안에 그 코디를 그대로 입음 (착용 기록에 코디 옷이 모두 있음)
+    wornPartial: int      # 코디 옷의 절반 이상을 입음 (worn 포함)
+    likeRate: float       # liked / shown
+    ratedLikeRate: Optional[float] = None   # liked / (liked + disliked) — 평가한 것 중 👍 비율
+    wornRate: float       # worn / shown
+    wornPartialRate: float
+
+
+class RecommendationStats(BaseModel):
+    users: int
+    since: Optional[str] = None
+    until: Optional[str] = None
+    total: RecommendationStatsGroup
+    byContext: dict[str, RecommendationStatsGroup]
+
+
+class TasteEventListResponse(BaseModel):
+    totalCount: int
+    events: list[TasteEventItem]
+
+
+class DeleteMyDataResult(BaseModel):
+    deleted: dict[str, int]   # 표 이름 → 지운 줄 수

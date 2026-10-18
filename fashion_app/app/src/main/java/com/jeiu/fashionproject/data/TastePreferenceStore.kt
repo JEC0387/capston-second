@@ -175,9 +175,20 @@ object TastePreferenceStore {
         date = o.optStringOrNull("date")
     )
 
+    /** 백업 코드로 복원할 때 — 서버에서 받은 평가 기록으로 바꿔 쓴다 (이 폰의 예전 합계는 지움, 앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, events: List<TasteEvent>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_EVENTS, encode(events.sortedBy { it.at })).remove(KEY_BASE).remove(KEY_LEGACY).commit()
+    }
+
     private fun persist(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_EVENTS, encode(_events.value)).apply()
+        DbSync.pushTasteEvents(_events.value)
+    }
+
+    private fun encode(events: List<TasteEvent>): String {
         val arr = JSONArray()
-        _events.value.forEach { e ->
+        events.forEach { e ->
             arr.put(
                 JSONObject()
                     .put("at", e.at)
@@ -191,8 +202,7 @@ object TastePreferenceStore {
                     .put("date", e.date ?: JSONObject.NULL)
             )
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_EVENTS, arr.toString()).apply()
-        DbSync.pushTasteEvents(_events.value)
+        return arr.toString()
     }
 }
 

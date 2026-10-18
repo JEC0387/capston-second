@@ -42,6 +42,11 @@ object SampleWearHistory {
         175 to listOf("sample_09", "sample_05", "sample_12"),   // 베이지 블레이저
     )
 
+    /** 백업 코드로 복원할 때 — 복원한 기록 위에 샘플 착용 기록을 다시 넣지 않도록 표시만 해 둔다 */
+    fun markApplied(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_APPLIED, true).commit()
+    }
+
     /** 앱을 켤 때 부른다. 처음 한 번만 샘플 등록일을 옮기고 지난 착용 기록을 넣는다. */
     fun applyOnce(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

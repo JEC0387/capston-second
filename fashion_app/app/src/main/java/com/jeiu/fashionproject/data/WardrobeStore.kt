@@ -199,9 +199,15 @@ object WardrobeStore {
     private fun JSONObject.optStringOrNull(key: String): String? =
         if (has(key) && !isNull(key)) getString(key) else null
 
-    private fun persist(context: Context) {
+    /** 백업 코드로 복원할 때 — 폰 옷장을 서버에서 받은 목록으로 바꿔 쓴다 (샘플 옷을 다시 넣지 않음, 앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, items: List<WardrobeItem>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY, encode(items)).putBoolean(KEY_SAMPLES_SEEDED, true).commit()
+    }
+
+    private fun encode(items: List<WardrobeItem>): String {
         val arr = JSONArray()
-        _items.value.forEach { item ->
+        items.forEach { item ->
             arr.put(
                 JSONObject()
                     .put("id", item.id)
@@ -224,8 +230,13 @@ object WardrobeStore {
                     .put("style", item.style)
             )
         }
+        return arr.toString()
+    }
+
+    private fun persist(context: Context) {
+        val arr = encode(_items.value)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(KEY, arr.toString()).apply()
+            .edit().putString(KEY, arr).apply()
         // 서버 DB(Supabase)에도 같은 내용으로 저장 — 서버가 꺼져 있으면 조용히 건너뜀
         DbSync.pushWardrobe(_items.value)
     }

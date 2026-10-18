@@ -77,6 +77,19 @@ object WearLogStore {
         return toAdd.size
     }
 
+    /** 백업 코드로 복원할 때 — 폰 저장소를 서버에서 받은 기록으로 바꿔 쓴다 (앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, logs: List<WearLog>) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, encode(logs)).commit()
+    }
+
+    private fun encode(logs: List<WearLog>): String {
+        val arr = JSONArray()
+        logs.sortedBy { it.date }.forEach { log ->
+            arr.put(JSONObject().put("date", log.date).put("itemIds", JSONArray(log.itemIds)).put("memo", log.memo))
+        }
+        return arr.toString()
+    }
+
     private fun persist(context: Context) {
         val arr = JSONArray()
         _logs.value.forEach { log ->
@@ -115,6 +128,9 @@ object WearDates {
 
     fun of(year: Int, month0: Int, day: Int): String =
         of(Calendar.getInstance().apply { clear(); set(year, month0, day) })
+
+    /** 날짜에서 n일 뒤 (음수면 앞) */
+    fun addDays(date: String, n: Int): String = of(toCalendar(date).apply { add(Calendar.DAY_OF_MONTH, n) })
 
     /** 두 날짜 사이 일수 (to − from) */
     fun daysBetween(from: String, to: String): Int {

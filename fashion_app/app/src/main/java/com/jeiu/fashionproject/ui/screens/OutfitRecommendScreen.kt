@@ -26,6 +26,7 @@ import com.jeiu.fashionproject.data.DayForecast
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.data.WearDates
@@ -144,6 +145,13 @@ fun OutfitRecommendScreen(
         else -> if (situation == Situation.TRAVEL) travelDay?.date ?: today else today
     }
     val wearToday = rememberWearToday(wearLogs)
+    // 보여 준 추천 코디를 기록 → 👍 · 실제 착용과 비교해 추천 성능을 잰다 (서버 recommendation_logs)
+    LaunchedEffect(recommendation, recommendDate) {
+        val ok = recommendation as? OutfitEngine.Result.Ok ?: return@LaunchedEffect
+        if (tab != 1 && weatherInfo == null) return@LaunchedEffect   // 날씨를 받기 전 임시 코디는 세지 않음
+        val screen = when (tab) { 0 -> "today"; 1 -> "forecast"; else -> "situation:${situation.name}" }
+        RecommendationLog.record(context, recommendDate ?: today, screen, scope.name, ok.outfits)
+    }
     // 상황별 탭에서 내 옷이 부족할 때 "무엇을 사면 되는지" (계획 4 — 5단계, 황상윤)
     val situationNeed = remember(wardrobe, situation, tab, scope) {
         if (tab == 2 && scope == ClothingScope.OWNED) MissingItemFinder.situationNeed(wardrobe, situation) else null

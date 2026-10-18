@@ -14,8 +14,12 @@ import java.util.UUID
 
 /**
  * Local stores remain authoritative. Durable, serialized retries; body photos never leave this queue.
- * 서버 DB 로 보내는 것: 옷장 · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 · (동의 시) 체형 숫자 기록.
+ * 서버 DB 로 보내는 것: 옷장(+ 옷 사진 백업) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 ·
+ * 추천 기록 · (동의 시) 체형 숫자 기록.
  * 각 항목은 "마지막 상태 한 개"만 대기열에 남아, 서버가 꺼져 있다 켜지면 최신 상태로 맞춰진다.
+ *
+ * 마이페이지 > 데이터 백업 · 복원 에서 서버 백업을 끄면, 서버의 내 기록을 지우고 이후로는 아무것도 보내지 않는다.
+ * (끄는 동안 기기 번호를 요청에 붙이지 않으므로 서버 DB 에 새 사용자도 생기지 않는다)
  */
 object DbSync {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -27,13 +31,23 @@ object DbSync {
     private val _pendingCount = MutableStateFlow(0)
     val pendingCount: StateFlow<Int> = _pendingCount
 
+    /** 서버 백업이 켜져 있는지 (기본 켜짐) */
+    val isEnabled: Boolean get() = !::prefs.isInitialized || prefs.getBoolean(KEY_ENABLED, true)
+
+    /** 이 폰의 백업 코드 (= 기기 번호). 다른 폰에서 이 코드를 넣으면 기록을 가져올 수 있다. */
+    val backupCode: String? get() = if (::prefs.isInitialized) prefs.getString("device_id", null) else null
+
+    private const val KEY_ENABLED = "sync_enabled"
+    private const val KEY_PHOTO_SIGS = "photo_sigs"
+
     fun init(appContext: Context) {
         if (::prefs.isInitialized) return
         context = appContext.applicationContext
         prefs = context.getSharedPreferences("db_sync", Context.MODE_PRIVATE)
-        BackendApi.deviceId = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
+        val id = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
             prefs.edit().putString("device_id", it).apply()
         }
+        BackendApi.deviceId = if (isEnabled) id else null
         synchronized(queueLock) {
             runCatching {
                 val entries = JSONObject(prefs.getString("pending", "{}") ?: "{}")
@@ -60,7 +74,7 @@ object DbSync {
     }
 
     private fun enqueue(key: String, path: String, body: String) {
-        if (!::prefs.isInitialized) return
+        if (!::prefs.isInitialized || !isEnabled) return
         synchronized(queueLock) { pending[key] = path to body; persistLocked() }
         retry()
     }
@@ -68,6 +82,7 @@ object DbSync {
     fun retry() { scope.launch { delay(500); flush() } }
 
     private suspend fun flush() = networkLock.withLock {
+        if (!isEnabled) return@withLock
         val batch = synchronized(queueLock) { pending.toMap() }
         if (batch.isEmpty()) return@withLock
         val health = BackendApi.getJson("/api/health/database") ?: return@withLock
@@ -78,6 +93,7 @@ object DbSync {
             }
             // A newer local snapshot may have replaced this entry while another request was running.
             if (synchronized(queueLock) { pending[key] } != request) continue
+            if (key.startsWith("photo:")) { uploadPhoto(key, request); continue }
             val result = BackendApi.postJson(request.first, request.second) ?: continue
             if (result.isNotEmpty()) synchronized(queueLock) {
                 if (pending[key] == request) { pending.remove(key); persistLocked() }
@@ -100,7 +116,127 @@ object DbSync {
     fun pushPreferredStyles(styles: List<String>) = enqueue("styles", "/api/profile/styles",
         JSONObject().put("styles", JSONArray(styles)).toString())
 
-    fun pushWardrobe(items: List<WardrobeItem>) = enqueue("wardrobe", "/api/wardrobe/sync", wardrobeJson(items))
+    fun pushWardrobe(items: List<WardrobeItem>) {
+        enqueue("wardrobe", "/api/wardrobe/sync", wardrobeJson(items))
+        queuePhotos(items)
+    }
+
+    // ── 옷 사진 백업 (복원용) ──────────────────────────────
+    // 앱 폴더에 있는 옷 사진(file://)만 올린다. 샘플(android.resource://) · 인터넷 사진은 올리지 않는다.
+    // 대기열에는 사진 자체가 아니라 파일 위치만 두고, 보낼 때 720px 로 줄여서 보낸다.
+    // 한 번 올린 사진은 (주소 · 크기 · 수정 시각)이 바뀔 때만 다시 올린다.
+
+    private fun photoSigs(): JSONObject =
+        runCatching { JSONObject(prefs.getString(KEY_PHOTO_SIGS, "{}") ?: "{}") }.getOrDefault(JSONObject())
+
+    private fun signature(file: java.io.File, uri: String) = "$uri|${file.length()}|${file.lastModified()}"
+
+    private fun queuePhotos(items: List<WardrobeItem>) {
+        if (!::prefs.isInitialized || !isEnabled) return
+        val owned = items.filter { it.isOwned }
+        val ids = owned.map { it.id }.toSet()
+        synchronized(queueLock) {
+            // 지운 옷의 사진은 보내지 않는다 (서버 사진은 옷장 동기화 때 같이 지워짐)
+            val stale = pending.keys.filter { it.startsWith("photo:") && it.removePrefix("photo:") !in ids }
+            if (stale.isNotEmpty()) { stale.forEach { pending.remove(it) }; persistLocked() }
+            val sigs = photoSigs()
+            val gone = sigs.keys().asSequence().filter { it !in ids }.toList()
+            if (gone.isNotEmpty()) { gone.forEach { sigs.remove(it) }; prefs.edit().putString(KEY_PHOTO_SIGS, sigs.toString()).apply() }
+        }
+        val sigs = photoSigs()
+        owned.forEach { item ->
+            val path = android.net.Uri.parse(item.imageUri).takeIf { it.scheme == "file" }?.path ?: return@forEach
+            val file = java.io.File(path)
+            if (!file.isFile) return@forEach
+            if (sigs.optString(item.id) == signature(file, item.imageUri)) return@forEach
+            val key = "photo:${item.id}"
+            val body = JSONObject().put("clientId", item.id).put("file", path).put("uri", item.imageUri)
+                .put("cutout", item.isCutout).toString()
+            if (synchronized(queueLock) { pending[key]?.second } != body) enqueue(key, "/api/wardrobe/photos", body)
+        }
+    }
+
+    private val photoFailures = HashMap<String, Int>()
+
+    private suspend fun uploadPhoto(key: String, request: Pair<String, String>) {
+        if ((photoFailures[key] ?: 0) >= 5) return   // 계속 실패하면 이번 실행 동안은 쉬고, 앱을 다시 켜면 다시 시도
+        val marker = runCatching { JSONObject(request.second) }.getOrNull()
+        val file = marker?.optString("file")?.let { java.io.File(it) }
+        val done = { synchronized(queueLock) { if (pending[key] == request) { pending.remove(key); persistLocked() } } }
+        if (marker == null || file == null || !file.isFile) { done(); return }   // 사진이 없어졌으면 건너뜀
+        val encoded = withContext(Dispatchers.IO) { PhotoBackup.encode(file, marker.optBoolean("cutout")) }
+        if (encoded == null) { done(); return }
+        val body = JSONObject().put("clientId", marker.getString("clientId")).put("mime", encoded.first)
+            .put("data", android.util.Base64.encodeToString(encoded.second, android.util.Base64.NO_WRAP)).toString()
+        if (BackendApi.postJson(request.first, body, readTimeoutMs = 30_000) == null) {   // 옷장 동기화 전이면 404 → 다음에 다시
+            photoFailures[key] = (photoFailures[key] ?: 0) + 1
+            return
+        }
+        photoFailures.remove(key)
+        synchronized(queueLock) {
+            val sigs = photoSigs().put(marker.getString("clientId"), signature(file, marker.optString("uri")))
+            prefs.edit().putString(KEY_PHOTO_SIGS, sigs.toString()).apply()
+        }
+        done()
+    }
+
+    /** 추천 코디 기록 (추천 성능 측정) — 서버는 새 기록만 더한다 */
+    fun pushRecommendations(entries: List<RecommendationEntry>) {
+        val body = runCatching {
+            val arr = JSONArray()
+            entries.takeLast(2000).forEach { e ->
+                arr.put(JSONObject().put("date", e.date).put("context", e.context).put("scope", e.scope)
+                    .put("rank", e.rank).put("itemIds", JSONArray(e.itemIds)).put("shownAt", e.shownAt))
+            }
+            JSONObject().put("logs", arr).toString()
+        }.getOrNull() ?: return
+        enqueue("recs", "/api/recommendations/sync", body)
+    }
+
+    // ── 백업 끄기 · 켜기 · 복원 ──────────────────────────────
+
+    /**
+     * 서버에 저장된 내 기록을 모두 지우고 서버 백업을 끈다 (폰 안의 기록은 그대로).
+     * 성공하면 true. 서버에 연결되지 않으면 false (아무것도 바뀌지 않음).
+     */
+    suspend fun disableAndDeleteServerData(): Boolean = networkLock.withLock {
+        if (!::prefs.isInitialized) return@withLock false
+        if (!BackendApi.delete("/api/me", readTimeoutMs = 20_000)) return@withLock false
+        synchronized(queueLock) { pending.clear(); persistLocked() }
+        prefs.edit().putBoolean(KEY_ENABLED, false).remove(KEY_PHOTO_SIGS).apply()
+        BackendApi.deviceId = null
+        true
+    }
+
+    /** 서버 백업을 다시 켠다 — 폰의 지금 기록을 전부 다시 올린다 */
+    fun enable(appContext: Context) {
+        if (!::prefs.isInitialized) init(appContext)
+        prefs.edit().putBoolean(KEY_ENABLED, true).apply()
+        BackendApi.deviceId = backupCode
+        WardrobeStore.load(appContext); WearLogStore.load(appContext)
+        TastePreferenceStore.load(appContext); ProductInterestStore.load(appContext); RecommendationLog.load(appContext)
+        pushWardrobe(WardrobeStore.items.value)
+        pushWearLogs(WearLogStore.logs.value)
+        if (ProfileStore.hasSelection(appContext)) pushPreferredStyles(ProfileStore.preferredStyles(appContext))
+        appContext.getSharedPreferences("user_prefs", Context.MODE_PRIVATE).getString("gender", null)?.let { pushGender(it) }
+        pushProductInterests(ProductInterestStore.ids.value)
+        pushTasteEvents(TastePreferenceStore.events.value)
+        pushRecommendations(RecommendationLog.entries.value)
+    }
+
+    /**
+     * 백업 코드로 복원할 때 — 이 폰이 그 코드(기기 번호)를 쓰도록 바꾸고, 보내지 않은 대기열은 버린다.
+     * @param photos 복원하면서 받은 사진 파일 (옷 id → 파일, 다시 올리지 않도록)
+     */
+    suspend fun adoptForRestore(code: String, photos: Map<String, java.io.File>, uris: Map<String, String>) =
+        networkLock.withLock {
+            synchronized(queueLock) { pending.clear(); persistLocked() }
+            val sigs = JSONObject()
+            photos.forEach { (id, file) -> uris[id]?.let { sigs.put(id, signature(file, it)) } }
+            prefs.edit().putString("device_id", code).putBoolean(KEY_ENABLED, true)
+                .putString(KEY_PHOTO_SIGS, sigs.toString()).commit()
+            BackendApi.deviceId = code
+        }
 
     /** 관심 상품(쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트) 목록을 누른 순서대로 서버 DB(product_interests)에 맞춘다 */
     fun pushProductInterests(ids: List<String>) {

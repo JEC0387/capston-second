@@ -1,21 +1,26 @@
 """Selective DB/history integration. Existing image and recommendation endpoints stay in main.py."""
+import base64
+import binascii
+import hashlib
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 import data
 from database import get_db
-from db_models import (BodyMeasurement, Clothing, Product, ProductInterest, SizeChart, StyleRating,
-    TasteEvent, User, WearLog)
+from db_models import (BodyMeasurement, Clothing, ClothingPhoto, Product, ProductInterest, ProductLike,
+    RecommendationLog, SizeChart, StyleRating, TasteEvent, User, WearLog)
 from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, WardrobeSyncRequest,
     SyncResult, WearLogSyncRequest, WearLogResponse, BodyMeasurementIn, BodyMeasurementOut,
     BodyMeasurementHistory, SizeChartResponse, Profile, UpdateStylesRequest,
     StylePreferenceResponse, RatePreferenceRequest, GenderRequest, ProductInterestSyncRequest,
-    ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary)
+    ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary,
+    ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
+    TasteEventListResponse, DeleteMyDataResult)
 
 app = APIRouter()
 
@@ -68,7 +73,7 @@ def cut(text: Optional[str], n: int) -> Optional[str]:
     return text[:n] if text else text
 
 
-def clothing_out(c: Clothing) -> dict:
+def clothing_out(c: Clothing, has_photo: bool = False) -> dict:
     return {
         "id": c.id,
         "name": c.name,
@@ -87,7 +92,16 @@ def clothing_out(c: Clothing) -> dict:
         "addedAt": to_ms(c.added_at),
         "favoritedAt": to_ms(c.favorited_at),
         "keptAt": to_ms(c.kept_at),
+        "originalUri": c.original_uri,
+        "cutoutUri": c.cutout_uri,
+        "garmentUri": c.garment_uri,
+        "hasPhoto": has_photo,
     }
+
+
+def photo_ids(db: Session, user: User) -> set[str]:
+    """사진 백업이 있는 옷 client_id 목록"""
+    return set(db.scalars(select(ClothingPhoto.client_id).where(ClothingPhoto.user_id == user.id)))
 
 
 def measurement_out(m: BodyMeasurement) -> dict:
@@ -178,6 +192,10 @@ def sync_wardrobe(req: WardrobeSyncRequest, db: Session = Depends(get_db),
         if client_id not in seen:
             db.delete(c)
             deleted += 1
+    # 폰에서 지운 옷의 사진 백업도 함께 지운다
+    for p in db.scalars(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id)):
+        if p.client_id not in seen:
+            db.delete(p)
     db.commit()
     return {"saved": saved, "deleted": deleted, "total": len(seen)}
 
@@ -187,10 +205,11 @@ def get_wardrobe(category: str = "전체", db: Session = Depends(get_db),
                  user: User = Depends(current_user)):
     """내 옷장 조회. ?category=상의 처럼 카테고리 필터 가능 (하트 옷이 위)"""
     total = db.scalar(select(func.count()).select_from(Clothing).where(Clothing.user_id == user.id))
+    photos = photo_ids(db, user)
     return {
         "totalCount": total,
         "categories": data.WARDROBE_CATEGORIES,
-        "items": [clothing_out(c) for c in user_clothes(db, user, category)],
+        "items": [clothing_out(c, c.client_id in photos) for c in user_clothes(db, user, category)],
     }
 
 
@@ -659,3 +678,208 @@ def catalog_rows(db: Optional[Session]) -> tuple[list[dict], bool]:
             db.rollback()
     return _catalog_from_data(), False
 
+
+
+# ──────────────────────────────────────────────
+# 옷 사진 백업 (백업 코드로 다른 폰에 복원할 때 사용)
+# ──────────────────────────────────────────────
+
+PHOTO_MAX_BYTES = 2 * 1024 * 1024
+_MAGIC = {
+    "image/png": lambda b: b.startswith(b"\x89PNG\r\n\x1a\n"),
+    "image/jpeg": lambda b: b.startswith(b"\xff\xd8\xff"),
+    "image/webp": lambda b: b[:4] == b"RIFF" and b[8:12] == b"WEBP",
+}
+
+
+@app.post("/api/wardrobe/photos", response_model=ClothingPhotoOut, tags=["옷장"])
+def upload_clothing_photo(req: ClothingPhotoIn, db: Session = Depends(get_db),
+                          user: User = Depends(current_user)):
+    """
+    옷장 옷 사진 한 장 백업 (앱이 긴 변 720px 이하로 줄여서 보낸다, 2MB 이하).
+    먼저 /api/wardrobe/sync 로 옷이 저장돼 있어야 한다 — 없으면 404 (앱은 나중에 다시 보낸다).
+    같은 옷의 사진을 다시 보내면 바꿔 쓴다.
+    """
+    try:
+        raw = base64.b64decode(req.data, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(422, "사진 데이터(base64)가 올바르지 않아요") from None
+    if not raw or len(raw) > PHOTO_MAX_BYTES:
+        raise HTTPException(413, "사진은 2MB 이하만 저장할 수 있어요")
+    if not _MAGIC[req.mime](raw):
+        raise HTTPException(422, "사진 형식이 mime 과 맞지 않아요")
+    exists = db.scalar(select(Clothing.id).where(Clothing.user_id == user.id, Clothing.client_id == req.clientId))
+    if exists is None:
+        raise HTTPException(404, "옷장에 없는 옷이에요 (옷장 동기화 뒤에 다시 보내 주세요)")
+    digest = hashlib.sha256(raw).hexdigest()
+    row = db.scalar(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id,
+                                                ClothingPhoto.client_id == req.clientId))
+    if row is None:
+        row = ClothingPhoto(user_id=user.id, client_id=req.clientId)
+        db.add(row)
+    row.mime, row.data, row.size, row.sha256 = req.mime, raw, len(raw), digest
+    row.updated_at = datetime.now(timezone.utc)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "같은 사진이 동시에 들어왔어요. 잠시 후 다시 보내 주세요") from None
+    return {"clientId": req.clientId, "mime": req.mime, "size": len(raw), "sha256": digest}
+
+
+@app.get("/api/wardrobe/photos/{client_id}", tags=["옷장"],
+         responses={200: {"content": {"image/png": {}, "image/jpeg": {}, "image/webp": {}}}})
+def get_clothing_photo(client_id: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """백업한 옷 사진 받기 (복원용). 내 기기 번호의 사진만 받을 수 있다."""
+    row = db.scalar(select(ClothingPhoto).where(ClothingPhoto.user_id == user.id,
+                                                ClothingPhoto.client_id == client_id))
+    if row is None:
+        raise HTTPException(404, "사진 백업이 없어요")
+    return Response(content=row.data, media_type=row.mime, headers={"Cache-Control": "no-store"})
+
+
+# ──────────────────────────────────────────────
+# 취향 평가 기록 목록 (복원용)
+# ──────────────────────────────────────────────
+
+@app.get("/api/taste-events", response_model=TasteEventListResponse, tags=["취향 학습"])
+def list_taste_events(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """취향 평가 기록 전체 (오래된 순) — 백업 코드로 복원할 때 폰에 다시 넣는다"""
+    rows = list(db.scalars(select(TasteEvent).where(TasteEvent.user_id == user.id)
+                           .order_by(TasteEvent.at_ms, TasteEvent.id)))
+    return {"totalCount": len(rows), "events": [{
+        "at": e.at_ms, "source": e.source, "liked": e.liked, "colors": e.colors or [], "kinds": e.kinds or [],
+        "pattern": e.pattern, "style": e.style, "itemIds": e.item_ids or [], "date": e.date,
+    } for e in rows]}
+
+
+# ──────────────────────────────────────────────
+# 추천 기록 · 추천 성능 (AI 성능 측정)
+# ──────────────────────────────────────────────
+
+def item_key(ids: list[str]) -> str:
+    return "+".join(sorted(set(ids)))
+
+
+@app.post("/api/recommendations/sync", response_model=SyncResult, tags=["추천 기록"])
+def sync_recommendations(req: RecommendationLogSyncRequest, db: Session = Depends(get_db),
+                         user: User = Depends(current_user)):
+    """
+    폰이 보여 준 추천 코디 기록을 받아 새 기록만 더한다.
+    폰은 최근 기록만 들고 있으므로, 폰에서 사라진 오래된 기록도 DB 에는 남겨 둔다 (지우지 않음).
+    """
+    existing = set(db.execute(select(RecommendationLog.date, RecommendationLog.context, RecommendationLog.item_key)
+                              .where(RecommendationLog.user_id == user.id)).tuples())
+    saved = 0
+    for log in req.logs:
+        key = (log.date, log.context, cut(item_key(log.itemIds), 512))
+        if key in existing:
+            continue
+        existing.add(key)
+        db.add(RecommendationLog(user_id=user.id, date=log.date, context=log.context, scope=cut(log.scope, 12),
+                                 rank=log.rank, item_ids=sorted(set(log.itemIds)), item_key=key[2],
+                                 shown_at=to_dt(log.shownAt)))
+        saved += 1
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "동시에 들어온 동기화 요청이 있어요. 잠시 후 다시 보내 주세요") from None
+    total = db.scalar(select(func.count()).select_from(RecommendationLog).where(RecommendationLog.user_id == user.id))
+    return {"saved": saved, "deleted": 0, "total": total}
+
+
+WORN_WINDOW_DAYS = 2   # 추천한 날 ~ 2일 뒤까지 입으면 "추천대로 입음"
+
+
+def _group(shown: int, liked: int, disliked: int, worn: int, partial: int) -> dict:
+    rate = lambda n, d: round(n / d, 3) if d else 0.0
+    return {"shown": shown, "liked": liked, "disliked": disliked, "worn": worn, "wornPartial": partial,
+            "likeRate": rate(liked, shown), "ratedLikeRate": rate(liked, liked + disliked) if liked + disliked else None,
+            "wornRate": rate(worn, shown), "wornPartialRate": rate(partial, shown)}
+
+
+def recommendation_stats(db: Session, user_id: Optional[int] = None) -> dict:
+    """
+    추천 기록을 👍👎(taste_events, 코디 평가) · 실제 착용(wear_logs)과 맞춰 본다.
+    - liked / disliked: 같은 옷 조합에 마지막으로 누른 평가
+    - worn: 추천한 날 ~ 2일 뒤 착용 기록에 코디 옷이 모두 있음, wornPartial: 절반 이상 있음
+    """
+    def where(model):
+        return [model.user_id == user_id] if user_id is not None else []
+
+    logs = list(db.scalars(select(RecommendationLog).where(*where(RecommendationLog))))
+    ratings: dict[tuple[int, frozenset], tuple[int, bool]] = {}
+    for e in db.scalars(select(TasteEvent).where(TasteEvent.source == "outfit", *where(TasteEvent))):
+        k = (e.user_id, frozenset(e.item_ids or []))
+        if k not in ratings or e.at_ms >= ratings[k][0]:
+            ratings[k] = (e.at_ms, e.liked)
+    wear: dict[tuple[int, str], set] = {(w.user_id, w.date): set(w.item_ids or [])
+                                         for w in db.scalars(select(WearLog).where(*where(WearLog)))}
+
+    totals = [0, 0, 0, 0, 0]
+    by_ctx: dict[str, list[int]] = {}
+    for log in logs:
+        items = frozenset(log.item_ids or [])
+        if not items:
+            continue
+        rating = ratings.get((log.user_id, items))
+        worn = partial = False
+        try:
+            start = date_cls.fromisoformat(log.date)
+        except ValueError:
+            continue
+        for d in range(WORN_WINDOW_DAYS + 1):
+            got = wear.get((log.user_id, (start + timedelta(days=d)).isoformat()))
+            if not got:
+                continue
+            hit = len(items & got)
+            worn = worn or hit == len(items)
+            partial = partial or hit * 2 >= len(items)
+        row = [1, int(bool(rating and rating[1])), int(bool(rating and not rating[1])), int(worn), int(partial)]
+        ctx = log.context.split(":")[0] if log.context.startswith("situation") else log.context
+        bucket = by_ctx.setdefault(ctx, [0, 0, 0, 0, 0])
+        for i, v in enumerate(row):
+            totals[i] += v
+            bucket[i] += v
+    dates = sorted(log.date for log in logs)
+    return {
+        "users": len({log.user_id for log in logs}),
+        "since": dates[0] if dates else None,
+        "until": dates[-1] if dates else None,
+        "total": _group(*totals),
+        "byContext": {k: _group(*v) for k, v in sorted(by_ctx.items())},
+    }
+
+
+@app.get("/api/recommendations/stats", response_model=RecommendationStats, tags=["추천 기록"])
+def my_recommendation_stats(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """내 추천 성능 — 보여 준 코디 중 👍 · 실제로 입은 비율 (홈 / 오늘 / 5일 예보 / 상황별)"""
+    return recommendation_stats(db, user.id)
+
+
+@app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"])
+def all_recommendation_stats(db: Session = Depends(get_db)):
+    """모든 사용자를 합친 추천 성능 (발표 · AI 성능 측정표용, 개인 정보 없이 개수와 비율만)"""
+    return recommendation_stats(db)
+
+
+# ──────────────────────────────────────────────
+# 서버에 저장된 내 데이터 모두 지우기 (개인정보 삭제 요청)
+# ──────────────────────────────────────────────
+
+@app.delete("/api/me", response_model=DeleteMyDataResult, tags=["프로필"])
+def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """
+    이 기기 번호로 서버 DB 에 저장된 내 기록을 모두 지운다 (옷장 · 사진 백업 · 착용 · 체형 · 취향 · 관심 상품 · 추천 기록 · 사용자).
+    폰 안의 데이터는 지우지 않는다. 앱은 지운 뒤 서버 백업을 끈다.
+    """
+    deleted: dict[str, int] = {}
+    for model in (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
+                  ProductInterest, ProductLike, RecommendationLog):
+        result = db.execute(delete(model).where(model.user_id == user.id))
+        deleted[model.__tablename__] = result.rowcount or 0
+    db.execute(delete(User).where(User.id == user.id))
+    deleted["users"] = 1
+    db.commit()
+    return {"deleted": deleted}

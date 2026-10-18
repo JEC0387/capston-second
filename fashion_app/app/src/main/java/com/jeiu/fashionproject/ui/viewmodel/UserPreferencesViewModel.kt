@@ -41,5 +41,11 @@ class UserPreferencesViewModel : ViewModel() {
     companion object {
         private const val PREFS_NAME = "user_prefs"
         private const val KEY_GENDER = "gender"
+
+        /** 백업 코드로 복원할 때 — 서버의 성별 설정을 폰에 써 둔다 (FEMALE / MALE, 그 밖의 값은 무시) */
+        fun writeForRestore(context: Context, gender: String?) {
+            val valid = gender?.let { g -> Gender.entries.firstOrNull { it.name == g } } ?: return
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().putString(KEY_GENDER, valid.name).commit()
+        }
     }
 }

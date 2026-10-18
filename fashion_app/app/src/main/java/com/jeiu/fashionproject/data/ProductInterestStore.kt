@@ -24,6 +24,12 @@ object ProductInterestStore {
         DbSync.pushProductInterests(_ids.value)
     }
 
+    /** 백업 코드로 복원할 때 — 서버에서 받은 관심 상품 목록으로 바꿔 쓴다 (앱을 다시 시작해 불러옴) */
+    fun writeForRestore(context: Context, ids: List<String>) {
+        context.getSharedPreferences("product_interests", Context.MODE_PRIVATE).edit()
+            .putString("ids", JSONArray(ids.distinct()).toString()).commit()
+    }
+
     fun toggled(ids: List<String>, id: String): List<String> =
         if (id in ids) ids.filterNot { it == id } else ids + id
 

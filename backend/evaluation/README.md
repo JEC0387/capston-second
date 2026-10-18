@@ -97,6 +97,28 @@ python evaluation/eval_classify.py evaluation/clothes
 
 ---
 
+## ③ 코디 추천 성과 (실제 사용 기록)
+
+앱이 보여 준 추천 코디는 서버 `recommendation_logs`에 쌓이고, 코디 👍👎(`taste_events`) · 착용 기록(`wear_logs`)과
+맞춰서 "추천이 얼마나 맞았는지"를 계산합니다. 팀원 · 시연 참가자가 1~2주 앱을 쓰면 숫자가 생깁니다.
+
+```bash
+cd backend
+python evaluation/eval_recommend.py                       # 모든 사용자 합계 (http://localhost:8000)
+python evaluation/eval_recommend.py --server http://192.168.0.10:8000
+python evaluation/eval_recommend.py --device <백업 코드>   # 한 사람 것만
+```
+
+| 지표 | 뜻 |
+|---|---|
+| 👍 비율 | 보여 준 코디 중 👍를 누른 비율 |
+| 평가 중 👍 | 👍 / (👍 + 👎) — 평가한 코디만 놓고 본 만족도 |
+| 그대로 입음 | 추천한 날부터 2일 안에 코디 옷을 모두 입은 비율 |
+| 일부 입음 | 코디 옷의 절반 이상을 입은 비율 |
+
+앱에서는 마이페이지 > 'AI 추천 성과'에 같은 규칙으로 계산한 내 숫자가 나옵니다.
+기록이 적으면(코디 30개 미만) 비율이 크게 흔들리니 개수를 같이 적어 주세요.
+
 ## 발표에서 이렇게 쓰면 좋아요
 - "체형 cm 측정은 4명 × 3회 측정에서 평균 오차 ○cm(○%), ○%가 ±2cm 이내"
 - "옷 종류 분류는 ○장 중 대분류 ○%, 소분류 ○% 정확"

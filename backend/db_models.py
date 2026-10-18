@@ -1,7 +1,7 @@
 """
 DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 생성된다.
 
-테이블 10개
+테이블 12개
   users              사용자 (폰마다 1명 — 앱이 보내는 기기 번호로 구분) + 성별 · 선호 스타일
   clothes            옷장 옷 (앱 WardrobeStore 와 같은 내용, client_id = 앱의 옷 id)
   wear_logs          착용 기록 (앱 WearLogStore — 날짜별로 입은 옷 id 목록)
@@ -12,6 +12,8 @@ DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 �
   product_likes      상품 하트 (예전 숫자 id 방식, 지금 앱은 product_interests 사용)
   product_interests  관심 상품 (쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트, 누른 순서 포함)
   size_charts        브랜드별 사이즈표 (사이즈 추천용, CSV 로 채움)
+  clothing_photos    옷장 옷 사진 백업 (다른 폰으로 복원할 때 사용, 사람 · 체형 사진은 넣지 않음)
+  recommendation_logs 앱이 보여 준 추천 코디 기록 (👍 · 실제 착용과 비교해 추천 성능을 잰다)
 
 동기화 원칙: 앱(폰)에 저장된 내용이 기준이고, 서버 DB 는 그 내용을 그대로 따라 저장한다.
 """
@@ -19,7 +21,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text,
+    JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
     UniqueConstraint, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -209,3 +211,42 @@ class SizeChart(Base):
     length_cm: Mapped[Optional[float]] = mapped_column(Float)
     measure_type: Mapped[str] = mapped_column(String(10), default="단면")  # 단면 / 둘레
     source_url: Mapped[str] = mapped_column(Text, default="")
+
+
+class ClothingPhoto(Base):
+    """
+    옷장 옷 사진 백업 (앱이 줄여서 올린 '보여 주는 사진' 한 장).
+    폰을 바꾸거나 앱을 다시 설치했을 때 백업 코드로 옷장을 복원하는 데 쓴다.
+    팀원 PC 마다 서버가 따로 돌아서 서버 폴더가 아니라 공용 DB 에 저장한다. 크기는 장당 2MB 이하.
+    """
+    __tablename__ = "clothing_photos"
+    __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_clothing_photo_user_client"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    client_id: Mapped[str] = mapped_column(String(64))           # 앱 WardrobeItem.id
+    mime: Mapped[str] = mapped_column(String(20))                # image/png · image/jpeg · image/webp
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class RecommendationLog(Base):
+    """
+    앱이 화면에 보여 준 추천 코디 한 건 (홈 · 오늘 · 5일 예보 · 상황별).
+    같은 날 같은 화면에서 같은 코디는 한 번만 센다 (item_key = 옷 id 를 정렬해 + 로 이은 것).
+    taste_events(👍👎) · wear_logs(실제 착용)와 맞춰 보면 추천이 얼마나 맞았는지 잴 수 있다.
+    """
+    __tablename__ = "recommendation_logs"
+    __table_args__ = (UniqueConstraint("user_id", "date", "context", "item_key", name="uq_recommendation_log"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    date: Mapped[str] = mapped_column(String(10))                # 추천한 날짜 (예보 탭이면 그 날)
+    context: Mapped[str] = mapped_column(String(30))             # home / today / forecast / situation:INTERVIEW …
+    scope: Mapped[str] = mapped_column(String(12), default="OWNED")  # 추천 범위 (내 옷 / 내 옷 + 관심 옷 / 관심 옷)
+    rank: Mapped[int] = mapped_column(Integer, default=0)        # 화면에 나온 순서 (0 = 첫 번째)
+    item_ids: Mapped[list] = mapped_column(JSON, default=list)
+    item_key: Mapped[str] = mapped_column(String(512))
+    shown_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
