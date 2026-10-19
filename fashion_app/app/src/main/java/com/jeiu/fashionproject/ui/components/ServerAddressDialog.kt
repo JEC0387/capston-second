@@ -32,7 +32,7 @@ fun ServerAddressDialog(onDismiss: () -> Unit) {
         title = { Text("서버 주소", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("에뮬레이터는 기본 주소(10.0.2.2)를 그대로 쓰면 돼요.\n실제 폰은 PC 의 와이파이 IP 를 넣어 주세요 " +
+                Text("기본 주소(인터넷 서버)를 그대로 쓰면 돼요.\n내 PC 서버를 쓰려면 에뮬레이터는 10.0.2.2, 실제 폰은 PC 의 와이파이 IP 를 넣어 주세요 " +
                     "(PC 에서 ipconfig → IPv4 주소, 예: 192.168.0.10).",
                     style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 OutlinedTextField(

@@ -254,6 +254,19 @@ class WeatherNowResponse(BaseModel):
     advice: str             # 온도·습도·상태에 맞춘 옷차림 한 줄
 
 
+# ---------- 네이버 이미지 검색 (NaverImageSearchRepository) ----------
+
+class NaverImageItem(BaseModel):
+    """앱의 ShopImageResult 와 대응. 이미지 검색이라 가격 · 몰 이름 · 구매 링크는 없다."""
+    title: str              # <b> 태그를 지운 제목
+    imageUrl: str           # 원본 이미지 URL
+    thumbnailUrl: str       # 썸네일 URL
+
+
+class NaverImageSearchResponse(BaseModel):
+    items: list[NaverImageItem]
+
+
 # ---------- 스타일 취향 학습 (StylePreferenceStore) ----------
 
 class StyleScore(BaseModel):
