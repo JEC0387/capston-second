@@ -94,12 +94,21 @@ data class DayForecast(
 }
 
 object WeatherRepository {
-    // 키는 local.properties의 OWM_API_KEY에서 build.gradle.kts가 꺼내 넣는다 (코드에 적지 않음)
+    // 키는 서버(Railway Variables)에 둔다. 앱의 키(local.properties의 OWM_API_KEY)는 서버가 안 될 때만 쓰는 예비용 — 없어도 된다
     private val API_KEY = BuildConfig.OWM_API_KEY
 
-    /** 5일 예보를 날짜별 요약으로 받는다. 키가 없거나 실패하면 예외. */
+    /**
+     * 5일 예보를 날짜별 요약으로 받는다.
+     * 1) 우리 서버(/api/weather/forecast)에 먼저 묻고  2) 서버가 안 되면 앱에 키가 있을 때만 OpenWeatherMap에 직접 묻는다.
+     * 둘 다 안 되면 예외.
+     */
     suspend fun fetchForecast(lat: Double, lon: Double): List<DayForecast> = withContext(Dispatchers.IO) {
-        check(API_KEY.isNotBlank()) { "local.properties에 OWM_API_KEY가 없어요" }
+        BackendApi.getJson("/api/weather/forecast?lat=$lat&lon=$lon")
+            ?.let { body -> runCatching { parseForecast(JSONObject(body)) }.getOrNull() }
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return@withContext it }
+
+        check(API_KEY.isNotBlank()) { "서버에서 예보를 받지 못했고, local.properties에 OWM_API_KEY도 없어요" }
         val url = "https://api.openweathermap.org/data/2.5/forecast?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=kr"
         parseForecast(JSONObject(URL(url).readText()))
     }
