@@ -1,3 +1,5 @@
+> AI 피팅 설정 업데이트(2026-10-19): 아래는 이전 구현 기록입니다. 현재 FASHN 키는 서버 전용이며 APK BuildConfig에 넣지 않습니다. [현재 설정 안내](../backend/AI_TRYON_SETUP.md)를 따르세요.
+
 > 2026-10-18: 이 병합본을 기준으로 체형분석 안정화 및 실제 Android build/test/lint를 수행했다. [BODY_ANALYSIS_FIX_REPORT.md](BODY_ANALYSIS_FIX_REPORT.md)의 최신 결과를 따른다. 실기기·외부 API 실행·실제 사람 정확도는 미검증이다. 아래 내용은 원래 병합 시점의 메모다.
 
 # 손유리 작업 병합 메모 (son-yuri/merge)

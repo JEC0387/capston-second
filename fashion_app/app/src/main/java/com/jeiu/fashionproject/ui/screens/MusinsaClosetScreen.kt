@@ -632,7 +632,7 @@ private fun TodayOutfitView(
                             }
                         }
                         val pieces = tryOnPiecesOf(outfit.items)
-                        if (pieces.isNotEmpty() && TryOnRepository.hasKey()) {
+                        if (pieces.isNotEmpty()) {
                             OutlinedButton(
                                 onClick = { onTryOn(pieces + outfit.items.filter { it !in pieces }) },
                                 modifier = Modifier.fillMaxWidth(),
@@ -683,176 +683,13 @@ private fun TryOnView(
     onBack: () -> Unit,
     onOpenItem: (ClothingItem) -> Unit
 ) {
-    BackHandler(onBack = onBack)
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var personUri by remember { mutableStateOf(TryOnPhotoHolder.uri ?: defaultPhoto) }
-    var progress by remember { mutableStateOf<String?>(null) }
-    var resultUrl by remember { mutableStateOf<String?>(null) }
-    var errorText by remember { mutableStateOf<String?>(null) }
-    var showOriginal by remember { mutableStateOf(false) }
-    val transferConsent = remember { PhotoTransferConsent() }
-    var showTransferConsent by remember { mutableStateOf(false) }
+    // Both entry points share the same Activity-scoped operation and secure repository.
     val wearable = tryOnPiecesOf(pieces)
-    var savingResult by remember { mutableStateOf(false) }
-    var saveMessage by remember { mutableStateOf<String?>(null) }
-    val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { target ->
-        val result = resultUrl
-        if (target != null && result != null && !savingResult) {
-            savingResult = true
-            scope.launch {
-                try {
-                    TryOnRepository.saveResult(context, result, target)
-                    saveMessage = "AI 결과 이미지를 저장했어요."
-                } catch (cancelled: CancellationException) { throw cancelled
-                } catch (_: Exception) { saveMessage = "이미지를 저장하지 못했어요. 다시 시도해주세요."
-                } finally { savingResult = false }
-            }
-        }
-    }
-
-
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { transferConsent.cancel(); personUri = it; TryOnPhotoHolder.uri = it; resultUrl = null; errorText = null }
-    }
-
-    fun start() {
-        val person = personUri ?: return
-        if (progress != null || wearable.isEmpty() || !TryOnRepository.hasKey() || !transferConsent.consume(person.toString())) return
-        progress = "사진 준비 중…"
-        scope.launch {
-            errorText = null; resultUrl = null; showOriginal = false
-            try {
-                progress = "사진 준비 중…"
-                val input = TryOnRepository.uriToDataUri(context, person)
-                val plan = TryOnPlan.build(wearable.map { TryOnGarment(it.name, it.name, it.category, it.image.toString()) })
-                resultUrl = TryOnBatch.run(plan, input, generate = { current, item ->
-                    val garment = if (TryOnBatch.isResultUrl(item.image)) item.image
-                        else TryOnRepository.uriToDataUri(context, Uri.parse(item.image))
-                    TryOnRepository.tryOn(current, garment, TryOnRepository.categoryFor(item.category)!!)
-                }, progress = { index, total -> progress = "AI가 옷을 입혀주고 있어요… ($index/$total)" })
-            } catch (_: TimeoutCancellationException) {
-                errorText = "AI 피팅이 오래 걸려요. 서버 작업·차감 여부를 확인한 뒤 재시도해주세요."
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (e: Exception) {
-                errorText = if (e is TryOnFailure) e.message else "AI 피팅을 완료하지 못했어요. 사진과 네트워크를 확인해주세요."
-            } finally {
-                progress = null
-            }
-        }
-    }
-
-    if (showTransferConsent) {
-        AlertDialog(onDismissRequest = { transferConsent.cancel(); showTransferConsent = false },
-            title = { Text("외부 서비스에 사진을 전송할까요?") },
-            text = { Text("가상피팅을 위해 선택한 전신 사진과 의류 이미지를 FASHN(api.fashn.ai)으로 전송해요. ${wearable.size}벌을 순서대로 생성하며 최대 ${wearable.size}회 생성 요청해요. 중간 결과도 다시 전송하며 재시도는 추가 요청이에요. 현재 요금·크레딧 정책을 확인해주세요. 얼굴·체형·세부 디자인이나 실제 제품 핏은 보장하지 않아요. 체형분석 동의와 별개이고, 거부해도 체형분석과 기본 추천은 사용할 수 있어요. 전송 후 처리·보관은 외부 서비스 정책을 따라요.") },
-            confirmButton = { TextButton(onClick = {
-                val photo = personUri
-                showTransferConsent = false
-                if (photo != null && transferConsent.confirm(photo.toString())) start()
-            }) { Text("확인하고 전송") } },
-            dismissButton = { TextButton(onClick = { transferConsent.cancel(); showTransferConsent = false }) { Text("전송하지 않기") } })
-    }
-
-    Column(modifier = Modifier.fillMaxSize().background(Cream)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack)
-            }
-            Text("AI 가상피팅", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-        }
-
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // 큰 미리보기: 결과가 있으면 결과, 없으면 내 사진
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(440.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(CreamDark)
-                    .clickable(enabled = progress == null) { picker.launch("image/*") },
-                contentAlignment = Alignment.Center
-            ) {
-                val shown: Any? = if (resultUrl != null && !showOriginal) resultUrl else personUri
-                if (shown != null) {
-                    AsyncImage(
-                        model = shown,
-                        contentDescription = "가상피팅 미리보기",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Filled.Add, contentDescription = null, tint = Brown, modifier = Modifier.size(36.dp))
-                        Text("전신 사진을 골라 주세요", style = MaterialTheme.typography.bodyMedium, color = Brown)
-                        Text("정면 · 머리부터 발끝까지 보이는 사진이 좋아요", style = MaterialTheme.typography.labelSmall, color = MediumGray)
-                    }
-                }
-                if (progress != null) {
-                    Column(
-                        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(color = White)
-                        Spacer(Modifier.height(12.dp))
-                        Text(progress!!, color = White, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                if (resultUrl != null && progress == null) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(10.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (showOriginal) White else Camel)
-                            .clickable { showOriginal = !showOriginal }
-                            .padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Text(
-                            if (showOriginal) "원본 사진 · 눌러서 결과 보기" else "피팅 결과 · 눌러서 원본 보기",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (showOriginal) Brown else White
-                        )
-                    }
-                }
-            }
-
-            if (personUri != null && progress == null) {
-                Text(
-                    "사진을 누르면 다른 전신 사진으로 바꿀 수 있어요",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MediumGray
-                )
-            }
-            if (!TryOnRepository.hasKey()) {
-                Text(
-                    "AI 피팅 서비스가 아직 연결되지 않았어요. 체형분석과 기본 추천은 계속 사용할 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFB3261E)
-                )
-            }
-            errorText?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB3261E)) }
-
-            if (resultUrl != null && progress == null) {
-                Text("AI 피팅이 완료됐어요! ✨", color = Brown)
-                OutlinedButton(enabled = !savingResult, onClick = { savePicker.launch("ai-fitting-${System.currentTimeMillis()}.jpg") }) {
-                    Text(if (savingResult) "저장 중…" else "결과 이미지 저장")
-                }
-            }
-            saveMessage?.let { Text(it, color = Brown) }
-
+    AiTryOnScreen(
+        defaultPhoto = TryOnPhotoHolder.uri ?: defaultPhoto,
+        garments = wearable.map { TryOnGarment(it.name, it.name, it.category, it.image.toString()) },
+        onBack = onBack,
+        extraContent = {
             // 입어볼 옷 + 구매 버튼
             Text("입어볼 옷", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
             pieces.forEach { item ->
@@ -902,38 +739,6 @@ private fun TryOnView(
                     }
                 }
             }
-            Text(
-                "FASHN AI 가상피팅 · 최대 ${wearable.size}회 생성 요청 · 현재 서비스 요금·크레딧 정책 적용",
-                style = MaterialTheme.typography.labelSmall,
-                color = MediumGray
-            )
-            Spacer(Modifier.height(8.dp))
         }
-
-        Box(modifier = Modifier.fillMaxWidth().background(White).padding(16.dp)) {
-            Button(
-                onClick = {
-                    val photo = personUri
-                    if (photo == null) picker.launch("image/*") else {
-                        transferConsent.request(photo.toString())
-                        showTransferConsent = true
-                    }
-                },
-                enabled = progress == null && !savingResult && wearable.isNotEmpty() && TryOnRepository.hasKey(),
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
-            ) {
-                Text(
-                    when {
-                        personUri == null -> "전신 사진 고르기"
-                        resultUrl != null -> "다시 입혀보기"
-                        else -> "가상피팅 시작 (${wearable.size}벌)"
-                    },
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
-    }
+    )
 }

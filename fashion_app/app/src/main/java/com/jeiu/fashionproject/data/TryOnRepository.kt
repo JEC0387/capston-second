@@ -7,33 +7,53 @@ import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import androidx.exifinterface.media.ExifInterface
 import android.os.Build
-import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withTimeout
-import kotlin.coroutines.coroutineContext
 import android.net.Uri
 import android.util.Base64
-import com.jeiu.fashionproject.BuildConfig
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.File
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 
-/**
- * FASHN AI 가상피팅 API (tryon-v1.6).
- * 1) POST /v1/run 으로 사람 사진 + 옷 사진을 보내면 작업 id를 받고
- * 2) GET /v1/status/{id} 를 3초마다 확인해서 completed 가 되면 결과 이미지 URL을 받는다.
- * 생성은 유료이며 요청별 요금·크레딧은 현재 서비스 정책을 확인한다.
- */
-object TryOnRepository {
-    private const val BASE = "https://api.fashn.ai/v1"
+/** User-issued proxy credential stays in process memory, never BuildConfig/preferences/backups. */
+data class TryOnConnection(val base: String, val token: String)
+object TryOnSession {
+    var connection by mutableStateOf<TryOnConnection?>(null)
+        private set
+    fun configure(base: String, token: String): Boolean {
+        val uri = runCatching { URI(base.trim()) }.getOrNull() ?: return false
+        if (uri.scheme != "https" || uri.host.isNullOrBlank() || uri.rawUserInfo != null ||
+            uri.rawQuery != null || uri.rawFragment != null || uri.path !in listOf("", "/") || token.trim().length < 32) return false
+        connection = TryOnConnection(base.trim().trimEnd('/'), token.trim())
+        return true
+    }
+    fun clear() { connection = null }
+}
 
-    fun hasKey() = BuildConfig.FASHN_API_KEY.isNotBlank()
+data class TryOnJob(val status: String, val error: String?, val step: Int, val count: Int, val resultAvailable: Boolean)
+class TryOnHttpFailure(val code: Int, message: String) : Exception(message)
+interface TryOnGateway {
+    suspend fun image(context: Context, source: String): String
+    suspend fun check(connection: TryOnConnection)
+    suspend fun submit(connection: TryOnConnection, id: String, person: String, garments: List<Pair<String, String>>)
+    suspend fun status(connection: TryOnConnection, id: String): TryOnJob
+    suspend fun result(connection: TryOnConnection, id: String): ByteArray
+    suspend fun cancel(connection: TryOnConnection, id: String)
+}
 
-    /** 앱 옷장 카테고리 → FASHN category. 신발·가방은 지원하지 않아서 null. */
+/** Only the authenticated app backend is contacted; FASHN credentials never enter the APK. */
+object TryOnRepository : TryOnGateway {
+    fun isConfigured() = TryOnSession.connection != null
     fun categoryFor(appCategory: String): String? = TryOnPlan.categoryFor(appCategory)
 
     /** 갤러리/카메라 Uri 사진을 긴 변 1296px 이내로 줄여 data URI(JPEG base64)로 바꾼다. */
@@ -77,6 +97,13 @@ object TryOnRepository {
                 transformed!!
             }
             coroutineContext.ensureActive()
+            // Transparent cutouts need a white background before JPEG encoding.
+            if (bitmap!!.hasAlpha()) {
+                val white = Bitmap.createBitmap(bitmap!!.width, bitmap!!.height, Bitmap.Config.ARGB_8888)
+                android.graphics.Canvas(white).apply { drawColor(android.graphics.Color.WHITE); drawBitmap(bitmap!!, 0f, 0f, null) }
+                if (bitmap !== original && bitmap !== transformed) bitmap?.recycle()
+                bitmap = white
+            }
             val out = ByteArrayOutputStream()
             if (!bitmap!!.compress(Bitmap.CompressFormat.JPEG, 90, out)) throw TryOnFailure("사진을 준비하지 못했어요.")
             "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
@@ -87,102 +114,111 @@ object TryOnRepository {
         }
     }
 
-    /**
-     * modelImage(사람 사진: URL 또는 data URI)에 garmentUrl 옷을 입힌 결과 이미지 URL을 돌려준다.
-     * 이전 결과 URL을 modelImage로 다시 넣으면 상의 → 하의 순서로 겹쳐 입힐 수 있다.
-     */
-    suspend fun tryOn(modelImage: String, garmentUrl: String, category: String): String = withContext(Dispatchers.IO) {
-        if (!hasKey()) throw TryOnFailure("AI 피팅 서비스가 아직 연결되지 않았어요.")
-        if (category !in setOf("tops", "bottoms", "one-pieces")) throw TryOnFailure("AI가 지원하지 않는 의류 종류예요.")
-        val body = JSONObject()
-            .put("model_name", "tryon-v1.6")
-            .put("inputs", JSONObject()
-                .put("model_image", modelImage)
-                .put("garment_image", garmentUrl)
-                .put("category", category)
-                .put("mode", "balanced")
-                .put("num_samples", 1)
-                .put("output_format", "jpeg"))
-        val run = request("$BASE/run", body.toString())
-        run.optString("error").takeIf { it.isNotBlank() && it != "null" }?.let { throw TryOnFailure(friendly(it)) }
-        val id = run.getString("id")
-
-        return@withContext withTimeout(180_000L) {
-            repeat(40) { // 네트워크 지연을 포함한 실제 대기 한도도 별도로 적용
-                coroutineContext.ensureActive()
-                delay(3_000)
-                val st = request("$BASE/status/$id", null)
-                when (st.optString("status")) {
-                    "completed" -> {
-                        val output = st.optJSONArray("output")?.optString(0).orEmpty()
-                        if (!TryOnBatch.isResultUrl(output)) throw TryOnFailure("AI 결과 이미지 주소를 확인하지 못했어요.")
-                        return@withTimeout output
-                    }
-                    "starting", "in_queue", "processing" -> Unit
-                    else -> throw TryOnFailure(friendly(st.opt("error")?.toString().orEmpty()))
-                }
-            }
-            throw TryOnFailure("가상피팅이 오래 걸려요. 서버 처리·차감 여부를 확인한 뒤 재시도해주세요.")
+    override suspend fun image(context: Context, source: String): String {
+        val uri = Uri.parse(source)
+        if (uri.scheme != "https") return uriToDataUri(context, uri)
+        // Product images are fetched without the proxy credential. No redirects or unbounded input.
+        return withContext(Dispatchers.IO) {
+            val bytes = download(source, null)
+            val temporary = File.createTempFile("tryon-input-", ".img", context.cacheDir)
+            try {
+                temporary.writeBytes(bytes)
+                uriToDataUri(context, Uri.fromFile(temporary))
+            } finally { temporary.delete() }
         }
     }
-
-    private fun friendly(raw: String): String = when {
-        raw.contains("PoseError", true) -> "사진에서 사람의 전신 자세를 찾지 못했어요. 전신이 잘 보이는 사진으로 다시 해 주세요."
-        raw.contains("credit", true) -> "FASHN 크레딧이 부족해요."
-        else -> "AI 피팅을 완료하지 못했어요. 사진과 서비스 상태를 확인해주세요."
+    override suspend fun check(connection: TryOnConnection) {
+        request(connection, "/config")
     }
-
-    /** Save only a validated JPEG result using the system document picker; no broad storage permission. */
-    suspend fun saveResult(context: Context, source: String, target: Uri) = withContext(Dispatchers.IO) {
-        if (!TryOnBatch.isResultUrl(source)) throw TryOnFailure("결과 이미지 주소가 올바르지 않아요.")
-        val conn = URL(source).openConnection() as HttpURLConnection
-        try {
-            conn.connectTimeout = 20_000; conn.readTimeout = 30_000
-            conn.instanceFollowRedirects = false
-            if (conn.responseCode !in 200..299) throw TryOnFailure("결과 이미지를 내려받지 못했어요.")
-            val bytes = conn.inputStream.use { input ->
-                val out = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                while (true) {
-                    coroutineContext.ensureActive()
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (out.size() + count > 20 * 1024 * 1024) throw TryOnFailure("결과 이미지가 너무 커요.")
-                    out.write(buffer, 0, count)
-                }
-                out.toByteArray()
-            }
-            if (bytes.size < 3 || bytes[0] != 0xff.toByte() || bytes[1] != 0xd8.toByte())
-                throw TryOnFailure("저장할 JPEG 이미지를 확인하지 못했어요.")
-            coroutineContext.ensureActive()
-            context.contentResolver.openOutputStream(target)?.use { it.write(bytes) }
-                ?: throw TryOnFailure("저장 위치를 열지 못했어요.")
-        } finally { conn.disconnect() }
+    override suspend fun submit(connection: TryOnConnection, id: String, person: String, garments: List<Pair<String, String>>) {
+        val items = JSONArray()
+        garments.forEach { (category, image) -> items.put(JSONObject().put("category", category).put("image", image)) }
+        request(connection, "/jobs", "POST", JSONObject().put("request_id", id).put("person", person)
+            .put("garments", items).put("consent", true).toString())
     }
-
-    private suspend fun request(url: String, jsonBody: String?): JSONObject {
+    override suspend fun status(connection: TryOnConnection, id: String): TryOnJob {
+        val value = request(connection, "/jobs/$id")
+        return TryOnJob(value.getString("status"), value.optString("error").takeUnless { it.isBlank() || it == "null" },
+            value.optInt("step"), value.optInt("count"), value.optBoolean("result_available"))
+    }
+    override suspend fun result(connection: TryOnConnection, id: String): ByteArray = withContext(Dispatchers.IO) {
+        val bytes = download(connection.base + "/api/tryon/jobs/$id/result", connection.token)
+        validateJpeg(bytes)
+        bytes
+    }
+    override suspend fun cancel(connection: TryOnConnection, id: String) {
+        request(connection, "/jobs/$id", "DELETE")
+    }
+    fun friendly(code: String?): String = when (code) {
+        "pose" -> "전신 자세를 찾지 못했어요. 정면 전신 사진을 선택해주세요."
+        "credit" -> "서버의 FASHN 크레딧이 부족해요. 운영자에게 문의해주세요."
+        "provider_auth", "not_configured", "journal_unavailable" -> "AI 서버 또는 인증·사용량 보호 설정이 준비되지 않았어요."
+        "unauthorized" -> "서버에서 발급받은 개인 접속 토큰을 확인해주세요."
+        "https_required" -> "AI 사진 전송에는 HTTPS 서버가 필요해요."
+        "daily_limit", "rate_limit", "busy", "provider_busy" -> "사용량 한도에 도달했거나 서버가 사용 중이에요. 잠시 뒤 확인해주세요."
+        "timeout", "provider_connection_unknown" -> "처리 시간이 초과됐거나 전송 결과가 불확실해요. 이미 시작된 작업은 과금될 수 있어요. 자동 재요청하지 않았어요."
+        "cancelled" -> "대기를 취소했어요. 이미 FASHN에 전송된 작업·요금은 취소되지 않을 수 있어요."
+        "server_restarted" -> "서버가 재시작됐어요. 중복 과금을 막기 위해 기존 생성 요청을 다시 보내지 않았어요. 운영자에게 처리·차감을 확인해주세요."
+        "result_expired" -> "결과 보관 시간이 만료됐거나 서버가 재시작됐어요. 저장한 사진을 확인해주세요."
+        "active_job", "idempotency_conflict" -> "이미 진행 중인 작업이 있어요. 기존 작업 상태를 확인해주세요."
+        "invalid_input", "image_size" -> "사진 형식·크기를 확인해주세요. 상의·하의 또는 원피스만 지원해요."
+        else -> "AI 생성에 실패했어요. 입력 사진과 서버 상태를 확인해주세요."
+    }
+    /** Existing JPEG validation + system document picker, now reusing authenticated result bytes. */
+    suspend fun saveResult(context: Context, bytes: ByteArray, target: Uri) = withContext(Dispatchers.IO) {
+        validateJpeg(bytes)
         coroutineContext.ensureActive()
-        val conn = (URL(url).openConnection() as HttpURLConnection)
+        context.contentResolver.openOutputStream(target)?.use { it.write(bytes) }
+            ?: throw TryOnFailure("저장 위치를 열지 못했어요.")
+    }
+    private fun validateJpeg(bytes: ByteArray) {
+        if (bytes.size !in 3..(20 * 1024 * 1024) || bytes[0] != 0xff.toByte() || bytes[1] != 0xd8.toByte())
+            throw TryOnFailure("저장할 JPEG 이미지를 확인하지 못했어요.")
+    }
+    private suspend fun request(connection: TryOnConnection, path: String, method: String = "GET", body: String? = null): JSONObject = withContext(Dispatchers.IO) {
+        val conn = open(connection.base + "/api/tryon" + path, connection.token)
         try {
-            conn.requestMethod = if (jsonBody != null) "POST" else "GET"
-            conn.instanceFollowRedirects = false
-            conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.FASHN_API_KEY}")
+            conn.requestMethod = method
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 20_000
-            conn.readTimeout = 30_000
-            if (jsonBody != null) {
+            if (body != null) {
+                val bytes = body.toByteArray(Charsets.UTF_8)
                 conn.doOutput = true
-                conn.outputStream.use { it.write(jsonBody.toByteArray()) }
+                conn.setFixedLengthStreamingMode(bytes.size)
+                conn.outputStream.use { it.write(bytes) }
             }
             val code = conn.responseCode
-            if (code == 401) throw TryOnFailure("AI 피팅 서비스 인증을 확인해주세요. (401)")
-            if (code == 402) throw TryOnFailure("FASHN 크레딧이 부족해요. (402)")
-            if (code !in 200..299) throw TryOnFailure("AI 피팅 서버에 연결하지 못했어요. (HTTP $code)")
-            val text = conn.inputStream.bufferedReader().use { it.readText() }
-            coroutineContext.ensureActive()
-            return JSONObject(text)
-        } catch (_: IOException) {
-            throw TryOnFailure("AI 피팅 서비스에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해주세요.")
+            if (code !in 200..299) {
+                val error = conn.errorStream?.use { String(it.readBytesLimited(8192)) }
+                val detail = runCatching { JSONObject(error ?: "{}").optString("detail") }.getOrNull()
+                throw TryOnHttpFailure(code, friendly(detail))
+            }
+            JSONObject(conn.inputStream.use { String(it.readBytesLimited(64 * 1024)) })
         } finally { conn.disconnect() }
+    }
+    private fun open(url: String, token: String?): HttpURLConnection {
+        val uri = URI(url)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null) throw TryOnFailure("HTTPS 주소가 필요해요.")
+        return (URL(url).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false; connectTimeout = 15_000; readTimeout = 30_000
+            token?.let { setRequestProperty("Authorization", "Bearer $it") }
+        }
+    }
+    private suspend fun download(url: String, token: String?): ByteArray {
+        val conn = open(url, token)
+        return try {
+            if (conn.responseCode !in 200..299) throw TryOnHttpFailure(conn.responseCode, "결과 또는 의류 이미지를 내려받지 못했어요.")
+            conn.inputStream.use { it.readBytesLimited(if (token == null) 5 * 1024 * 1024 else 20 * 1024 * 1024) }
+        } finally { conn.disconnect() }
+    }
+    private suspend fun java.io.InputStream.readBytesLimited(limit: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            coroutineContext.ensureActive()
+            val count = read(buffer)
+            if (count < 0) return output.toByteArray()
+            if (output.size() + count > limit) throw TryOnFailure("이미지가 너무 커요.")
+            output.write(buffer, 0, count)
+        }
     }
 }

@@ -42,14 +42,14 @@ capston-second/
    ```
    DB를 쓰려면 `backend/.env.example` 을 `backend/.env` 로 복사해 Supabase 주소(`DATABASE_URL`)를 넣고,
    `python apply_migrations.py`(표 만들기 · 001 ~ 004) → `python seed_catalog.py`(상품) 를 실행합니다.
-   DB 없이도 서버와 AI 기능은 동작합니다. → http://localhost:8000/docs
+   DB 없이도 서버가 동작합니다. 유료 AI 가상피팅은 인증·사용량 보호 설정 후에만 활성화됩니다. → http://localhost:8000/docs
 2. **앱**: `fashion_app/local.properties` 에 키를 넣고 Android Studio로 `fashion_app` 폴더를 열어 실행
    ```
    OWM_API_KEY=...        # 날씨
    NAVER_API_KEY_ID=...   # 네이버 이미지 검색 · 쇼핑인사이트
    NAVER_API_KEY=...
-   FASHN_API_KEY=...      # 가상 피팅 '입어보기' (없으면 버튼 숨김)
    ```
+   AI 가상피팅은 별도 HTTPS 프록시와 개인 접속 토큰이 필요합니다. FASHN 키는 앱에 넣지 않습니다. [설정 안내](backend/AI_TRYON_SETUP.md)를 확인하세요.
    에뮬레이터는 서버 주소 `http://10.0.2.2:8000` 이 기본값입니다.
    **실제 폰**은 앱 마이페이지 > **서버 주소**에 PC 의 와이파이 IP(예: `192.168.0.10`)를 넣고 [연결 확인] → [저장]
    (폰과 PC 는 같은 와이파이, 서버는 `--host 0.0.0.0` 으로 실행).

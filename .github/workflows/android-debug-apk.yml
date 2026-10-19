@@ -139,11 +139,11 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test dependencies (AI 모델 패키지 제외)
-        run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" python-dotenv httpx opencv-python-headless Pillow numpy
+        run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" python-dotenv httpx "pytest>=8,<10" opencv-python-headless Pillow numpy
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
-        run: set -o pipefail; python -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/backend.log"
+        run: set -o pipefail; python -m pytest -q 2>&1 | tee "$RUNNER_TEMP/backend.log"
 
       - name: Show backend test errors as annotations (로그인 없이 볼 수 있게)
         if: failure()

@@ -6,7 +6,7 @@ plugins {
 }
 
 // API 키는 Git에 올라가지 않는 local.properties에서 읽는다.
-// (OWM_API_KEY: 날씨 / NAVER_API_KEY_ID · NAVER_API_KEY: 쇼핑 검색 · 쇼핑인사이트 / FASHN_API_KEY: 가상피팅)
+// FASHN_API_KEY는 서버 환경변수 전용이며 APK에 포함하지 않는다.
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -37,11 +37,6 @@ android {
         buildConfigField(
             "String", "NAVER_API_KEY",
             "\"${localProperties.getProperty("NAVER_API_KEY", "")}\""
-        )
-        // FASHN AI 가상피팅 API 키 (https://app.fashn.ai → API). local.properties에 FASHN_API_KEY=... 한 줄 추가.
-        buildConfigField(
-            "String", "FASHN_API_KEY",
-            "\"${localProperties.getProperty("FASHN_API_KEY", "")}\""
         )
     }
 

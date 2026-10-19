@@ -33,6 +33,7 @@ import io
 from contextlib import asynccontextmanager
 from database import initialize_database, database_status, optional_db
 from db_api import app as db_router, catalog_rows
+from tryon_proxy import create_router as tryon_router, close_service as close_tryon
 import shutil
 import uuid
 from pathlib import Path
@@ -60,7 +61,10 @@ async def lifespan(_):
     status = database_status()
     if status.get("missing"):
         print(f"[DB] 빠진 표 · 칸: {', '.join(status['missing'])} → backend 폴더에서 python apply_migrations.py 실행")
-    yield
+    try:
+        yield
+    finally:
+        await close_tryon()
 
 
 app = FastAPI(
@@ -69,6 +73,7 @@ app = FastAPI(
     description="AI 기반 개인 맞춤 패션 추천 서비스 백엔드",
     version="1.0.0",
 )
+app.include_router(tryon_router())
 
 # 앱(에뮬레이터/실기기)에서 접근할 수 있도록 CORS 전체 허용 (개발용)
 app.add_middleware(

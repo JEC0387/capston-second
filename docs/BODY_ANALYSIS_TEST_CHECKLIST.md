@@ -20,7 +20,7 @@
 | 날씨 | local.properties의 선택 OWM_API_KEY, 인터넷·위치 권한 | 날씨 오류/기존 fallback 안내. 실제 응답은 기기에서 확인 |
 | 네이버 스타일/쇼핑 인사이트 | local.properties의 NAVER_API_KEY_ID, NAVER_API_KEY 및 인터넷 | 오류 안내. 실제 API 연결은 이번 자동 검증 범위 밖 |
 | 무신사 옷장 | 기존 성별 설정·데모 상품/이미지 | 화면 진입·성별 반영을 기기에서 확인 |
-| FASHN | local.properties의 FASHN_API_KEY, 인터넷·크레딧 | 미설정 시 서비스 준비 안내. 전송은 별도 확인 후에만 |
+| FASHN | HTTPS AI 프록시·개인 접속 토큰·서버 FASHN 키·크레딧 | 미설정 시 서비스 준비 안내. 전송은 별도 확인 후에만 |
 | DB·히스토리·사이즈표 | 개발 Backend 주소 및 필요한 DB/사이즈표 | 서버 없으면 오류 안내·일반 추천/기기 내 분석 유지 |
 
 `local.properties`/`.env`와 실제 키 값은 Git에 올리거나 발표 자료·로그에 표시하지 않는다. 기존 FASHN/NAVER 등의 클라이언트 BuildConfig 키는 APK에서 추출될 수 있으므로 운영 전 인증된 서버 proxy/키 교체 정책이 필요하다. 과거 노출된 키는 교체한다. 이번 작업은 외부 proxy 배포를 완료한 것이 아니다.

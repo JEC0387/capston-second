@@ -1,3 +1,5 @@
+> AI 피팅 설정 업데이트(2026-10-19): 아래는 이전 구현 기록입니다. 현재 FASHN 키는 서버 전용이며 APK BuildConfig에 넣지 않습니다. [현재 설정 안내](../backend/AI_TRYON_SETUP.md)를 따르세요.
+
 # 실기기 오류 수정 최종 보고서
 
 검증일: 2026-10-18 (Asia/Seoul). 저장소 `jimnnieo-svg/capstone-integration-backup`, 기존 브랜치 `fix/body-analysis-20261018`.

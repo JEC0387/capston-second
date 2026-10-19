@@ -1,8 +1,14 @@
 package com.jeiu.fashionproject.ui.screens
 
 import android.net.Uri
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import com.jeiu.fashionproject.data.TryOnPlan
 import com.jeiu.fashionproject.data.TryOnGarment
 import com.jeiu.fashionproject.data.TryOnRepository
 import androidx.activity.result.contract.ActivityResultContracts
@@ -155,23 +161,39 @@ private fun fit(
 
 private enum class PoseStatus { NONE, LOADING, FOUND, NOT_FOUND }
 
+/** Retains the complete manual canvas through configuration changes. No disk photo storage. */
+private class ManualFittingViewModel : ViewModel() {
+    var bodyPhoto by mutableStateOf<Uri?>(null)
+    var photoGeneration by mutableLongStateOf(0L)
+    var body by mutableStateOf<FittingPoseDetector.BodyPoints?>(null)
+    var poseStatus by mutableStateOf(PoseStatus.NONE)
+    var canvasSize by mutableStateOf(Size.Zero)
+    val worn = mutableStateMapOf<FitSlot, WornGarment>()
+    var activeSlot by mutableStateOf<FitSlot?>(null)
+    var overlayAlpha by mutableFloatStateOf(0.9f)
+    var showAi by mutableStateOf(false)
+    var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
+}
+
 @Composable
 fun VirtualFittingScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { WardrobeStore.load(context) }
     val wardrobeItems by WardrobeStore.items.collectAsState()
 
-    var bodyPhoto by remember { mutableStateOf<Uri?>(null) }
-    var photoGeneration by remember { mutableLongStateOf(0L) }
-    var body by remember { mutableStateOf<FittingPoseDetector.BodyPoints?>(null) }
-    var poseStatus by remember { mutableStateOf(PoseStatus.NONE) }
-    var canvasSize by remember { mutableStateOf(Size.Zero) }
-
-    val worn = remember { mutableStateMapOf<FitSlot, WornGarment>() }
-    var activeSlot by remember { mutableStateOf<FitSlot?>(null) }
-    var overlayAlpha by remember { mutableFloatStateOf(0.9f) }
+    val manual: ManualFittingViewModel = viewModel(factory = remember { viewModelFactory { initializer { ManualFittingViewModel() } } })
+    val scope = manual.viewModelScope
+    val aiModel = sharedTryOnViewModel()
+    var bodyPhoto by manual::bodyPhoto
+    var photoGeneration by manual::photoGeneration
+    var body by manual::body
+    var poseStatus by manual::poseStatus
+    var canvasSize by manual::canvasSize
+    val worn = manual.worn
+    var activeSlot by manual::activeSlot
+    var overlayAlpha by manual::overlayAlpha
+    var inputNotice by remember { mutableStateOf<String?>(null) }
 
     fun refit(slot: FitSlot) {
         val g = worn[slot] ?: return
@@ -187,7 +209,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
         body = null
         poseStatus = PoseStatus.LOADING
         scope.launch {
-            val detected = try { FittingPoseDetector.detect(context, uri) }
+            val detected = try { FittingPoseDetector.detect(context.applicationContext, uri) }
                 catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Exception) { null }
             if (requestGeneration != photoGeneration) return@launch
@@ -207,7 +229,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
         }
         scope.launch {
             val uri = fittingUri(item)
-            val aspect = FittingPoseDetector.imageSize(context, uri)?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
+            val aspect = FittingPoseDetector.imageSize(context.applicationContext, uri)?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
             val p = fit(slot, item, aspect, canvasSize, body)
             worn[slot] = WornGarment(item, uri, aspect, p.center, p.width, rotation = p.rotation)
             activeSlot = slot
@@ -215,13 +237,14 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
     }
 
     val active = activeSlot?.let { worn[it] }
-    var showAi by remember { mutableStateOf(false) }
-    var aiSelection by remember { mutableStateOf<List<TryOnGarment>>(emptyList()) }
+    var showAi by manual::showAi
+    var aiSelection by manual::aiSelection
     if (showAi) {
         AiTryOnScreen(
             defaultPhoto = bodyPhoto,
             garments = aiSelection,
-            onBack = { showAi = false }
+            onBack = { showAi = false },
+            model = aiModel
         )
         return
     }
@@ -256,11 +279,12 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 IconButton(onClick = { photoPicker.launch("image/*") }) {
                     Icon(Icons.Filled.PhotoLibrary, contentDescription = "전신 사진 바꾸기", tint = Brown)
                 }
-                IconButton(
+                TextButton(
                     onClick = { worn.keys.toList().forEach { refit(it) } },
-                    enabled = worn.isNotEmpty()
+                    enabled = worn.isNotEmpty(), modifier = Modifier.testTag("manualAutoAlign")
                 ) {
-                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = "수동 배치 초기화 · 관절 위치에 맞추기", tint = if (worn.isNotEmpty()) Camel else MediumGray)
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                    Text("자동 정렬", color = Camel)
                 }
             }
         }
@@ -270,15 +294,25 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
                 color = Brown, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = {
-                aiSelection = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
-                    g.item.originalUri ?: g.item.imageUri) }
-                showAi = true
-            }, contentPadding = PaddingValues(vertical = 2.dp)) {
+                inputNotice = when {
+                    aiModel.state.pending -> null // re-open the existing job without generating
+                    bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
+                    worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
+                    else -> TryOnPlan.build(worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
+                        g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }).issue
+                }
+                if (inputNotice == null) {
+                    aiSelection = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
+                        g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }
+                    showAi = true
+                }
+            }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (TryOnRepository.hasKey()) "AI로 입어보기" else "AI 피팅 연결 안내", color = Camel)
+                Text(if (aiModel.state.pending) "진행 중인 AI 피팅 보기" else "마법봉 · AI로 입어보기", color = Camel)
             }
-            if (!compact && !TryOnRepository.hasKey()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
+            inputNotice?.let { Text(it, color = Brown, modifier = Modifier.testTag("fittingInputNotice")) }
+            if (!compact && !TryOnRepository.isConfigured()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
@@ -415,7 +449,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("크기", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(40.dp))
-                IconButton(onClick = { active?.let { setScale(it.scale - 0.1f) } }, enabled = enabled) {
+                IconButton(onClick = { active?.let { setScale(it.scale - 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleDown")) {
                     Text("−", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
                 }
                 Slider(
@@ -424,9 +458,9 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                     enabled = enabled,
                     valueRange = MIN_SCALE..MAX_SCALE,
                     colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).testTag("manualScale")
                 )
-                IconButton(onClick = { active?.let { setScale(it.scale + 0.1f) } }, enabled = enabled) {
+                IconButton(onClick = { active?.let { setScale(it.scale + 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleUp")) {
                     Text("+", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
                 }
             }
@@ -440,7 +474,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                     onValueChange = { overlayAlpha = it },
                     valueRange = 0.3f..1f,
                     colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp).testTag("manualAlpha")
                 )
             }
         }
@@ -454,7 +488,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(bottom = 20.dp)
+            modifier = Modifier.padding(bottom = 20.dp).testTag("manualWardrobe")
         ) {
             items(wardrobeItems, key = { it.id }) { item ->
                 val isWorn = worn[slotOf(item)]?.item?.id == item.id
@@ -465,6 +499,7 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 ) {
                     Card(
                         onClick = { toggle(item) },
+                        modifier = Modifier.testTag("manualGarment-${item.id}"),
                         shape = RoundedCornerShape(14.dp),
                         border = if (isWorn) BorderStroke(2.dp, Camel) else null,
                         colors = CardDefaults.cardColors(containerColor = if (isWorn) CamelLight else White)
