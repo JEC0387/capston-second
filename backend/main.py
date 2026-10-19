@@ -5,6 +5,7 @@ FashionProject 백엔드 (FastAPI)
 ─────────────────────────────────────────────
 HomeScreen           → GET  /api/home
 WeatherViewModel     → GET  /api/weather             (실시간 날씨 + 조언)
+                       GET  /api/weather/forecast    (5일 예보, 서버가 날씨 키를 대신 씀)
 WeatherOutfitScreen  → GET  /api/outfits/weather
 WardrobeScreen       → GET  /api/wardrobe
                        GET  /api/wardrobe/favorites  (하트 옷만)
@@ -20,6 +21,7 @@ VirtualFittingScreen → GET  /api/virtual-fitting/items
 StyleSuggestionScreen→ GET  /api/style-suggestions
 StyleAnalysisScreen  → GET  /api/style-analysis
 ShopScreen           → GET  /api/products
+                       GET  /api/naver/image-search  (네이버 이미지 검색, 서버가 네이버 키를 대신 씀)
 ProductDetailScreen  → GET  /api/products/{id}
 MyPageScreen         → GET  /api/profile
 OnboardingScreen     → GET  /api/styles
@@ -38,7 +40,7 @@ import uuid
 from pathlib import Path
 
 import cv2
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
@@ -46,9 +48,10 @@ from PIL import Image
 import data
 import detection
 import fashion_detection
+import naver
 import weather
 from schemas import (
-    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse,
+    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse, NaverImageSearchResponse,
     ObjectDetectionResponse, ProductDetail, ShopResponse, StyleAnalysisResponse, StyleSuggestionResponse, VirtualFittingResponse, WeatherNowResponse,
     WeatherOutfitResponse,
 )
@@ -311,12 +314,51 @@ def get_weather(lat: float = weather.DEFAULT_LAT, lon: float = weather.DEFAULT_L
     위도·경도로 실시간 날씨 조회 → 온도·습도·상태 + 옷차림 조언.
 
     앱 WeatherViewModel이 기기 위치(lat/lon)로 호출.
-    서버 환경변수 OWM_API_KEY 가 설정돼 있으면 실제 OpenWeatherMap을 호출하고,
-    없으면 기본값(맑음 22도)으로 응답한다.
+    서버 환경변수 OWM_API_KEY 로 실제 OpenWeatherMap을 호출한다.
+    키가 없거나 날씨를 못 받으면 503 → 앱은 직접 호출로 넘어간다 (가짜 기본값을 주지 않음).
     """
     w = weather.fetch_weather(lat, lon)
+    if w is None:
+        raise HTTPException(503, "서버가 날씨를 받아오지 못했어요 (OWM_API_KEY 확인)")
     advice = weather.make_advice(w["temp"], w["humidity"], w["conditionId"])
     return {**w, "advice": advice}
+
+
+@app.get("/api/weather/forecast", tags=["날씨"])
+def get_weather_forecast(lat: float = weather.DEFAULT_LAT, lon: float = weather.DEFAULT_LON):
+    """
+    5일 예보(3시간 간격 40개) — OpenWeatherMap /forecast 응답을 그대로 돌려준다.
+
+    앱 WeatherRepository.fetchForecast 가 호출해서 기존 parseForecast 로 날짜별로 묶는다.
+    키는 서버에만 두므로 앱(APK)에는 날씨 키가 없어도 된다. 같은 위치는 10분 동안 다시 묻지 않음.
+    """
+    f = weather.fetch_forecast(lat, lon)
+    if f is None:
+        raise HTTPException(503, "서버가 날씨 예보를 받아오지 못했어요 (OWM_API_KEY 확인)")
+    return f
+
+
+# ──────────────────────────────────────────────
+# 네이버 이미지 검색 (쇼핑 탭 · 홈 · 코디 카드 사진)
+# ──────────────────────────────────────────────
+
+@app.get("/api/naver/image-search", response_model=NaverImageSearchResponse, tags=["쇼핑"])
+def naver_image_search(
+    query: str = Query(..., min_length=1, max_length=100),
+    display: int = Query(30, ge=1, le=100),
+):
+    """
+    네이버 이미지 검색을 서버가 대신 호출한다 (키는 서버 환경변수 NAVER_API_KEY_ID · NAVER_API_KEY).
+
+    앱 NaverImageSearchRepository.search 가 호출. 같은 검색어는 1시간 동안 다시 묻지 않음.
+    키가 없으면 503, 네이버 오류면 502 → 앱은 키가 있으면 직접 호출로 넘어간다.
+    """
+    try:
+        return {"items": naver.search_images(query.strip(), display)}
+    except naver.NaverNotConfigured:
+        raise HTTPException(503, "서버에 네이버 키가 없어요 (NAVER_API_KEY_ID · NAVER_API_KEY 확인)")
+    except naver.NaverUnavailable:
+        raise HTTPException(502, "네이버 이미지 검색이 응답하지 않아요")
 
 
 # ──────────────────────────────────────────────

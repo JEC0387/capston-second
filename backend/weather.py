@@ -1,44 +1,77 @@
 """
 실시간 날씨 조회 모듈.
 
-OpenWeatherMap API로 현재 날씨(온도·습도·상태)를 받아오고,
+OpenWeatherMap API로 현재 날씨(온도·습도·상태)와 5일 예보를 받아오고,
 앱의 WeatherRepository.advice() 와 동일한 규칙으로 옷차림 조언을 만든다.
-API 키가 없거나 호출이 실패하면 합리적인 기본값(맑음 22도)으로 폴백한다.
+API 키가 없거나 호출이 실패하면 None 을 돌려준다 → API 는 503 으로 알리고, 앱은 다른 방법(직접 호출)으로 넘어간다.
+(예전처럼 "맑음 22도" 가짜 값을 주면 앱이 진짜 날씨로 믿고 보여 주기 때문)
 """
 import os
+import time
 import urllib.request
 import urllib.parse
 import json
+from typing import Optional
 
-# 환경변수 OWM_API_KEY 로 키를 주입 (없으면 폴백 동작)
-OWM_API_KEY = os.environ.get("OWM_API_KEY", "")
+# 환경변수 OWM_API_KEY 로 키를 주입 (Railway 는 Variables, 내 PC 는 backend/.env)
+OWM_API_KEY = os.environ.get("OWM_API_KEY", "").strip()   # 붙여 넣을 때 딸려 온 공백 · 줄바꿈 제거
 OWM_URL = "https://api.openweathermap.org/data/2.5/weather"
+OWM_FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 
 DEFAULT_LAT = 37.5665   # 서울시청
 DEFAULT_LON = 126.9780
 
+# 예보는 3시간 간격이라 10분 동안은 같은 위치를 다시 묻지 않는다 (무료 호출 한도 절약)
+FORECAST_CACHE_SECONDS = 600
+_forecast_cache: dict = {}
 
-def fetch_weather(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON) -> dict:
-    """현재 날씨를 조회해 {condition, temp, humidity, conditionId} 반환."""
-    if OWM_API_KEY:
-        try:
-            params = urllib.parse.urlencode({
-                "lat": lat, "lon": lon,
-                "appid": OWM_API_KEY,
-                "units": "metric", "lang": "kr",
-            })
-            with urllib.request.urlopen(f"{OWM_URL}?{params}", timeout=5) as resp:
-                d = json.loads(resp.read().decode("utf-8"))
-            return {
-                "condition": d["weather"][0]["description"],
-                "temp": round(d["main"]["temp"]),
-                "humidity": d["main"]["humidity"],
-                "conditionId": d["weather"][0]["id"],
-            }
-        except Exception:
-            pass
-    # 폴백: 온화한 기본 날씨
-    return {"condition": "맑음", "temp": 22, "humidity": 50, "conditionId": 800}
+
+def _owm_get(url: str, lat: float, lon: float) -> dict:
+    params = urllib.parse.urlencode({
+        "lat": lat, "lon": lon,
+        "appid": OWM_API_KEY,
+        "units": "metric", "lang": "kr",
+    })
+    with urllib.request.urlopen(f"{url}?{params}", timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def fetch_weather(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON) -> Optional[dict]:
+    """현재 날씨를 조회해 {condition, temp, humidity, conditionId} 반환. 키가 없거나 실패하면 None."""
+    if not OWM_API_KEY:
+        return None
+    try:
+        d = _owm_get(OWM_URL, lat, lon)
+        return {
+            "condition": d["weather"][0]["description"],
+            "temp": round(d["main"]["temp"]),
+            "humidity": d["main"]["humidity"],
+            "conditionId": d["weather"][0]["id"],
+        }
+    except Exception:
+        return None
+
+
+def fetch_forecast(lat: float = DEFAULT_LAT, lon: float = DEFAULT_LON) -> Optional[dict]:
+    """5일 예보(3시간 간격)를 OpenWeatherMap 응답 그대로 반환 — 앱의 parseForecast 가 그대로 읽는다.
+    키가 없거나 실패하면 None."""
+    if not OWM_API_KEY:
+        return None
+    key = (round(lat, 2), round(lon, 2))   # 약 1km 안은 같은 위치로 본다
+    now = time.monotonic()
+    hit = _forecast_cache.get(key)
+    if hit and now - hit[0] < FORECAST_CACHE_SECONDS:
+        return hit[1]
+    try:
+        d = _owm_get(OWM_FORECAST_URL, lat, lon)
+    except Exception:
+        return None
+    if "list" not in d:
+        return None
+    if len(_forecast_cache) > 500:
+        _forecast_cache.clear()
+    _forecast_cache[key] = (now, d)
+    return d
 
 
 def make_advice(temp: int, humidity: int, condition_id: int) -> str:
