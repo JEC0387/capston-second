@@ -46,6 +46,9 @@ internal object Shots {
         Thread.sleep(waitMs)
         rule.waitForIdle()
         val inst = InstrumentationRegistry.getInstrumentation()
+        // 시스템 대화상자(응답 없음 등)가 떠 있으면 닫는다
+        runCatching { inst.uiAutomation.executeShellCommand("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS").close() }
+        Thread.sleep(600)
         val bitmap = inst.uiAutomation.takeScreenshot() ?: return
         val dir = File(inst.targetContext.getExternalFilesDir(null), "shots").apply { mkdirs() }
         FileOutputStream(File(dir, "$name.png")).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -69,7 +72,7 @@ class A_MainTabsTour {
         Shots.take(rule, "00_onboarding", 2000)
         listOf("캐주얼", "미니멀").forEach { s -> runCatching { rule.onAllNodesWithText(s).onFirst().performClick() } }
         rule.onAllNodesWithText("시작하기").onFirst().performClick()
-        Shots.take(rule, "01_home", 7000)
+        Shots.take(rule, "01_home", 12000)
         Shots.scroll(rule); Shots.take(rule, "02_home_more", 2500)
         tab("옷장"); Shots.take(rule, "03_wardrobe", 3000)
         Shots.scroll(rule); Shots.take(rule, "04_wardrobe_more", 2000)
@@ -87,13 +90,13 @@ class B_SubScreens {
 
     @Test fun outfitToday() {
         rule.setContent { FashionProjectTheme { OutfitRecommendScreen(onBack = {}, onAddClothing = {}, weatherViewModel = viewModel(), initialTab = 0) } }
-        Shots.take(rule, "10_outfit_today", 8000)
+        Shots.take(rule, "10_outfit_today", 12000)
         Shots.scroll(rule); Shots.take(rule, "11_outfit_today_more", 2500)
     }
 
     @Test fun outfitForecast() {
         rule.setContent { FashionProjectTheme { OutfitRecommendScreen(onBack = {}, onAddClothing = {}, weatherViewModel = viewModel(), initialTab = 1) } }
-        Shots.take(rule, "12_outfit_forecast", 8000)
+        Shots.take(rule, "12_outfit_forecast", 15000)
     }
 
     @Test fun outfitSituation() {
@@ -144,7 +147,7 @@ class B_SubScreens {
 
     @Test fun weatherOutfit() {
         rule.setContent { FashionProjectTheme { WeatherOutfitScreen(onBack = {}, onProductClick = {}, weatherViewModel = viewModel()) } }
-        Shots.take(rule, "23_weather_outfit", 7000)
+        Shots.take(rule, "23_weather_outfit", 15000)
     }
 
     @Test fun musinsaCloset() {

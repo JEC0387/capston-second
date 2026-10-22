@@ -8,6 +8,12 @@ OUT="$GITHUB_WORKSPACE/screenshots"
 mkdir -p "$OUT"
 
 adb wait-for-device
+# 에뮬레이터가 느려 생기는 시스템 앱 '응답 없음' 창이 화면을 가리지 않도록
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell settings put global anr_show_background 0 || true
+for i in $(seq 1 30); do [ "$(adb shell getprop sys.boot_completed | tr -d '\r')" = "1" ] && break; sleep 2; done
+sleep 45   # 부팅 직후 바쁜 시간 넘기기
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS || true
 # 위치를 서울로 (날씨가 서울 기준으로 나오도록), 한국어 · 서울 시간대
 adb emu geo fix 126.9780 37.5665 || true
 adb shell settings put system time_12_24 24 || true
@@ -23,7 +29,7 @@ adb shell cmd locale set-app-locales "$PKG" --locales ko-KR 2>/dev/null || true
 adb emu geo fix 126.9780 37.5665 || true
 
 echo "== Railway 서버 상태 =="
-curl -sS -m 20 https://fashion-backend-production-aba0.up.railway.app/api/health/database || echo "(서버 응답 없음)"
+curl -sS -m 20 https://fashion-backend-production-aba0.up.railway.app/api/health/database | tee "$OUT/server_health.txt" || echo "(서버 응답 없음)" | tee "$OUT/server_health.txt"
 echo
 
 for cls in A_MainTabsTour B_SubScreens; do
