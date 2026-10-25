@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.ManualBodyMeasurements
 import com.jeiu.fashionproject.data.ManualBodyStore
+import com.jeiu.fashionproject.data.BodyDimensions
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 import java.util.Locale
 
@@ -21,6 +22,7 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
     LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     val current by ManualBodyStore.current.collectAsState()
     val saved by ManualBodyStore.saved.collectAsState()
+    val storeIssue by ManualBodyStore.issue.collectAsState()
     var editing by remember { mutableStateOf(false) }
     var saveOnDevice by remember(saved) { mutableStateOf(saved) }
     val fields = remember(current) {
@@ -38,6 +40,7 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
     Card(Modifier.fillMaxWidth().testTag("manualBodyCard")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("신체 치수 직접 입력", style = MaterialTheme.typography.titleMedium)
+            storeIssue?.let { Text(it,style = MaterialTheme.typography.bodySmall) }
             Text("줄자로 잰 둘레와 사진에서 추정한 정면 너비는 다른 값이에요. 입력값으로 사진 체형 판정을 바꾸지 않아요.",
                 style = MaterialTheme.typography.bodySmall)
             current?.let { value ->
@@ -94,6 +97,7 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                 message = "직접 입력한 치수를 삭제했어요."
             }, modifier = Modifier.testTag("manualBodyClear")) { Text("직접 입력값 삭제") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (current != null || photo != null) BodyDimensionsCard(BodyDimensions.resolve(current,photo))
         }
     }
 }

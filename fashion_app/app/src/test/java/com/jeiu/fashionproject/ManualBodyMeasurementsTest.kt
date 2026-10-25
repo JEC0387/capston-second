@@ -46,4 +46,16 @@ class ManualBodyMeasurementsTest {
             BodyProfileAnalyzer.fromLengths(valid.heightCm, valid.legLengthCm, valid.torsoLengthCm))
         assertNull(BodyProfileAnalyzer.fromLengths(valid.heightCm, null, valid.torsoLengthCm))
     }
+
+    @Test fun invalidSavedMeasurementsArePreservedForExplicitCorrection() {
+        val prefs=context.getSharedPreferences("manual_body_measurements",0)
+        prefs.edit().putBoolean("save",true).putFloat("height",Float.NaN).putLong("entered_at",1).commit()
+        ManualBodyStore.load(context)
+        assertNull(ManualBodyStore.current.value)
+        assertNotNull(ManualBodyStore.issue.value)
+        assertTrue(prefs.contains("height"))
+        assertTrue(prefs.getFloat("height",0f).isNaN())
+        assertTrue(ManualBodyStore.update(context,valid,true))
+        assertNull(ManualBodyStore.issue.value)
+    }
 }

@@ -23,6 +23,8 @@ data class ManualBodyMeasurements(
             optional(waistCircumferenceCm, 40f..200f) && optional(hipCircumferenceCm, 40f..200f) &&
             optional(legLengthCm, heightCm * .25f..heightCm * .65f) &&
             optional(torsoLengthCm, heightCm * .15f..heightCm * .40f) &&
+            (shoulderWidthCm == null || shoulderWidthCm / heightCm in .10f.. .45f) &&
+            (legLengthCm == null || torsoLengthCm == null || legLengthCm + torsoLengthCm <= heightCm * .95f) &&
             listOf(shoulderWidthCm, chestCircumferenceCm, waistCircumferenceCm,
                 hipCircumferenceCm, legLengthCm, torsoLengthCm).any { it != null }
     }
@@ -36,6 +38,8 @@ object ManualBodyStore {
     val current: StateFlow<ManualBodyMeasurements?> = _current
     private val _saved = MutableStateFlow(false)
     val saved: StateFlow<Boolean> = _saved
+    private val _issue = MutableStateFlow<String?>(null)
+    val issue: StateFlow<String?> = _issue
 
     fun load(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -49,7 +53,12 @@ object ManualBodyStore {
         if (value.isValid()) {
             _current.value = value
             _saved.value = true
-        } else clear(context)
+            _issue.value = null
+        } else {
+            _current.value = null
+            _saved.value = false
+            _issue.value = "저장된 직접 입력값의 범위를 확인해주세요. 기록을 자동으로 삭제하지 않았어요."
+        }
     }
 
     private fun readOptional(prefs: android.content.SharedPreferences, key: String): Float? =
@@ -71,6 +80,7 @@ object ManualBodyStore {
         if (!edit.commit()) return false
         _current.value = value
         _saved.value = saveOnDevice
+        _issue.value = null
         return true
     }
 
@@ -78,5 +88,6 @@ object ManualBodyStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
         _current.value = null
         _saved.value = false
+        _issue.value = null
     }
 }
