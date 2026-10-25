@@ -18,7 +18,9 @@ data class TryOnUiState(
     val progress: String? = null,
     val error: String? = null,
     val result: ByteArray? = null,
-    val resultPerson: String? = null
+    val resultPerson: String? = null,
+    val resultFromPreviousAttempt: Boolean = false,
+    val inputWarnings: List<String> = emptyList()
 )
 
 /** Navigation/recomposition never owns a paid operation. Recovery performs GET only. */
@@ -39,6 +41,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     fun generate(context: Context, person: Uri?, garments: List<TryOnGarment>, approved: Boolean) {
         val plan = TryOnPlan.build(garments)
         if (!approved || state.pending || operation?.isActive == true) return
+        state = state.copy(resultFromPreviousAttempt = state.result != null)
         if (person == null || plan.issue != null) {
             state = state.copy(error = if (person == null) "먼저 전신 사진을 선택해주세요." else plan.issue)
             return
@@ -54,22 +57,25 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
         submitted = false
         saved.remove<String>("requestId")
         // Synchronous guard before launching, shared by both entry points.
-        state = state.copy(pending = true, watching = true, progress = "사진 준비 중…", error = null)
+        state = state.copy(pending = true, watching = true, progress = "사진·자세 확인 중…", error = null,
+            resultFromPreviousAttempt = state.result != null, inputWarnings = emptyList())
         operation = viewModelScope.launch {
             var accepted = false
             try {
                 gateway.check(config) // no images or paid request when server is disabled
-                val input = gateway.image(appContext, person.toString())
+                val role = if (plan.garments.any { TryOnPlan.categoryFor(it.category) != "tops" }) TryOnInputRole.PERSON_FULL else TryOnInputRole.PERSON_UPPER
+                val input = gateway.prepare(appContext, person.toString(), role)
                 val prepared = plan.garments.map { garment ->
-                    TryOnPlan.categoryFor(garment.category)!! to gateway.image(appContext, garment.image)
+                    TryOnPlan.categoryFor(garment.category)!! to gateway.prepare(appContext, garment.image, TryOnInputRole.GARMENT)
                 }
+                state = state.copy(inputWarnings = (input.warnings + prepared.flatMap { it.second.warnings }).distinct())
                 ensureActive()
                 val id = UUID.randomUUID().toString()
                 saved["requestId"] = id
                 saved["base"] = config.base
                 saved["person"] = person.toString() // URI metadata only; no images or credentials
                 submitted = true // outcome may be unknown once HTTP transmission starts
-                gateway.submit(config, id, input, prepared) // exactly one POST; no retry interceptor
+                gateway.submit(config, id, input.data, prepared.map { it.first to it.second.data }) // exactly one POST; no retry interceptor
                 accepted = true
                 watch(config, id)
             } catch (cancelled: CancellationException) { throw cancelled
@@ -115,7 +121,8 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         val bytes = if (job.resultAvailable) gateway.result(config, id) else null
                         state = state.copy(pending = false, watching = false, progress = null,
                             error = if (bytes == null) TryOnRepository.friendly("result_expired") else null,
-                            result = bytes ?: state.result, resultPerson = if (bytes != null) saved["person"] else state.resultPerson)
+                            result = bytes ?: state.result, resultPerson = if (bytes != null) saved["person"] else state.resultPerson,
+                            resultFromPreviousAttempt = if (bytes != null) false else state.resultFromPreviousAttempt)
                         return@withTimeoutOrNull true
                     }
                     "failed", "timeout", "cancelled", "interrupted" -> {

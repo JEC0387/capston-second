@@ -24,6 +24,13 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.pose.PoseDetection
+import com.google.mlkit.vision.pose.PoseLandmark
+import com.google.mlkit.vision.pose.accurate.AccuratePoseDetectorOptions
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 /** User-issued proxy credential stays in process memory, never BuildConfig/preferences/backups. */
 data class TryOnConnection(val base: String, val token: String)
@@ -44,6 +51,8 @@ data class TryOnJob(val status: String, val error: String?, val step: Int, val c
 class TryOnHttpFailure(val code: Int, message: String) : Exception(message)
 interface TryOnGateway {
     suspend fun image(context: Context, source: String): String
+    suspend fun prepare(context: Context, source: String, role: TryOnInputRole): PreparedTryOnImage =
+        PreparedTryOnImage(image(context, source))
     suspend fun check(connection: TryOnConnection)
     suspend fun submit(connection: TryOnConnection, id: String, person: String, garments: List<Pair<String, String>>)
     suspend fun status(connection: TryOnConnection, id: String): TryOnJob
@@ -57,13 +66,18 @@ object TryOnRepository : TryOnGateway {
     fun categoryFor(appCategory: String): String? = TryOnPlan.categoryFor(appCategory)
 
     /** 갤러리/카메라 Uri 사진을 긴 변 1296px 이내로 줄여 data URI(JPEG base64)로 바꾼다. */
-    suspend fun uriToDataUri(context: Context, uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun uriToDataUri(context: Context, uri: Uri): String = prepareUri(context, uri, null).data
+
+    private suspend fun prepareUri(context: Context, uri: Uri, role: TryOnInputRole?): PreparedTryOnImage = withContext(Dispatchers.IO) {
         var bitmap: Bitmap? = null
         var transformed: Bitmap? = null
         var original: Bitmap? = null
         try {
             bitmap = if (Build.VERSION.SDK_INT >= 28) {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
+                    if (info.isAnimated) throw TryOnFailure("움직이는 사진 대신 정지 사진을 선택해주세요.")
+                    if (info.size.width.toLong() * info.size.height > 20_000_000L) throw TryOnFailure("사진은 2천만 화소 이하로 선택해주세요.")
+                    role?.let { TryOnInputQuality.dimensions(info.size.width, info.size.height, it)?.let { message -> throw TryOnFailure(message) } }
                     decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
                     val scale = minOf(1f, 1296f / maxOf(info.size.width, info.size.height))
                     decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
@@ -71,6 +85,9 @@ object TryOnRepository : TryOnGateway {
             } else {
                 val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 context.contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, bounds) }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 20_000_000L)
+                    throw TryOnFailure("사진 형식·크기를 확인해주세요. 2천만 화소 이하 사진을 사용해주세요.")
+                role?.let { TryOnInputQuality.dimensions(bounds.outWidth, bounds.outHeight, it)?.let { message -> throw TryOnFailure(message) } }
                 var sample = 1
                 while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2592) sample *= 2
                 val decoded = context.contentResolver.openInputStream(uri).use {
@@ -104,9 +121,29 @@ object TryOnRepository : TryOnGateway {
                 if (bitmap !== original && bitmap !== transformed) bitmap?.recycle()
                 bitmap = white
             }
+            val warnings = mutableListOf<String>()
+            if (role != null) {
+                val prepared = checkNotNull(bitmap)
+                if (role == TryOnInputRole.GARMENT) {
+                    val edges = IntArray(64) { index ->
+                        val fraction = (index % 16) / 15f
+                        val x = when (index / 16) { 0, 1 -> (fraction * (prepared.width - 1)).toInt(); 2 -> 0; else -> prepared.width - 1 }
+                        val y = when (index / 16) { 0 -> 0; 1 -> prepared.height - 1; else -> (fraction * (prepared.height - 1)).toInt() }
+                        prepared.getPixel(x, y)
+                    }
+                    TryOnInputQuality.backgroundWarning(edges)?.let(warnings::add)
+                } else {
+                    val points = inspectPose(prepared)
+                    TryOnInputQuality.pose(points, role)?.let { throw TryOnFailure(it) }
+                    warnings += if (role == TryOnInputRole.PERSON_UPPER) "상의: 얼굴과 어깨를 확인했어요. 사진만으로 체형·얼굴 보존이나 실제 핏을 보장하지 않아요."
+                        else "전신: 얼굴·어깨·골반·발목을 확인했어요. 팔로 옷을 가리지 않은 사진을 권장해요."
+                }
+            }
+            coroutineContext.ensureActive()
             val out = ByteArrayOutputStream()
             if (!bitmap!!.compress(Bitmap.CompressFormat.JPEG, 90, out)) throw TryOnFailure("사진을 준비하지 못했어요.")
-            "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+            if (out.size() > 5 * 1024 * 1024) throw TryOnFailure("전송할 사진이 너무 커요. 더 작은 원본을 선택해주세요.")
+            PreparedTryOnImage("data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP), warnings)
         } finally {
             if (transformed !== bitmap) transformed?.recycle()
             bitmap?.recycle()
@@ -114,17 +151,46 @@ object TryOnRepository : TryOnGateway {
         }
     }
 
-    override suspend fun image(context: Context, source: String): String {
+    override suspend fun image(context: Context, source: String): String = prepareSource(context, source, null).data
+
+    override suspend fun prepare(context: Context, source: String, role: TryOnInputRole): PreparedTryOnImage =
+        prepareSource(context, source, role)
+
+    private suspend fun prepareSource(context: Context, source: String, role: TryOnInputRole?): PreparedTryOnImage {
         val uri = Uri.parse(source)
-        if (uri.scheme != "https") return uriToDataUri(context, uri)
-        // Product images are fetched without the proxy credential. No redirects or unbounded input.
+        if (uri.scheme != "https") {
+            if (uri.scheme !in setOf("content", "file")) throw TryOnFailure("사진은 갤러리·카메라 또는 HTTPS 원본에서 선택해주세요.")
+            return prepareUri(context, uri, role)
+        }
         return withContext(Dispatchers.IO) {
-            val bytes = download(source, null)
+            val bytes = download(source, null) // Never attach the proxy credential to product image hosts.
             val temporary = File.createTempFile("tryon-input-", ".img", context.cacheDir)
             try {
                 temporary.writeBytes(bytes)
-                uriToDataUri(context, Uri.fromFile(temporary))
+                prepareUri(context, Uri.fromFile(temporary), role)
             } finally { temporary.delete() }
+        }
+    }
+
+    private suspend fun inspectPose(bitmap: Bitmap): Map<String, TryOnPosePoint> = suspendCoroutine { continuation ->
+        val detector = PoseDetection.getClient(AccuratePoseDetectorOptions.Builder()
+            .setDetectorMode(AccuratePoseDetectorOptions.SINGLE_IMAGE_MODE).build())
+        try {
+            detector.process(InputImage.fromBitmap(bitmap, 0)).addOnCompleteListener { task ->
+                detector.close()
+                if (!task.isSuccessful) continuation.resumeWithException(TryOnFailure("인물 자세를 확인하지 못했어요. 선명한 정면 사진으로 다시 시도해주세요."))
+                else {
+                    val keys = mapOf("nose" to PoseLandmark.NOSE, "leftShoulder" to PoseLandmark.LEFT_SHOULDER,
+                        "rightShoulder" to PoseLandmark.RIGHT_SHOULDER, "leftHip" to PoseLandmark.LEFT_HIP,
+                        "rightHip" to PoseLandmark.RIGHT_HIP, "leftAnkle" to PoseLandmark.LEFT_ANKLE, "rightAnkle" to PoseLandmark.RIGHT_ANKLE)
+                    continuation.resume(keys.mapNotNull { (key, type) -> task.result.getPoseLandmark(type)?.let {
+                        key to TryOnPosePoint(it.position.x / bitmap.width, it.position.y / bitmap.height, it.inFrameLikelihood)
+                    } }.toMap())
+                }
+            }
+        } catch (_: Exception) {
+            detector.close()
+            continuation.resumeWithException(TryOnFailure("사진 자세 검사에 실패했어요. 다른 정면 사진을 선택해주세요."))
         }
     }
     override suspend fun check(connection: TryOnConnection) {
@@ -161,6 +227,10 @@ object TryOnRepository : TryOnGateway {
         "server_restarted" -> "서버가 재시작됐어요. 중복 과금을 막기 위해 기존 생성 요청을 다시 보내지 않았어요. 운영자에게 처리·차감을 확인해주세요."
         "result_expired" -> "결과 보관 시간이 만료됐거나 서버가 재시작됐어요. 저장한 사진을 확인해주세요."
         "active_job", "idempotency_conflict" -> "이미 진행 중인 작업이 있어요. 기존 작업 상태를 확인해주세요."
+        "invalid_result" -> "AI 결과의 이미지 형식을 확인하지 못했어요. 새 유료 요청을 자동으로 보내지 않았어요."
+        "not_found" -> "기존 작업을 찾지 못했어요. 요청한 서버와 접속 토큰을 확인해주세요."
+        "journal_capacity" -> "서버의 안전한 요청 기록 공간이 가득 찼어요. 운영자 확인 전에는 새 요청을 보내지 않아요."
+        "provider_failed" -> "외부 AI 서비스가 생성에 실패했어요. 사진의 자세·가림·의류 배경을 확인해주세요. 재생성에는 새 동의가 필요해요."
         "invalid_input", "image_size" -> "사진 형식·크기를 확인해주세요. 상의·하의 또는 원피스만 지원해요."
         else -> "AI 생성에 실패했어요. 입력 사진과 서버 상태를 확인해주세요."
     }

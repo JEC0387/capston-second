@@ -32,7 +32,7 @@ class ProviderFailure(Exception):
         self.code = code
 
 
-def normalize_image(value):
+def normalize_image(value, *, max_side=1296, quality=90):
     """Only inline images, not client URLs (no SSRF); strip EXIF and white-fill alpha."""
     if not isinstance(value, str) or not value.startswith(("data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,")):
         raise ValueError("image_format")
@@ -43,15 +43,17 @@ def normalize_image(value):
     if len(raw) > MAX_IMAGE:
         raise ValueError("image_size")
     with Image.open(io.BytesIO(raw)) as opened:
+        if getattr(opened, "n_frames", 1) != 1:
+            raise ValueError("animated_image")
         if opened.width * opened.height > 20_000_000 or min(opened.size) < 32:
             raise ValueError("image_dimensions")
         im = ImageOps.exif_transpose(opened)
-        im.thumbnail((1296, 1296))
+        im.thumbnail((max_side, max_side))
         rgba = im.convert("RGBA")
         rgb = Image.new("RGB", rgba.size, "white")
         rgb.paste(rgba, mask=rgba.getchannel("A"))
         out = io.BytesIO()
-        rgb.save(out, "JPEG", quality=90)
+        rgb.save(out, "JPEG", quality=quality)
     return "data:image/jpeg;base64," + base64.b64encode(out.getvalue()).decode("ascii")
 
 
@@ -88,7 +90,7 @@ class FashnProvider:
     async def run(self, person, garment, category):
         body = {"model_name": "tryon-v1.6", "inputs": {
             "model_image": person, "garment_image": garment, "category": category,
-            "mode": "balanced", "num_samples": 1, "output_format": "jpeg",
+            "mode": "quality", "num_samples": 1, "output_format": "jpeg",
             "garment_photo_type": "auto", "return_base64": True}}
         value = await asyncio.to_thread(self._request, "run", body)
         job_id = value.get("id", "")
@@ -275,7 +277,9 @@ class TryOnService:
                             raise ProviderFailure("invalid_result")
                         # API return_base64 avoids exposing a public CDN URL. Never fetch arbitrary URLs.
                         try:
-                            current = await asyncio.to_thread(normalize_image, output[0])
+                            # Preserve more output detail for comparison and a second garment.
+                            # This removes unnecessary recompression loss; it cannot repair model anatomy.
+                            current = await asyncio.to_thread(normalize_image, output[0], max_side=2048, quality=95)
                         except Exception:
                             raise ProviderFailure("invalid_result") from None
                         break
@@ -337,7 +341,9 @@ def create_router(get_service=service):
     async def config(request: Request):
         current = get_service()
         current.authenticate(request)
-        return {"configured": True, "model": "tryon-v1.6", "per_user_daily_limit": current.settings.per_user}
+        return {"configured": True, "model": "tryon-v1.6", "generation_mode": "quality",
+                "per_user_daily_limit": current.settings.per_user,
+                "visual_quality_validated": False, "max_input_side": 1296, "max_result_side": 2048}
 
     @router.post("/jobs", status_code=202)
     async def submit(request: Request):

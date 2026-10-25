@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.theme.*
+import com.jeiu.fashionproject.ui.components.TryOnComparisonDialog
 import com.jeiu.fashionproject.ui.viewmodel.TryOnViewModel
 import kotlinx.coroutines.*
 
@@ -57,10 +58,11 @@ fun AiTryOnScreen(
     var personText by rememberSaveable { mutableStateOf(defaultPhoto?.toString()) }
     val person = if (state.pending) model.selectedPerson ?: personText?.let(Uri::parse)
         else personText?.let(Uri::parse) ?: model.selectedPerson
+    var zoomComparison by remember { mutableStateOf(false) }
     var showOriginal by rememberSaveable { mutableStateOf(false) }
     var review by remember { mutableStateOf<Pair<Uri, List<TryOnGarment>>?>(null) }
     var showConnection by remember { mutableStateOf(false) }
-    var base by remember { mutableStateOf(TryOnSession.connection?.base ?: "") }
+    var base by remember { mutableStateOf(TryOnSession.connection?.base ?: BackendApi.BASE_URL.takeIf { it.startsWith("https://") }.orEmpty()) }
     var token by remember { mutableStateOf("") } // never saved, logged, or backed up
     var connectionError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -105,13 +107,15 @@ fun AiTryOnScreen(
     review?.let { approved ->
         val approvedPlan = TryOnPlan.build(approved.second)
         AlertDialog(onDismissRequest = { review = null }, title = { Text("외부 AI 서비스에 사진을 전송할까요?") },
-            text = { Text("선택한 원본 인물 사진과 의류 사진을 앱 서버를 거쳐 FASHN(api.fashn.ai)에 전송해요. 최대 ${approvedPlan.requestCount}회 유료 생성 요청이며 여러 벌은 중간 결과를 다시 전송해요. 현재 요금·크레딧 정책을 확인해주세요. 재생성은 추가 비용이 발생할 수 있어요. 수동 좌표와 얼굴·체형·세부 디자인·실제 핏은 보장하지 않아요. 서버의 사진·결과는 메모리에서만 잠시 처리하고 결과는 최대 30분 보관해요. FASHN 처리·보관은 외부 서비스 정책을 따라요. 체형분석·기록 저장 동의와 별개이며 거절해도 수동 피팅을 사용할 수 있어요.", modifier = Modifier.verticalScroll(rememberScrollState())) },
+            text = { Text("선택한 원본 인물 사진과 의류 사진을 앱 서버를 거쳐 FASHN(api.fashn.ai)에 전송해요. 최대 ${approvedPlan.requestCount}회 유료 생성 요청이며 여러 벌은 중간 결과를 다시 전송해요. 현재 요금·크레딧 정책을 확인해주세요. 재생성은 추가 비용이 발생할 수 있어요. 수동 좌표와 얼굴·체형·세부 디자인·실제 핏은 보장하지 않아요. 서버의 사진·결과는 메모리에서만 잠시 처리하고 결과는 최대 30분 보관해요. FASHN 공식 정책상 base64 입력은 처리 후 삭제되며 정리 지연 시 하루까지 남을 수 있어요. base64 결과는 완료 후 최대 60분 제공되며 요청 이력은 자동 삭제되지 않아요. 실제 처리는 외부 서비스 정책을 따라요. 체형분석·기록 저장 동의와 별개이며 거절해도 수동 피팅을 사용할 수 있어요.", modifier = Modifier.verticalScroll(rememberScrollState())) },
             confirmButton = { TextButton(onClick = {
                 review = null; showOriginal = false; saveMessage = null
                 model.generate(context, approved.first, approved.second, approved = true)
             }, modifier = Modifier.testTag("aiTryOnConfirm")) { Text("확인하고 AI 생성") } },
             dismissButton = { TextButton(onClick = { review = null }) { Text("전송하지 않기") } })
     }
+    if (zoomComparison && state.result != null) TryOnComparisonDialog(state.resultPerson, state.result,
+        state.resultFromPreviousAttempt) { zoomComparison = false }
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(8.dp)) {
             IconButton(onClick = ::leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로", tint = Brown) }
@@ -133,7 +137,7 @@ fun AiTryOnScreen(
                 Text("먼저 수동 배치 화면에서 입어볼 옷을 선택해주세요.", color = Brown)
                 TextButton(onClick = ::leave) { Text("옷 선택으로 돌아가기") }
             }
-            Text("정면 전신 사진과 실제 의류 사진을 사용해요. 의류 원본을 우선 사용하며 누끼만 있으면 흰 배경으로 처리해요.", color = MediumGray)
+            Text("상의는 정면 상반신, 하의·원피스는 발목까지 보이는 전신 사진을 사용해요. 의류 원본을 우선 사용하며 누끼만 있으면 흰 배경으로 처리해요.", color = MediumGray)
             selection.forEach { Text("${it.category} · ${it.name}", color = Brown) }
             if (plan.unsupported.isNotEmpty()) Text("신발·액세서리는 이번 AI 생성에서 제외돼요. 수동 배치는 계속 사용할 수 있어요.", color = MediumGray)
             plan.issue?.let { Text(it, color = Brown) }
@@ -149,10 +153,12 @@ fun AiTryOnScreen(
                 if (!state.watching) OutlinedButton(onClick = model::resume, enabled = configured) { Text("기존 작업 상태 확인") }
                 TextButton(onClick = model::cancel, enabled = configured) { Text("생성 대기 중단") }
             }
+            state.inputWarnings.forEach { Text(it, color = MediumGray, modifier = Modifier.testTag("aiTryOnInputHint")) }
             state.error?.let { Text(it, color = Brown, modifier = Modifier.testTag("aiTryOnError")) }
             if (state.result != null) {
-                Text("AI 피팅이 완료됐어요! ✨", color = Brown, modifier = Modifier.testTag("aiTryOnSuccess"))
+                Text(if (state.resultFromPreviousAttempt) "이전 AI 생성 결과 · 이번 요청의 성공 결과가 아니에요" else "AI 생성 결과 · 얼굴·체형·실제 핏은 보장하지 않아요", color = Brown, modifier = Modifier.testTag("aiTryOnSuccess"))
                 OutlinedButton(onClick = { showOriginal = !showOriginal }) { Text(if (showOriginal) "AI 결과 보기" else "원본과 비교") }
+                OutlinedButton(onClick = { zoomComparison = true }, modifier = Modifier.testTag("aiTryOnZoom")) { Text("확대해서 비교") }
                 OutlinedButton(enabled = !saving, onClick = { savePicker.launch("ai-fitting-${System.currentTimeMillis()}.jpg") }) { Text(if (saving) "저장 중…" else "결과 이미지 저장") }
             }
             saveMessage?.let { Text(it, color = Brown) }

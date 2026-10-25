@@ -91,7 +91,7 @@ class AiTryOnFlowTest {
         screen(); approve(); finished()
         compose.runOnIdle { fake.statusValue = TryOnJob("failed", "pose", 1, 1, false) }
         approve(); finished()
-        compose.runOnIdle { assertEquals(2, fake.posts); assertNotNull(model.state.result); assertTrue(model.state.error!!.contains("전신")) }
+        compose.runOnIdle { assertEquals(2, fake.posts); assertNotNull(model.state.result); assertTrue(model.state.resultFromPreviousAttempt); assertTrue(model.state.error!!.contains("전신")) }
         compose.onNodeWithTag("aiTryOnGenerate").performClick()
         compose.onNodeWithText("전송하지 않기").performClick()
         compose.runOnIdle { assertEquals(2, fake.posts) }
@@ -145,7 +145,27 @@ class AiTryOnFlowTest {
         assertFalse(TryOnSession.configure("https://example.com", "short"))
     }
 
+    @Test fun failedInputInspectionNeverPaysAndKeepsTheSelection() {
+        fake.rejectInput = true; screen(); approve(); finished()
+        compose.runOnIdle { assertEquals(0, fake.posts); assertNull(model.state.result); assertEquals(clothes,model.selectedGarments) }
+        compose.onNodeWithTag("aiTryOnError").performScrollTo().assertIsDisplayed()
+    }
+    @Test fun resultCanBeZoomedAndComparedWithoutAnotherGeneration() {
+        screen(); approve(); finished()
+        compose.onNodeWithTag("aiTryOnZoom").performScrollTo().performClick()
+        compose.onNodeWithTag("tryOnZoomSlider").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(2f) }
+        compose.onNodeWithText("같은 배율로 원본").performScrollTo().performClick()
+        compose.onNodeWithText("원본 인물 사진").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("비교 닫기").performClick()
+        compose.runOnIdle { assertEquals(1,fake.posts) }
+    }
+
     private class FakeGateway : TryOnGateway {
+        var rejectInput = false
+        override suspend fun prepare(context: Context, source: String, role: TryOnInputRole): PreparedTryOnImage {
+            if (rejectInput) throw TryOnFailure("정면 전신 사진을 확인해주세요.")
+            return PreparedTryOnImage(image(context,source))
+        }
         var posts = 0; var gets = 0; var cancels = 0; var lastGet: String? = null
         var loseResponse = false
         var submitGate: CompletableDeferred<Unit>? = null
