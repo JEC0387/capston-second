@@ -150,7 +150,6 @@ jobs:
 
       - name: Verify Preview trusted signer and monotonic version before publishing
         if: steps.distribution.outputs.ready == 'true'
-        if: github.event_name != 'pull_request'
         working-directory: .
         env:
           GITHUB_TOKEN: ${{ github.token }}
