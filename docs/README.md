@@ -14,7 +14,8 @@
 | 문서 | 내용 |
 |---|---|
 | [BODY_DATA_PRIVACY.md](BODY_DATA_PRIVACY.md) | 체형 사진 · 측정값 처리, 저장 동의, 서버 기록 삭제, 백업 코드 |
-| [AI_TRYON_STATUS.md](AI_TRYON_STATUS.md) | AI 입어보기(FASHN) — 사진 외부 전송 확인 · 비용 · 한계 |
+| [AI_TRYON_STATUS.md](AI_TRYON_STATUS.md) | 이전 클라이언트 직접 호출 방식의 기록. 현재 방식은 [서버 설정](../backend/AI_TRYON_SETUP.md) 참고 |
+| [PHASE1_REPORT.md](PHASE1_REPORT.md) | 최신 ZIP과 보안 브랜치 비교, P0~P2 통합·검증 결과 |
 
 ## 체형 분석 · 실기기 수정 기록 (이지민, 10/18)
 | 문서 | 내용 |

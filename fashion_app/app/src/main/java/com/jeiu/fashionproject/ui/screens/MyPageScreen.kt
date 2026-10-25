@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.BodyRecords
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.notify.WeatherAlertScheduler
@@ -71,6 +72,7 @@ fun MyPageScreen(
     onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val manualBody by ManualBodyStore.current.collectAsState()
     val scope = rememberCoroutineScope()
     var showNotifDialog by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
@@ -118,6 +120,7 @@ fun MyPageScreen(
         WearLogStore.load(context)
         WardrobeStore.load(context)
         ProductInterestStore.load(context)
+        ManualBodyStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val nickname = profile?.nickname ?: "나의 스타일"
@@ -324,6 +327,9 @@ fun MyPageScreen(
                 onClick = { showServerDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
+            HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Edit, label = if (manualBody == null) "신체 치수 직접 입력" else "직접 입력 치수 · 키 ${manualBody!!.heightCm} cm",
+                onClick = onBodyAnalysis)
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.DeleteOutline, label = "현재 세션 체형 데이터 삭제", onClick = {
                 BodyAnalysisSessionStore.clear()

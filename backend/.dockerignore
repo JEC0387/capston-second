@@ -1,0 +1,14 @@
+# 서버 상자에 넣지 않을 파일
+# .env 에는 DB 비밀번호가 있다 → 상자에 넣지 말고 Railway 화면의 Variables 에 넣는다
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+.venv/
+venv/
+uploads/
+models/
+*.pt
+tests/
+evaluation/

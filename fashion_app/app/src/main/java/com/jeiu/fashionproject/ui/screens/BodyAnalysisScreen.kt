@@ -43,6 +43,8 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
 import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
+import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryFlow
 import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryRequest
@@ -66,6 +68,10 @@ fun BodyAnalysisScreen(
     val state by viewModel.state.collectAsState()
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
+    val manualMeasurements by ManualBodyStore.current.collectAsState()
+    LaunchedEffect(manualMeasurements?.heightCm) {
+        if (heightInput.isBlank()) manualMeasurements?.let { viewModel.updateHeightInput(it.heightCm.toString()) }
+    }
 
     val entryFlow = remember { BodyPhotoEntryFlow() }
     var entryPrompt by remember { mutableStateOf<BodyPhotoEntryRequest?>(null) }
@@ -178,6 +184,10 @@ fun BodyAnalysisScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            ManualBodyEntryCard(
+                photo = (state as? BodyAnalysisUiState.Success)?.result?.measurements,
+                onUseHeight = viewModel::updateHeightInput
+            )
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
                     Text("1. 키 입력 (필수)", color = Brown, fontWeight = FontWeight.SemiBold)

@@ -5,6 +5,7 @@ FashionProject 백엔드 (FastAPI)
 ─────────────────────────────────────────────
 HomeScreen           → GET  /api/home
 WeatherViewModel     → GET  /api/weather             (실시간 날씨 + 조언)
+                       GET  /api/weather/forecast    (5일 예보, 서버가 날씨 키를 대신 씀)
 WeatherOutfitScreen  → GET  /api/outfits/weather
 WardrobeScreen       → GET  /api/wardrobe
                        GET  /api/wardrobe/favorites  (하트 옷만)
@@ -13,13 +14,14 @@ WardrobeScreen       → GET  /api/wardrobe
                        DELETE /api/wardrobe/{id}
 AddClothingScreen    → POST /api/clothing/classify   (DeepFashion2 옷 종류 분류)
                        POST /api/object-detection    (YOLOv8 COCO 객체 탐지, 기존)
-BodyAnalysisScreen   → POST /api/body-analysis        (전신 사진 업로드)
+BodyAnalysisScreen   → 기기 내 사진 분석; /api/body-analysis는 410으로 종료
 StylePreferenceScreen→ GET  /api/style-preference
                        POST /api/style-preference/rate (좋아요/싫어요)
 VirtualFittingScreen → GET  /api/virtual-fitting/items
 StyleSuggestionScreen→ GET  /api/style-suggestions
 StyleAnalysisScreen  → GET  /api/style-analysis
 ShopScreen           → GET  /api/products
+                       GET  /api/naver/image-search  (네이버 이미지 검색, 서버가 네이버 키를 대신 씀)
 ProductDetailScreen  → GET  /api/products/{id}
 MyPageScreen         → GET  /api/profile
 OnboardingScreen     → GET  /api/styles
@@ -29,30 +31,47 @@ OnboardingScreen     → GET  /api/styles
 실행:  uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 문서:  http://localhost:8000/docs  (Swagger 자동 생성)
 """
+import base64
 import io
 from contextlib import asynccontextmanager
 from database import initialize_database, database_status, optional_db
 from db_api import app as db_router, catalog_rows
 from tryon_proxy import create_router as tryon_router, close_service as close_tryon
-import shutil
-import uuid
-from pathlib import Path
 
 import cv2
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 import data
 import detection
 import fashion_detection
+import naver
+import unsplash
 import weather
 from schemas import (
-    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse,
+    BodyAnalysisResult, ClothingClassifyResponse, HomeResponse, NaverImageSearchResponse,
     ObjectDetectionResponse, ProductDetail, ShopResponse, StyleAnalysisResponse, StyleSuggestionResponse, VirtualFittingResponse, WeatherNowResponse,
     WeatherOutfitResponse,
 )
+
+MAX_ANALYSIS_UPLOAD = 10 * 1024 * 1024
+
+
+async def read_analysis_photo(photo: UploadFile) -> Image.Image:
+    raw = await photo.read(MAX_ANALYSIS_UPLOAD + 1)
+    if len(raw) > MAX_ANALYSIS_UPLOAD:
+        raise HTTPException(413, "이미지 파일이 너무 큽니다")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        if image.width * image.height > 20_000_000:
+            raise HTTPException(413, "이미지 해상도가 너무 큽니다")
+        image.load()
+        return image
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다") from None
 
 @asynccontextmanager
 async def lifespan(_):
@@ -73,7 +92,6 @@ app = FastAPI(
     description="AI 기반 개인 맞춤 패션 추천 서비스 백엔드",
     version="1.0.0",
 )
-app.include_router(tryon_router())
 
 # 앱(에뮬레이터/실기기)에서 접근할 수 있도록 CORS 전체 허용 (개발용)
 app.add_middleware(
@@ -83,10 +101,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 업로드된 전신 사진 저장 폴더 (정적 서빙)
-UPLOAD_DIR = Path("uploads")
-UPLOAD_DIR.mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+# Legacy files are deliberately left on disk, but no upload directory is publicly served.
 
 
 # ──────────────────────────────────────────────
@@ -132,26 +147,10 @@ def get_weather_outfits():
 # AI 체형 분석
 # ──────────────────────────────────────────────
 
-@app.post("/api/body-analysis", response_model=BodyAnalysisResult, tags=["AI 분석"])
-async def analyze_body(photo: UploadFile = File(...)):
-    """
-    전신 사진 업로드 → AI 체형 분석 결과 반환.
-
-    현재는 사진을 서버에 저장만 하고 고정 결과(모래시계형)를 반환.
-    추후 이 함수 안에서 OpenCV/MediaPipe 분석 코드를 호출하도록 교체:
-
-        result = analyze_with_mediapipe(saved_path)   # ← 여기만 바꾸면 됨
-    """
-    if photo.content_type not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(400, "jpg/png/webp 이미지만 업로드할 수 있습니다")
-
-    ext = Path(photo.filename or "photo.jpg").suffix or ".jpg"
-    saved_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{ext}"
-    with saved_path.open("wb") as f:
-        shutil.copyfileobj(photo.file, f)
-
-    # TODO: 여기서 실제 체형 분석 모델 호출 (Python + OpenCV — 기획서 기술 스택)
-    return data.BODY_ANALYSIS_RESULT
+@app.post("/api/body-analysis", tags=["AI 분석"])
+async def analyze_body():
+    """The current app analyzes photos on-device; the old server stub is retired."""
+    raise HTTPException(410, "체형 사진 서버 분석은 지원하지 않습니다. 앱의 기기 내 분석을 이용해주세요.")
 
 
 @app.post("/api/object-detection", response_model=ObjectDetectionResponse, tags=["AI 분석"])
@@ -175,28 +174,22 @@ async def detect_objects(
     if not 0.1 <= conf_threshold <= 0.9:
         raise HTTPException(400, "conf_threshold는 0.1 ~ 0.9 사이여야 합니다")
 
-    try:
-        image = Image.open(io.BytesIO(await photo.read()))
-        image.load()
-    except Exception:
-        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다")
+    image = await read_analysis_photo(photo)
 
     detections, counts, result_img = detection.detect_objects(
         image, conf_threshold=conf_threshold
     )
 
-    # 결과 이미지를 uploads/에 저장하고 정적 URL로 제공
-    result_name = f"detect_{uuid.uuid4().hex}.jpg"
-    result_path = UPLOAD_DIR / result_name
     bgr = result_img[:, :, ::-1]  # RGB → BGR (cv2.imwrite용)
-    if not cv2.imwrite(str(result_path), bgr):
-        raise HTTPException(500, "결과 이미지 저장에 실패했습니다")
+    ok, encoded = cv2.imencode(".jpg", bgr)
+    if not ok or encoded.size > 4 * 1024 * 1024:
+        raise HTTPException(500, "결과 이미지를 준비하지 못했습니다")
 
     return {
         "totalCount": len(detections),
         "detections": detections,
         "counts": counts,
-        "resultImageUrl": f"/uploads/{result_name}",
+        "resultImageUrl": "data:image/jpeg;base64," + base64.b64encode(encoded.tobytes()).decode("ascii"),
     }
 
 
@@ -218,11 +211,7 @@ async def classify_clothing(
     if not 0.1 <= conf_threshold <= 0.9:
         raise HTTPException(400, "conf_threshold는 0.1 ~ 0.9 사이여야 합니다")
 
-    try:
-        image = Image.open(io.BytesIO(await photo.read()))
-        image.load()
-    except Exception:
-        raise HTTPException(400, "이미지 파일을 해석할 수 없습니다")
+    image = await read_analysis_photo(photo)
 
     try:
         return fashion_detection.classify_clothing(image, conf_threshold=conf_threshold)
@@ -316,12 +305,69 @@ def get_weather(lat: float = weather.DEFAULT_LAT, lon: float = weather.DEFAULT_L
     위도·경도로 실시간 날씨 조회 → 온도·습도·상태 + 옷차림 조언.
 
     앱 WeatherViewModel이 기기 위치(lat/lon)로 호출.
-    서버 환경변수 OWM_API_KEY 가 설정돼 있으면 실제 OpenWeatherMap을 호출하고,
-    없으면 기본값(맑음 22도)으로 응답한다.
+    서버 환경변수 OWM_API_KEY 로 실제 OpenWeatherMap을 호출한다.
+    키가 없거나 날씨를 못 받으면 503을 반환한다 (가짜 기본값을 주지 않음).
     """
     w = weather.fetch_weather(lat, lon)
+    if w is None:
+        raise HTTPException(503, "서버가 날씨를 받아오지 못했어요 (OWM_API_KEY 확인)")
     advice = weather.make_advice(w["temp"], w["humidity"], w["conditionId"])
     return {**w, "advice": advice}
+
+
+@app.get("/api/weather/forecast", tags=["날씨"])
+def get_weather_forecast(lat: float = weather.DEFAULT_LAT, lon: float = weather.DEFAULT_LON):
+    """
+    5일 예보(3시간 간격 40개) — OpenWeatherMap /forecast 응답을 그대로 돌려준다.
+
+    앱 WeatherRepository.fetchForecast 가 호출해서 기존 parseForecast 로 날짜별로 묶는다.
+    키는 서버에만 두므로 앱(APK)에는 날씨 키가 없어도 된다. 같은 위치는 10분 동안 다시 묻지 않음.
+    """
+    f = weather.fetch_forecast(lat, lon)
+    if f is None:
+        raise HTTPException(503, "서버가 날씨 예보를 받아오지 못했어요 (OWM_API_KEY 확인)")
+    return f
+
+
+# ──────────────────────────────────────────────
+# 네이버 이미지 검색 (쇼핑 탭 · 홈 · 코디 카드 사진)
+# ──────────────────────────────────────────────
+
+@app.get("/api/naver/image-search", response_model=NaverImageSearchResponse, tags=["쇼핑"])
+def naver_image_search(
+    query: str = Query(..., min_length=1, max_length=100),
+    display: int = Query(30, ge=1, le=100),
+):
+    """
+    네이버 이미지 검색을 서버가 대신 호출한다 (키는 서버 환경변수 NAVER_API_KEY_ID · NAVER_API_KEY).
+
+    앱 NaverImageSearchRepository.search 가 호출. 같은 검색어는 1시간 동안 다시 묻지 않음.
+    키가 없으면 503, 네이버 오류면 502를 반환한다.
+    """
+    try:
+        return {"items": naver.search_images(query.strip(), display)}
+    except naver.NaverNotConfigured:
+        raise HTTPException(503, "서버에 네이버 키가 없어요 (NAVER_API_KEY_ID · NAVER_API_KEY 확인)")
+    except naver.NaverUnavailable:
+        raise HTTPException(502, "네이버 이미지 검색이 응답하지 않아요")
+
+
+@app.get("/api/naver/shopping-insight", tags=["쇼핑"])
+def naver_shopping_insight():
+    try:
+        return naver.shopping_insight()
+    except naver.NaverNotConfigured:
+        raise HTTPException(503, "서버에 네이버 키가 없어요")
+    except naver.NaverUnavailable:
+        raise HTTPException(502, "쇼핑인사이트가 응답하지 않아요")
+
+
+@app.get("/api/unsplash/photo", tags=["쇼핑"])
+def unsplash_photo(query: str = Query(..., min_length=1, max_length=100)):
+    try:
+        return {"url": unsplash.photo_url(query.strip())}
+    except unsplash.UnsplashUnavailable:
+        raise HTTPException(503, "사진 서비스를 사용할 수 없어요")
 
 
 # ──────────────────────────────────────────────
@@ -363,6 +409,7 @@ def root():
 
 
 app.include_router(db_router)
+app.include_router(tryon_router())
 
 @app.get("/api/health/database", tags=["상태"])
 def database_health():

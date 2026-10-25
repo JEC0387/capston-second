@@ -5,8 +5,10 @@
        → 새 폰에 복원되면 두 폰이 같은 기기 번호를 써서 서버 옷장을 서로 덮어쓰고,
          체형 숫자가 구글 백업에 남으므로 백업하지 않는다.
    - privacy_consent.xml : 체형 사진 이용 동의는 기기마다 새로 받는다.
+   - manual_body_measurements.xml : 직접 입력한 민감한 신체 치수는 자동 백업·기기 이전에서 제외한다.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="db_sync.xml" />
     <exclude domain="sharedpref" path="privacy_consent.xml" />
+    <exclude domain="sharedpref" path="manual_body_measurements.xml" />
 </full-backup-content>

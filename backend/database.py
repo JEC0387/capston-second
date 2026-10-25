@@ -19,18 +19,36 @@ class Base(DeclarativeBase):
     pass
 
 
-def _make_engine():
-    url = os.getenv('DATABASE_URL', '').strip()
-    if not url:
+def normalize_db_url(url: str) -> Optional[str]:
+    """
+    Supabase 주소를 우리 서버가 쓰는 드라이버(psycopg2) 주소로 맞춘다. PostgreSQL 이 아니면 None.
+    SQLAlchemy 2.1 부터 'postgresql://' 의 기본 드라이버가 psycopg(3) 로 바뀌어서, 드라이버를 직접 적어 준다
+    (requirements.txt 에는 psycopg2-binary 만 있음).
+    """
+    url = url.strip().strip('"').strip("'")
+    for prefix in ('postgres://', 'postgresql://'):
+        if url.startswith(prefix):
+            return 'postgresql+psycopg2://' + url[len(prefix):]
+    if url.startswith(('postgresql+psycopg2://', 'postgresql+psycopg://')):
+        return url
+    return None
+
+
+def _make_engine(raw: Optional[str] = None):
+    raw = os.getenv('DATABASE_URL', '') if raw is None else raw
+    if not raw.strip():
         return None
-    if url.startswith('postgres://'):
-        url = 'postgresql://' + url[len('postgres://'):]
-    if not url.startswith(('postgresql://', 'postgresql+psycopg2://')):
+    url = normalize_db_url(raw)
+    if url is None:
         logger.warning('DATABASE_URL must be PostgreSQL; DB endpoints are disabled')
         return None
     try:
         return create_engine(url, pool_pre_ping=True, pool_timeout=5,
                              connect_args={'sslmode': 'require', 'connect_timeout': 5})
+    except ImportError:
+        # DB 드라이버가 설치되지 않음 — 서버는 켜고(이미지 · AI 기능 유지) 원인을 알려 준다
+        print('[DB] DB 드라이버가 없어요 → backend 폴더에서 python -m pip install -r requirements.txt 실행')
+        return None
     except (ValueError, SQLAlchemyError):
         logger.warning('Invalid DB configuration; DB endpoints are disabled')
         return None

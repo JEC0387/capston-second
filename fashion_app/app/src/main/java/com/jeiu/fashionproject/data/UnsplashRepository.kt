@@ -1,8 +1,15 @@
 package com.jeiu.fashionproject.data
 
-/** Currently unused. Keep the API disabled until a secure server integration is available. */
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+/** The access credential is held only by the backend. */
 object UnsplashRepository {
-    @Suppress("UNUSED_PARAMETER")
-    suspend fun getPhotoUrl(query: String): String =
-        throw IllegalStateException("Unsplash 사진 서비스가 설정되지 않았어요.")
+    suspend fun getPhotoUrl(query: String): String = withContext(Dispatchers.IO) {
+        val body = BackendApi.getJson("/api/unsplash/photo?query=${Uri.encode(query)}")
+            ?: throw IllegalStateException("사진 서비스를 사용할 수 없어요. 서버 연결을 확인해주세요.")
+        JSONObject(body).getString("url")
+    }
 }

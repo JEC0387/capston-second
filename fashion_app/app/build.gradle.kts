@@ -5,8 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// API 키는 Git에 올라가지 않는 local.properties에서 읽는다.
-// FASHN_API_KEY는 서버 환경변수 전용이며 APK에 포함하지 않는다.
+// 외부 API 비밀키는 서버 환경변수 전용이다. 앱에는 서버 주소만 포함한다.
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
@@ -23,21 +22,12 @@ android {
         versionCode = 3
         versionName = "1.0-presentation"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "OWM_API_KEY", "\"${localProperties.getProperty("OWM_API_KEY", "")}\"")
-        // 서버(FastAPI) 기본 주소. 실제 폰은 local.properties 에 SERVER_URL=http://PC의IP:8000 을 넣거나
-        // 앱 마이페이지 > 서버 주소 에서 바꾼다. 비워 두면 에뮬레이터 주소(10.0.2.2).
-        buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "http://10.0.2.2:8000")}\"")
+        // 서버(FastAPI) 기본 주소 = Railway 에 올린 서버 (어디서든 접속 가능).
+        // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는
+        // SERVER_URL=http://PC의IP:8000 (실제 폰)을 넣거나, 앱 마이페이지 > 서버 주소 에서 바꾼다.
+        buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "https://fashion-backend-production-aba0.up.railway.app")}\"")
 
-        // NAVER API HUB(NCP) — 데이터랩 쇼핑인사이트 + 이미지 검색이 같은 키를 쓴다.
-        // (옛 developers.naver.com 쇼핑 검색 API는 종료되어 더 못 쓴다.)
-        buildConfigField(
-            "String", "NAVER_API_KEY_ID",
-            "\"${localProperties.getProperty("NAVER_API_KEY_ID", "")}\""
-        )
-        buildConfigField(
-            "String", "NAVER_API_KEY",
-            "\"${localProperties.getProperty("NAVER_API_KEY", "")}\""
-        )
+
     }
 
     buildTypes {

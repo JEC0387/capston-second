@@ -161,7 +161,9 @@ object BackendApi {
                 totalCount = json.getInt("totalCount"),
                 detections = detections,
                 counts = counts,
-                resultImageUrl = BASE_URL + json.getString("resultImageUrl")
+                resultImageUrl = json.getString("resultImageUrl").let { value ->
+                    if (value.startsWith("data:image/jpeg;base64,")) value else BASE_URL + value
+                }
             )
         }
 
