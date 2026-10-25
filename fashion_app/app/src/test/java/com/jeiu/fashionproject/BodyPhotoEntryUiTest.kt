@@ -59,6 +59,13 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithText("키 (cm)").performTextInput("170")
     }
     @After fun cleanup() { compose.runOnIdle { model.reset();model.viewModelScope.cancel() } }
+    @Test fun defaultAvatarIsOptionalAndLeavesTheExistingPhotoEntryAvailable() {
+        compose.onNodeWithText("3D 기본 모델").performClick()
+        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
+        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithTag("bodyGalleryPicker").performClick()
+        compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()
+    }
     @Test fun largeGallerySurfaceRequiresConsent() {
         compose.onNodeWithTag("bodyGalleryPicker").performClick()
         compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()

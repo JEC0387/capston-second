@@ -23,6 +23,8 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
     val current by ManualBodyStore.current.collectAsState()
     val saved by ManualBodyStore.saved.collectAsState()
     val storeIssue by ManualBodyStore.issue.collectAsState()
+    var defaultAvatar by remember { mutableStateOf(false) }
+    if (defaultAvatar) BodyAvatarDialog(BodyDimensions.resolve(null,null)) { defaultAvatar=false }
     var editing by remember { mutableStateOf(false) }
     var saveOnDevice by remember(saved) { mutableStateOf(saved) }
     val fields = remember(current) {
@@ -55,8 +57,11 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = { editing = !editing }, modifier = Modifier.testTag("manualBodyEdit")) {
                 Text(if (editing) "입력 닫기" else if (current == null) "치수 입력하기" else "치수 수정하기")
+            }
+                if (current == null && photo == null) TextButton(onClick={defaultAvatar=true}) { Text("3D 기본 모델") }
             }
             if (editing) {
                 names.forEachIndexed { index, label ->
