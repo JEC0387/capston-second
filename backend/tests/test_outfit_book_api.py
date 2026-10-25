@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """저장한 코디 · 코디 일정 · 옷 가격/브랜드 · 전체 통계 API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -124,7 +125,7 @@ class OutfitBookApiTest(unittest.TestCase):
                                                        {'date': '2026-01-04', 'itemIds': ['c']}]})
         self.post('/api/wear-logs/sync', {'logs': [{'date': '2026-01-02', 'itemIds': ['a', 'b', 'c'], 'memo': ''},
                                                    {'date': '2026-01-03', 'itemIds': ['b'], 'memo': ''}]})
-        s = self.client.get('/api/stats/overview').json()
+        s = operator_get(self.client, '/api/stats/overview').json()
         self.assertEqual((2, 4, 3), (s['users'], s['clothes'], s['outfitPlans']))
         self.assertEqual({'name': '블랙', 'count': 3}, s['topColors'][0])
         self.assertEqual({'name': '상의', 'count': 2}, s['topCategories'][0])     # 하의도 2 → 이름 순

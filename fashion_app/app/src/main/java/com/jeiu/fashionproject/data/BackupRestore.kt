@@ -183,15 +183,18 @@ object BackupRestore {
 
     suspend fun restore(context: Context, input: String): Result {
         val code = normalize(input) ?: return Result.InvalidCode
-        if (code == DbSync.backupCode) return Result.SameCode
+        if (code == DbSync.backupCode && !DataAuth.isRestorePending) return Result.SameCode
 
-        if (!DataAuth.recover(code)) return Result.Offline
-        return restoreAuthenticated(context)
+        return DbSync.exclusiveAccountChange {
+            if (!DataAuth.recover(code)) Result.Offline else restoreAuthenticated(context)
+        }
     }
 
     /** Called after an operator-approved legacy claim; sync remains paused until all writes finish. */
     suspend fun restoreClaimed(context: Context): Result =
-        if (DataAuth.isRestorePending) restoreAuthenticated(context) else Result.Offline
+        DbSync.exclusiveAccountChange {
+            if (DataAuth.isRestorePending && DataAuth.reconcileClaim()) restoreAuthenticated(context) else Result.Offline
+        }
 
     private suspend fun restoreAuthenticated(context: Context): Result = withContext(Dispatchers.IO) {
         val health = BackendApi.getJson("/api/health/database") ?: return@withContext Result.Offline
@@ -219,16 +222,14 @@ object BackupRestore {
         val dir = File(context.filesDir, "wardrobe").apply { mkdirs() }
         val files = mutableMapOf<String, File>()
         val uris = mutableMapOf<String, String>()
-        val stamp = System.currentTimeMillis()
         val items = mutableListOf<WardrobeItem>()
         for (rc in snapshot.clothes) {
             if (!rc.hasPhoto) { items += withPhoto(rc.item, null); continue }
             val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}")
                 ?: return@withContext Result.Offline
             val file = runCatching {
-                val safeId = rc.item.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-                File(dir, "restored_${safeId}_$stamp.${PhotoBackup.extension(got.second)}")
-                    .apply { writeBytes(got.first) }
+                File(dir, "restored_${java.util.UUID.randomUUID()}.${PhotoBackup.extension(got.second)}")
+                    .apply { java.io.FileOutputStream(this).use { out -> out.write(got.first); out.fd.sync() } }
             }.getOrNull() ?: return@withContext Result.Offline
             val uri = Uri.fromFile(file).toString()
             files[rc.item.id] = file
@@ -236,19 +237,24 @@ object BackupRestore {
             items += withPhoto(rc.item, uri)
         }
 
-        // 이 폰 저장소를 바꿔 쓰기 (앱을 다시 시작하면 불러옴)
-        WardrobeStore.writeForRestore(context, items)
-        SampleWearHistory.markApplied(context)
-        WearLogStore.writeForRestore(context, snapshot.wearLogs)
-        ProfileStore.writeForRestore(context, snapshot.preferredStyles)
-        UserPreferencesViewModel.writeForRestore(context, snapshot.gender)
-        ProductInterestStore.writeForRestore(context, snapshot.interests)
-        TastePreferenceStore.writeForRestore(context, snapshot.tasteEvents)
-        snapshot.styleScores?.let { StylePreferenceStore.writeForRestore(context, it, snapshot.styleRatedCount) }
-        SavedOutfitStore.writeForRestore(context, snapshot.savedOutfits)
-        OutfitPlanStore.writeForRestore(context, snapshot.plans)
-        RecommendationLog.clearForRestore(context)
-        DbSync.adoptForRestore(files, uris)
+        // Stage all stores, then install a durable redo journal. Sync stays paused until restart.
+        val installed = runCatching { withContext(Dispatchers.Main.immediate) {
+            RestoreJournal.stage(context) { staging ->
+                WardrobeStore.writeForRestore(staging, items)
+                SampleWearHistory.markApplied(staging)
+                WearLogStore.writeForRestore(staging, snapshot.wearLogs)
+                ProfileStore.writeForRestore(staging, snapshot.preferredStyles)
+                UserPreferencesViewModel.writeForRestore(staging, snapshot.gender)
+                ProductInterestStore.writeForRestore(staging, snapshot.interests)
+                TastePreferenceStore.writeForRestore(staging, snapshot.tasteEvents)
+                snapshot.styleScores?.let { StylePreferenceStore.writeForRestore(staging, it, snapshot.styleRatedCount) }
+                SavedOutfitStore.writeForRestore(staging, snapshot.savedOutfits)
+                OutfitPlanStore.writeForRestore(staging, snapshot.plans)
+                RecommendationLog.clearForRestore(staging)
+                DbSync.stageForRestore(staging, files, uris)
+            }
+        } }.isSuccess
+        if (!installed) return@withContext Result.Offline
 
         Result.Done(items.size, files.size, snapshot.wearLogs.size, snapshot.interests.size, snapshot.tasteEvents.size)
     }

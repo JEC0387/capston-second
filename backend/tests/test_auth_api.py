@@ -95,7 +95,8 @@ def test_legacy_claim_requires_one_use_operator_ticket(monkeypatch):
         assert client.post("/api/auth/claim-legacy", headers=headers,
                            json={"ticket": pending["recoveryCode"]}).status_code == 404
         with factory() as db:
-            ticket = issue_legacy_ticket(db, "old-device")
+            ticket = issue_legacy_ticket(db, "old-device", approved_by="operator-test",
+                approval_reference="approval/123", verification_method="verified-account-record")
         assert client.post("/api/auth/claim-legacy", headers=headers, json={"ticket": ticket}).status_code == 200
         assert client.get("/api/wardrobe", headers=headers).json()["items"][0]["clientId"] == "old-shirt"
         second = register(client, legacy=True)

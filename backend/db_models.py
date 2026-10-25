@@ -75,6 +75,18 @@ class LegacyClaimTicket(Base):
     ticket_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[Optional[str]] = mapped_column(String(100))
+    approval_reference: Mapped[Optional[str]] = mapped_column(String(100))
+    verification_method: Mapped[Optional[str]] = mapped_column(String(50))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuthRateBucket(Base):
+    """Shared across workers; peer identifiers are hashed and expire."""
+    __tablename__ = "auth_rate_buckets"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    started_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    attempts: Mapped[int] = mapped_column(Integer)
 
 
 class Clothing(Base):

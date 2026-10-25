@@ -15,3 +15,11 @@ class AuthHeaders:
             assert response.status_code == 201, response.text
             self.accounts[label] = response.json()["accessToken"]
         return {"Authorization": "Bearer " + self.accounts[label]}
+
+
+def operator_get(client, path):
+    """Exercise real operator authentication using an ephemeral test-only secret."""
+    import hashlib
+    secret = "test-operator-secret-" + "A" * 32
+    with mock.patch.dict(os.environ, {"ANALYTICS_ADMIN_TOKEN_SHA256": hashlib.sha256(secret.encode()).hexdigest()}):
+        return client.get(path, headers={"Authorization": "Bearer " + secret})

@@ -126,6 +126,8 @@ _M003 = '003_backup_and_recommendation_logs.sql'
 _M004 = '004_outfit_book_and_prices.sql'
 _M005 = '005_auth_credentials.sql'
 _SCHEMA_CHECKS = [
+    ('auth_rate_buckets', 'SELECT attempts FROM auth_rate_buckets LIMIT 0', '006_auth_hardening.sql'),
+    ('legacy_claim_approval', 'SELECT approved_by, approval_reference, verification_method, issued_at FROM legacy_claim_tickets LIMIT 0', '006_auth_hardening.sql'),
     ('auth_credentials', 'SELECT token_hash FROM auth_credentials LIMIT 0', _M005),
     ('legacy_claim_tickets', 'SELECT ticket_hash FROM legacy_claim_tickets LIMIT 0', _M005),
     ('users.gender', 'SELECT gender FROM users LIMIT 0', _M002),

@@ -53,6 +53,8 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
         title = { Text("데이터 백업 · 복원", fontWeight = FontWeight.Bold) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (authState == "secure_storage_unavailable") Text("기기의 보안 저장소를 열 수 없어 서버 전송을 멈췄어요. 폰 기록은 보존돼요. 기기 잠금을 해제한 뒤 다시 시작하거나 복구 코드로 인증해 주세요.",
+                    style = MaterialTheme.typography.labelSmall, color = Brown)
                 if (authState == "offline_or_unconfigured") Text("서버 인증이 준비되지 않았어요. 폰의 기록은 보존하고 전송을 재시도합니다.",
                     style = MaterialTheme.typography.labelSmall, color = Brown)
                 if (authState == "reauth_required") Text("다른 기기에서 복구됐거나 접속 권한이 만료됐어요. 새 복구 코드를 입력해 다시 인증하세요. 폰 기록은 그대로예요.",

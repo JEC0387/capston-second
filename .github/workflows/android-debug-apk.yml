@@ -9,6 +9,7 @@ on:
       - main
       - 'merge/**'
       - 'feature/**'
+      - 'codex/**'
     paths:
       - .github/workflows/android-debug-apk.yml
       - fashion_app/**
@@ -127,6 +128,20 @@ jobs:
   backend:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashionai_test
+          POSTGRES_USER: fashionai_test
+          POSTGRES_PASSWORD: local-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashionai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         shell: bash
@@ -143,6 +158,8 @@ jobs:
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
+          DB_AUTO_CREATE: 'false'
+          TEST_POSTGRES_URL: postgresql+psycopg2://fashionai_test:local-test-only@127.0.0.1:5432/fashionai_test
         run: set -o pipefail; python -m pytest -q 2>&1 | tee "$RUNNER_TEMP/backend.log"
 
       - name: Show backend test errors as annotations (로그인 없이 볼 수 있게)

@@ -71,7 +71,7 @@ object DbSync {
     }
 
     private fun enqueue(key: String, path: String, body: String) {
-        if (!::prefs.isInitialized || !isEnabled) return
+        if (!::prefs.isInitialized || !isEnabled || DataAuth.isRestorePending) return
         synchronized(queueLock) { pending[key] = path to body; persistLocked() }
         retry()
     }
@@ -85,7 +85,9 @@ object DbSync {
         if (!DataAuth.ensureReady() || !DataAuth.canSync) return@withLock
         val health = BackendApi.getJson("/api/health/database") ?: return@withLock
         if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withLock
+        val account = DataAuth.accessToken
         for ((key, request) in batch) {
+            if (!DataAuth.canSync || DataAuth.accessToken != account) return@withLock
             if (key.startsWith("body:") && !PrivacyConsent.canSaveRecords(context)) {
                 clearPendingBodyRecords(); continue
             }
@@ -130,7 +132,7 @@ object DbSync {
     private fun signature(file: java.io.File, uri: String) = "$uri|${file.length()}|${file.lastModified()}"
 
     private fun queuePhotos(items: List<WardrobeItem>) {
-        if (!::prefs.isInitialized || !isEnabled) return
+        if (!::prefs.isInitialized || !isEnabled || DataAuth.isRestorePending) return
         val owned = items.filter { it.isOwned }
         val ids = owned.map { it.id }.toSet()
         synchronized(queueLock) {
@@ -250,19 +252,17 @@ object DbSync {
         pushOutfitPlans(OutfitPlanStore.plans.value)
     }
 
-    /**
-     * 인증된 서버 스냅샷 복원 후 — 보내지 않은 대기열은 버린다.
-     * @param photos 복원하면서 받은 사진 파일 (옷 id → 파일, 다시 올리지 않도록)
-     */
-    suspend fun adoptForRestore(photos: Map<String, java.io.File>, uris: Map<String, String>) =
-        networkLock.withLock {
-            synchronized(queueLock) { pending.clear(); persistLocked() }
-            val sigs = JSONObject()
-            photos.forEach { (id, file) -> uris[id]?.let { sigs.put(id, signature(file, it)) } }
-            prefs.edit().putBoolean(KEY_ENABLED, true)
-                .putString(KEY_PHOTO_SIGS, sigs.toString()).commit()
-            DataAuth.completeRestore()
-        }
+    /** Serialize account changes/restore against an entire upload batch. */
+    suspend fun <T> exclusiveAccountChange(block: suspend () -> T): T = networkLock.withLock { block() }
+
+    /** Included in the same restore journal; the original queue remains in the safety copy. */
+    fun stageForRestore(staging: Context, photos: Map<String, java.io.File>, uris: Map<String, String>) {
+        val sigs = JSONObject()
+        photos.forEach { (id, file) -> uris[id]?.let { sigs.put(id, signature(file, it)) } }
+        check(staging.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ENABLED, true).putString("pending", "{}")
+            .putString(KEY_PHOTO_SIGS, sigs.toString()).commit())
+    }
 
     /** 관심 상품(쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트) 목록을 누른 순서대로 서버 DB(product_interests)에 맞춘다 */
     fun pushProductInterests(ids: List<String>) {

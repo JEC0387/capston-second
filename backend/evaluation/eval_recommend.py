@@ -22,15 +22,20 @@ LABELS = {"home": "홈", "today": "오늘", "forecast": "5일 예보", "situatio
 def fetch(server: str, mine: bool) -> dict:
     path = "/api/recommendations/stats" if mine else "/api/recommendations/stats/all"
     headers = {}
-    if mine:
-        token = os.environ.get("FASHION_AUTH_TOKEN", "")
-        host = urllib.parse.urlparse(server).hostname
-        if not token or not (server.startswith("https://") or host in ("localhost", "127.0.0.1")):
-            sys.exit("개인 통계에는 FASHION_AUTH_TOKEN과 HTTPS 서버 주소가 필요합니다")
-        headers["Authorization"] = "Bearer " + token
+    variable = "FASHION_AUTH_TOKEN" if mine else "FASHION_ANALYTICS_ADMIN_TOKEN"
+    token = os.environ.get(variable, "")
+    host = urllib.parse.urlparse(server).hostname
+    if not token or not (server.startswith("https://") or host in ("localhost", "127.0.0.1")):
+        sys.exit(f"통계에는 {variable}과 HTTPS 서버 주소가 필요합니다")
+    headers["Authorization"] = "Bearer " + token
+    # Never forward a credential through an HTTP redirect.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    opener = urllib.request.build_opener(NoRedirect)
     req = urllib.request.Request(server.rstrip("/") + path, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as res:
+        with opener.open(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         sys.exit(f"서버 오류 {e.code}: {e.read().decode('utf-8', 'replace')[:200]} (DB 연결 · 003 마이그레이션 확인)")

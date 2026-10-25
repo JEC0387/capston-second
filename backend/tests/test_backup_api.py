@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """옷 사진 백업 · 복원용 조회 · 추천 기록 / 성능 · 내 데이터 지우기 API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -166,7 +167,7 @@ class BackupApiTest(unittest.TestCase):
         self.assertEqual(('2026-10-17', '2026-10-17', 1), (s['since'], s['until'], s['users']))
         # 전체 통계는 기기 번호 없이, 다른 사람 기록도 합친다
         self.post('/api/recommendations/sync', {'logs': [self.rec('2026-10-18', 'home', ['q'])]}, device='device-b')
-        all_stats = self.client.get('/api/recommendations/stats/all').json()
+        all_stats = operator_get(self.client, '/api/recommendations/stats/all').json()
         self.assertEqual(5, all_stats['total']['shown'])
         self.assertEqual(2, all_stats['users'])
         self.assertEqual(0, self.get('/api/recommendations/stats', device='device-c').json()['total']['shown'])

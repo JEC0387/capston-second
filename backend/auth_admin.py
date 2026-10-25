@@ -14,13 +14,18 @@ def main():
     parser.add_argument("--device-id", required=True)
     parser.add_argument("--verified-out-of-band", action="store_true")
     parser.add_argument("--hours", type=int, default=24)
+    parser.add_argument("--approved-by", required=True)
+    parser.add_argument("--approval-reference", required=True)
+    parser.add_argument("--verification-method", required=True,
+                        choices=["signed-installation-challenge", "verified-account-record"])
     args = parser.parse_args()
     if not args.verified_out_of_band:
         parser.error("independent ownership verification is required")
     if engine is None:
         parser.error("database is not configured")
     with SessionLocal() as db:
-        ticket = issue_legacy_ticket(db, args.device_id, args.hours)
+        ticket = issue_legacy_ticket(db, args.device_id, args.hours, approved_by=args.approved_by,
+            approval_reference=args.approval_reference, verification_method=args.verification_method)
     print(ticket)  # operator must deliver privately; never put it in an app log or Git
 
 

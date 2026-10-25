@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """관심 상품 · 취향 평가 기록 · 성별 · 상품 카탈로그 DB API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -94,7 +95,7 @@ class UserDataApiTest(unittest.TestCase):
         self.seed()
         self.post('/api/product-interests/sync', {'productIds': [SHIRT, PANTS]}, device='a')
         self.post('/api/product-interests/sync', {'productIds': [SHIRT]}, device='b')
-        items = self.client.get('/api/product-interests/popular').json()['items']
+        items = operator_get(self.client, '/api/product-interests/popular').json()['items']
         self.assertEqual(SHIRT, items[0]['productKey'])
         self.assertEqual(2, items[0]['interestCount'])
         self.assertEqual(1, items[1]['interestCount'])

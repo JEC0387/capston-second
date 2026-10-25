@@ -2,6 +2,7 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import com.jeiu.fashionproject.data.DbSync
+import com.jeiu.fashionproject.data.RestoreJournal
 import com.jeiu.fashionproject.data.DataAuth
 import com.jeiu.fashionproject.data.ServerSettings
 import com.jeiu.fashionproject.notify.WeatherAlertScheduler
@@ -10,8 +11,10 @@ import com.jeiu.fashionproject.notify.WeatherAlertScheduler
 class FashionApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        val recovered = RestoreJournal.recover(this)
         ServerSettings.load(this)   // 마이페이지에서 바꾼 서버 주소 (실제 폰은 PC 의 와이파이 IP)
         DataAuth.init(this)
+        if (recovered && (DataAuth.canSync || DataAuth.completeRestore())) RestoreJournal.finish(this)
         DbSync.init(this)
         // 내일 날씨 알림이 켜져 있으면 예약 확인 (기기 번호 준비 뒤에)
         WeatherAlertScheduler.ensureScheduled(this)

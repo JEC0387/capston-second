@@ -83,3 +83,25 @@ fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLog
 3. 운영 변경 전에 독립적인 기존 데이터 소유권 확인 절차와 승인 기록, 티켓 전달/남용 방지, 신규 등록 rate limit을 설계·테스트한다. 기존 데이터를 자동 귀속하거나 삭제하지 않는다.
 4. Android 복원 중 로컬 쓰기 원자성과 토큰 저장 강화, 서버/앱 순차 출시 및 구 앱 401 안내를 검증한다. 실기기에서 백업·복원·오프라인·재시작을 테스트한다.
 5. P0의 미해결 보안·호환성 항목을 닫은 뒤에만 Railway/Supabase 자동 연결(P1) 및 나머지 기능을 단계별로 진행한다. 운영 DB 변경·배포·유료 AI 호출·Merge는 별도 승인 후 시행한다.
+
+## 후속 세션 체크포인트 — 2026-10-25 (이 절이 이전 미완성 목록보다 우선)
+
+- 기준 원격 브랜치 HEAD `273319be70b7838bff5c82c21f89234cdde2f24f`를 GitHub에서 확인하고
+  별도 worktree/브랜치 `codex/p0-hardening-p1-connect-20261025`에서 후속 구현했다.
+  기존 work 브랜치·백업·P0 브랜치는 수정하지 않았다.
+- DB 기반 인증 시도 제한, 이전 승인 메타데이터/재발급 무효화, 인증 변경 행 잠금,
+  모든 개인 응답 no-store, 전체 사용자 분석의 운영자 인증을 추가했다.
+- Android Keystore AES-GCM 저장과 평문 이전, 리다이렉트 차단, 계정 변경/업로드 직렬화,
+  복구 요청 전 동기화 중단, 이전 응답 손실 후 상태 재확인을 추가했다.
+- 복원은 별도 staging preferences에서 준비하고 원본/대기열 보존 후 redo 저널을 설치한다.
+  앱 시작 시 저널을 재적용하고 모든 로컬 저장소가 일관된 후 동기화를 허용한다.
+  `backend/AUTH_MIGRATION.md`에 운영 절차와 복사본 위치/실패 대응을 갱신했다.
+- 새 SQL `006_auth_hardening.sql`은 파일만 작성했다. 운영 DB에는 적용하지 않았다.
+- Linux 백엔드 전체: **97 passed, 8 subtests passed, 7 warnings**. 로컬 PostgreSQL 16.2의
+  격리 임시 스키마에서 005/006 SQL, 006 재적용, 25개 병렬 시도 예산, 동시 티켓 소비까지 검증했다.
+- Android 기존 240개 + 신규 암호화/복원 테스트는 현재 실행 중이다. 결과 확인 전 성공으로
+  판단하지 않는다. 로컬 JDK/SDK/의존성은 `/workspace/work` 아래에만 설치했다.
+- GitHub Actions에 `codex/**` push와 격리 PostgreSQL 서비스를 추가했다. 원격 실행 결과는
+  이 체크포인트 push 이후 확인해야 한다. P1 개발은 아직 시작하지 않았다.
+- 운영 DB/Railway/유료 API/Merge/Force Push/실제 레거시 데이터 이전은 실행하지 않았다.
+  실기기 Keystore·강제 종료·카메라·화면 동작과 운영 프록시 구성을 검증한 결과는 없다.

@@ -45,7 +45,8 @@ object BackendApi {
     ).any { path == it || path.startsWith("$it/") || path.startsWith("$it?") }
 
     private fun HttpURLConnection.addPrivateAuthorization(path: String) {
-        if (!privatePath(path) || url.protocol != "https") return
+        if (!privatePath(path) || url.protocol != "https" ||
+            !url.toString().startsWith(BackendApi.BASE_URL + "/")) return
         DataAuth.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
     }
 
@@ -62,6 +63,7 @@ object BackendApi {
     suspend fun getJson(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 10_000
@@ -80,6 +82,7 @@ object BackendApi {
     suspend fun postJson(path: String, jsonBody: String, readTimeoutMs: Int = 5_000): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 3_000
@@ -101,6 +104,7 @@ object BackendApi {
     suspend fun getBytes(path: String): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 15_000
@@ -133,6 +137,7 @@ object BackendApi {
     suspend fun delete(path: String, readTimeoutMs: Int = 5_000): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
                 requestMethod = "DELETE"
                 connectTimeout = 3_000
                 readTimeout = readTimeoutMs
@@ -207,6 +212,7 @@ object BackendApi {
     ): String {
         val boundary = "----FashionBoundary${System.currentTimeMillis()}"
         val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 5_000

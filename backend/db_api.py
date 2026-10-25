@@ -22,7 +22,7 @@ from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, Wardrob
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
     TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
     OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats)
-from auth_api import current_user
+from auth_api import current_user, analytics_admin
 
 app = APIRouter()
 
@@ -552,7 +552,7 @@ def get_product_interests(db: Session = Depends(get_db), user: User = Depends(cu
     return {"totalCount": len(items), "items": items}
 
 
-@app.get("/api/product-interests/popular", response_model=PopularInterestResponse, tags=["쇼핑"])
+@app.get("/api/product-interests/popular", response_model=PopularInterestResponse, tags=["쇼핑"], dependencies=[Depends(analytics_admin)])
 def popular_interests(limit: int = 10, db: Session = Depends(get_db)):
     """
     여러 사용자가 관심 상품으로 많이 담은 상품 순위 (기기 번호 불필요, 개인 정보 없이 개수만).
@@ -872,7 +872,7 @@ def my_recommendation_stats(db: Session = Depends(get_db), user: User = Depends(
     return recommendation_stats(db, user.id)
 
 
-@app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"])
+@app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"], dependencies=[Depends(analytics_admin)])
 def all_recommendation_stats(db: Session = Depends(get_db)):
     """모든 사용자를 합친 추천 성능 (발표 · AI 성능 측정표용, 개인 정보 없이 개수와 비율만)"""
     require_table(db, "recommendation_logs")
@@ -1015,7 +1015,7 @@ def _top(rows, n: int = 5) -> list[dict]:
     return [{"name": k, "count": v} for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n]]
 
 
-@app.get("/api/stats/overview", response_model=OverviewStats, tags=["상태"])
+@app.get("/api/stats/overview", response_model=OverviewStats, tags=["상태"], dependencies=[Depends(analytics_admin)])
 def overview_stats(db: Session = Depends(get_db)):
     """
     모든 사용자를 합친 DB 현황 — 발표 · 보고서용 (기기 번호 불필요, 개인 정보 없이 개수 · 순위만).
