@@ -4,6 +4,9 @@
 저장소 첫 화면의 [`README.md`](../README.md)와 [`수정사항.md`](../수정사항.md)를 보세요.
 
 ## 발표 준비
+
+최신 테스트 APK와 서명·설치·백업 안내는 [APK 업데이트 인수인계](APK_UPDATE_HANDOFF_20261026.md)를 먼저 확인하세요. 새 배포는 별도 패키지의 **FashionAI Preview**입니다.
+
 | 문서 | 내용 |
 |---|---|
 | [PRESENTATION_TEST_CHECKLIST.md](PRESENTATION_TEST_CHECKLIST.md) | 발표 전 실제 폰에서 눌러 볼 순서 (점검표) |

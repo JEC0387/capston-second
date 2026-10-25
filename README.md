@@ -1,5 +1,7 @@
 # AI 기반 옷 추천 쇼핑몰 앱
 
+현재 테스트 앱은 **FashionAI Preview** (`com.jeiu.fashionproject.preview`)이며 기존 앱과 별도로 설치됩니다. [최신 APK·버전·서명·백업 안내](docs/APK_UPDATE_HANDOFF_20261026.md)를 먼저 확인하세요. 기존 앱과 데이터는 보존하고 승인 없이 삭제·이전하지 않습니다.
+
 내 옷장 · 체형 · 날씨 · 취향을 분석해 코디를 추천하고, 부족한 옷은 쇼핑으로 이어 주는 안드로이드 앱입니다.
 
 - 팀: **교수님의 최애들** — 정의찬(팀장), 이지민, 손유리, 황상윤
@@ -57,9 +59,9 @@ capston-second/
    AI 가상피팅 키는 앱에 넣지 않습니다. 서버에서만 `FASHN_API_KEY`를 설정하고,
    앱의 AI 피팅 화면에서 HTTPS 서버 주소와 사용자별 접속 토큰을 입력합니다.
    유료 생성은 기본 비활성화이며 [서버 설정](backend/AI_TRYON_SETUP.md)을 먼저 확인하세요.
-   에뮬레이터는 서버 주소 `http://10.0.2.2:8000` 이 기본값입니다.
-   **실제 폰**은 앱 마이페이지 > **서버 주소**에 PC 의 와이파이 IP(예: `192.168.0.10`)를 넣고 [연결 확인] → [저장]
-   (폰과 PC 는 같은 와이파이, 서버는 `--host 0.0.0.0` 으로 실행).
+   앱의 기본 서버 주소는 Railway HTTPS이며 새 설치에서 주소를 입력할 필요가 없습니다.
+   개발 PC를 명시적으로 사용할 때만 마이페이지 > 서버 주소에서 에뮬레이터 `http://10.0.2.2:8000` 또는 PC IP를 저장합니다.
+   Preview는 기존 사용자 서버 데이터 충돌 방지를 위해 개인 데이터 백업·복원·동기화를 차단합니다.
 
 자세한 내용: [`수정사항.md`](수정사항.md) · [`backend/DB_INTEGRATION.md`](backend/DB_INTEGRATION.md) ·
 [`backend/README.md`](backend/README.md) · [`backend/evaluation/README.md`](backend/evaluation/README.md)

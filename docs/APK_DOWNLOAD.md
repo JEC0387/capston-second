@@ -1,4 +1,10 @@
-# 최종 발표용 APK 다운로드
+# 최신 배포 안내 — 2026-10-26
+
+현재 테스트 배포는 별도 패키지 `com.jeiu.fashionproject.preview`의 **FashionAI Preview**입니다. 최신 성공 Actions의 `fashionai-preview-apk-vc…` 아티팩트와 동봉된 버전·서명·SHA를 확인하세요. [최신 APK·백업·서명 안내](APK_UPDATE_HANDOFF_20261026.md)를 따르며 기존 S25+ 앱을 삭제하지 마세요.
+
+## 과거 버전 3 배포 기록
+
+아래 내용은 보존된 과거 기록이며 현재 APK를 받는 절차는 위 최신 안내를 따릅니다.
 
 applicationId `com.jeiu.fashionproject`, **versionCode3 / versionName1.0-presentation**. 기존 실기기 수정 버전2와 구분한다.
 
