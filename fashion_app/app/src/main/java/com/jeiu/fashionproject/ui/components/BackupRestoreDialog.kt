@@ -32,6 +32,12 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun BackupRestoreDialog(onDismiss: () -> Unit) {
+    if (com.jeiu.fashionproject.BuildConfig.PREVIEW_BUILD) {
+        AlertDialog(onDismissRequest = onDismiss, title = { Text("Preview · 기기 안에서만 테스트") },
+            text = { Text("기존 앱의 계정·복구 코드·동기화와 충돌하지 않도록 서버 개인 데이터 백업·복원·이전을 차단했어요. 기존 앱 데이터는 그대로 유지돼요. 운영 계정의 복구 코드를 이 테스트 앱에 입력하지 마세요.") },
+            confirmButton = { TextButton(onClick = onDismiss) { Text("확인") } })
+        return
+    }
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()

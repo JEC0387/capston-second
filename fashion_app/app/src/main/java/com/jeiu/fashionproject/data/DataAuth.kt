@@ -1,5 +1,7 @@
 package com.jeiu.fashionproject.data
 
+import com.jeiu.fashionproject.BuildConfig
+
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -119,6 +121,7 @@ object DataAuth {
 
     /** Credentials are transmitted only to HTTPS endpoints; redirects are never followed. */
     private suspend fun call(path: String, body: JSONObject, bearer: String? = null, method: String = "POST", server: String = BackendApi.BASE_URL): Reply? = withContext(Dispatchers.IO) {
+        if (BuildConfig.PREVIEW_BUILD) return@withContext null // No production registration, recovery or ownership changes.
         runCatching {
             val base = server
             val uri = URI(base)

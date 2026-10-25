@@ -149,4 +149,12 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithTag("bodyGalleryButton").performScrollTo().assertIsDisplayed().assertIsEnabled()
     }
 
+    @Test fun smallViewportOpensDefault3dWithoutHeightOrPhotos() {
+        compose.runOnIdle { viewportHeight = 320.dp; model.updateHeightInput("") }
+        compose.onNodeWithText("3D 기본 모델").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
+        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithTag("bodyCameraButton").performScrollTo().assertIsDisplayed()
+    }
+
 }

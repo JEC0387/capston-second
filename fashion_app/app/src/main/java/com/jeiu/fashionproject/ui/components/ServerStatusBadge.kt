@@ -44,10 +44,11 @@ fun ServerStatusBadge(modifier: Modifier = Modifier) {
     val dot = if (online) Online else MediumGray
     val label = when (state) {
         ConnectionState.CHECKING -> "서버 연결 확인 중 · 폰에 저장"
-        ConnectionState.READY -> "서버 연결됨 · 동기화 대기 ${pending}건"
-        ConnectionState.BACKUP_DISABLED -> "서버 백업 꺼짐 · 폰에 저장"
+        ConnectionState.READY -> "서버·DB·인증 준비 · 전송 대기 ${pending}건"
+        ConnectionState.BACKUP_DISABLED -> if (com.jeiu.fashionproject.BuildConfig.PREVIEW_BUILD) "Preview · 개인 서버 동기화 차단" else "서버 백업 꺼짐 · 폰에 저장"
         ConnectionState.OFFLINE -> "오프라인 · 폰에 저장 · 재연결 대기"
-        ConnectionState.DATABASE_UNAVAILABLE, ConnectionState.UPDATE_REQUIRED -> "서버 점검 중 · 폰에 저장"
+        ConnectionState.DATABASE_UNAVAILABLE -> "서버 응답 · DB 준비 안 됨 · 폰에 저장"
+        ConnectionState.UPDATE_REQUIRED -> "인증·DB 업데이트 필요 · 전송 대기 보존"
         ConnectionState.LEGACY_REQUIRED -> "기존 기록 이전 확인 필요 · 폰에 저장"
         ConnectionState.RESTORE_PENDING -> "복원 이어하기 필요 · 전송 중지"
         ConnectionState.STORAGE_UNAVAILABLE -> "보안 저장소 확인 필요 · 전송 중지"

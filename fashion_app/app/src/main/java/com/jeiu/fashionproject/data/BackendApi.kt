@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.data
 
 import android.content.Context
+import com.jeiu.fashionproject.BuildConfig
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,6 +47,7 @@ object BackendApi {
 
     private fun HttpURLConnection.addPrivateAuthorization(path: String): String? {
         if (!privatePath(path)) return null
+        if (BuildConfig.PREVIEW_BUILD) return null // Preview never shares production personal records.
         val token = DataAuth.authorizationFor(url) ?: return null
         setRequestProperty("Authorization", "Bearer $token")
         return token

@@ -8,6 +8,12 @@ venv/
 
 # 빌드 결과물 · 내 컴퓨터 전용 설정 · 비밀 값 (깃허브에 올리지 않음)
 *.zip
+*.apk
+*.aab
+*.jks
+*.keystore
+*.log
+apk-artifact/
 **/build/
 **/.gradle/
 **/.kotlin/

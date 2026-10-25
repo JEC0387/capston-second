@@ -11,26 +11,71 @@ val localProperties = Properties().apply {
     if (file.exists()) file.inputStream().use { load(it) }
 }
 
+// CI allocates a strictly increasing distribution code; local builds use 4 and are not releases.
+val appVersionCode = providers.environmentVariable("FASHION_VERSION_CODE").orNull?.toIntOrNull() ?: 4
+require(appVersionCode in 4..2_100_000_000) { "versionCode must exceed the previous distribution (3)" }
+val appVersionName = providers.environmentVariable("FASHION_VERSION_NAME").orNull ?: "1.1-local"
+val previewBuild = providers.gradleProperty("fashionPreview").orNull == "true"
+val packagedVersionName = appVersionName + if (previewBuild) "-preview" else ""
+require(appVersionName.matches(Regex("[A-Za-z0-9._-]+")))
+fun gitValue(vararg args: String) = providers.exec {
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine("git", *args)
+}.standardOutput.asText.get().trim()
+val sourceSha = gitValue("rev-parse", "HEAD")
+val sourceBranch = gitValue("branch", "--show-current").ifEmpty { "detached" }
+val sourceDirty = gitValue("status", "--porcelain", "--untracked-files=no").isNotEmpty()
+val buildNumber = providers.environmentVariable("FASHION_BUILD_NUMBER").orNull ?: "local"
+require(sourceSha.matches(Regex("[a-f0-9]{40}")))
+fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val identityDir = layout.buildDirectory.dir("generated/assets/buildIdentity")
+val generateBuildIdentity by tasks.registering {
+    val identity = """{"versionCode":$appVersionCode,"versionName":${quoted(packagedVersionName)},"gitSha":${quoted(sourceSha)},"branch":${quoted(sourceBranch)},"buildNumber":${quoted(buildNumber)},"sourceDirty":$sourceDirty,"preview":$previewBuild}"""
+    inputs.property("identity", identity)
+    outputs.dir(identityDir)
+    doLast {
+        identityDir.get().asFile.apply { mkdirs() }.resolve("build_identity.json").writeText(identity)
+    }
+}
+
 android {
     namespace = "com.jeiu.fashionproject"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.jeiu.fashionproject"
+        applicationId = "com.jeiu.fashionproject" + if (previewBuild) ".preview" else ""
         minSdk = 24
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.0-presentation"
+        versionCode = appVersionCode
+        versionName = packagedVersionName
+        resValue("string", "build_app_name", if (previewBuild) "FashionAI Preview" else "FashionAI")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 서버(FastAPI) 기본 주소 = Railway 에 올린 서버 (어디서든 접속 가능).
         // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는
         // SERVER_URL=http://PC의IP:8000 (실제 폰)을 넣거나, 앱 마이페이지 > 서버 주소 에서 바꾼다.
         buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "https://fashion-backend-production-aba0.up.railway.app")}\"")
+        buildConfigField("String", "GIT_SHA", quoted(sourceSha))
+        buildConfigField("String", "BUILD_BRANCH", quoted(sourceBranch))
+        buildConfigField("String", "BUILD_NUMBER", quoted(buildNumber))
+        buildConfigField("boolean", "SOURCE_DIRTY", sourceDirty.toString())
+        buildConfigField("boolean", "PREVIEW_BUILD", previewBuild.toString())
 
 
     }
 
     buildTypes {
+        debug {
+            // Only explicit signing material may be used for a distributed CI APK.
+            System.getenv("ANDROID_DISTRIBUTION_KEYSTORE")?.let { path ->
+                signingConfig = signingConfigs.getByName("debug").apply {
+                    storeFile = file(path)
+                    storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                    keyAlias = System.getenv("ANDROID_KEY_ALIAS") ?: "androiddebugkey"
+                    keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+                }
+            }
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
@@ -54,12 +99,15 @@ android {
         // .tflite 모델은 압축되면 MediaPipe가 로딩하지 못하므로 압축 제외
         noCompress += "tflite"
     }
+    // AGP 9 requires a concrete directory here; preBuild carries the generator dependency.
+    sourceSets.getByName("main").assets.srcDir(identityDir.get().asFile)
     packaging {
         jniLibs {
             useLegacyPackaging = false
         }
     }
 }
+tasks.named("preBuild") { dependsOn(generateBuildIdentity) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)

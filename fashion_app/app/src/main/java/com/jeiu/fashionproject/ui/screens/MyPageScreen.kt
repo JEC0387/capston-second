@@ -26,6 +26,7 @@ import com.jeiu.fashionproject.ui.components.TasteReportCard
 import com.jeiu.fashionproject.ui.components.BackupRestoreDialog
 import com.jeiu.fashionproject.ui.components.ServerAddressDialog
 import com.jeiu.fashionproject.data.ServerSettings
+import com.jeiu.fashionproject.data.AppBuildInfo
 import com.jeiu.fashionproject.ui.components.RecommendationStatsCard
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.WearLogStore
@@ -72,6 +73,7 @@ fun MyPageScreen(
     onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val buildInfo = remember(context) { AppBuildInfo.installed(context) }
     val manualBody by ManualBodyStore.current.collectAsState()
     val scope = rememberCoroutineScope()
     var showNotifDialog by remember { mutableStateOf(false) }
@@ -384,7 +386,7 @@ fun MyPageScreen(
                 )
             }
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = { showVersionDialog = true })
+            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
         }
@@ -499,9 +501,14 @@ fun MyPageScreen(
             onDismissRequest = { showVersionDialog = false },
             title = { Text("앱 정보", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("FashionAI")
-                    Text("버전: 1.0.0", color = MediumGray)
+                    Text("버전: ${buildInfo.versionName} (${buildInfo.versionCode})", color = MediumGray)
+                    Text("빌드: ${buildInfo.buildNumber} · ${buildInfo.shortSha}", color = MediumGray)
+                    Text("브랜치: ${buildInfo.branch}", color = MediumGray)
+                    Text("패키지: ${buildInfo.packageName}", color = MediumGray)
+                    Text("서명 SHA-256: ${buildInfo.certificateSha256}", color = MediumGray)
+                    if (buildInfo.sourceDirty) Text("로컬 수정 빌드 · 배포본 아님", color = MediumGray)
                     Text("AI 기반 패션 스타일링 앱", color = MediumGray)
                 }
             },

@@ -65,6 +65,8 @@ fun AiTryOnScreen(
     var base by remember { mutableStateOf(TryOnSession.connection?.base ?: BackendApi.BASE_URL.takeIf { it.startsWith("https://") }.orEmpty()) }
     var token by remember { mutableStateOf("") } // never saved, logged, or backed up
     var connectionError by remember { mutableStateOf<String?>(null) }
+    var connectionCheck by remember { mutableStateOf<String?>(null) }
+    var checkingConnection by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     fun leave() { review = null; onBack() }
@@ -98,7 +100,7 @@ fun AiTryOnScreen(
         } },
         confirmButton = { TextButton(onClick = {
             if (TryOnSession.configure(base, token)) {
-                token = ""; showConnection = false; connectionError = null
+                token = ""; showConnection = false; connectionError = null; connectionCheck = null
                 if (model.state.pending) model.resume() // GET only, never generation
             } else connectionError = "HTTPS 주소와 32자 이상의 개인 접속 토큰을 확인해주세요."
         }) { Text("연결 설정") } },
@@ -141,9 +143,30 @@ fun AiTryOnScreen(
             selection.forEach { Text("${it.category} · ${it.name}", color = Brown) }
             if (plan.unsupported.isNotEmpty()) Text("신발·액세서리는 이번 AI 생성에서 제외돼요. 수동 배치는 계속 사용할 수 있어요.", color = MediumGray)
             plan.issue?.let { Text(it, color = Brown) }
-            if (!configured) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 계속 사용할 수 있어요.",
+            if (!configured) Text("AI 피팅용 개인 접속 토큰이 이 실행에 설정되지 않았어요. 데이터 백업 인증과 별개이며 앱 종료 시 지워져요. AI 서버 연결 설정 후 사진 전송 동의와 생성 버튼이 필요해요. 수동 배치는 계속 사용할 수 있어요.",
                 color = Brown, modifier = Modifier.testTag("aiTryOnNotConfigured"))
             TextButton(enabled = !state.watching, onClick = { showConnection = true }) { Text("AI 서버 연결 설정") }
+            if (configured) TextButton(enabled = !state.watching && !checkingConnection, onClick = {
+                val connection = TryOnSession.connection ?: return@TextButton
+                checkingConnection = true
+                scope.launch {
+                    try {
+                        TryOnRepository.check(connection) // GET /config only: no images or paid generation.
+                        connectionCheck = "AI 서버 인증·설정 확인 완료 · 아직 이미지를 생성하지 않았어요."
+                    } catch (cancelled: CancellationException) { throw cancelled
+                    } catch (failure: TryOnHttpFailure) {
+                        connectionCheck = when (failure.code) {
+                            401, 403 -> "AI 서버 인증 거절 · 운영자가 발급한 AI 전용 접속 토큰을 확인해주세요."
+                            404 -> "서버에 AI 피팅 API가 없어요. 운영 서버 버전을 확인해주세요."
+                            503 -> "서버의 AI 키·사용량 보호 설정이 준비되지 않았어요. 운영자 확인이 필요해요."
+                            else -> "AI 서버 확인 실패 (HTTP ${failure.code}) · 생성 요청은 보내지 않았어요."
+                        }
+                    } catch (_: Exception) {
+                        connectionCheck = "AI 서버에 연결하지 못했어요. HTTPS 주소와 인터넷을 확인해주세요. 생성 요청은 보내지 않았어요."
+                    } finally { checkingConnection = false }
+                }
+            }) { Text(if (checkingConnection) "AI 서버 확인 중…" else "AI 서버 준비 확인 · 생성 없음") }
+            connectionCheck?.let { Text(it, color = Brown, modifier = Modifier.testTag("aiConnectionCheck")) }
             if (state.watching) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(), color = Camel)
                 Text(state.progress ?: "AI가 옷을 자연스럽게 입히는 중이에요", color = Brown)

@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.data
 
 import android.content.Context
+import com.jeiu.fashionproject.BuildConfig
 import android.content.SharedPreferences
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisResult
 import kotlinx.coroutines.*
@@ -32,7 +33,7 @@ object DbSync {
     val pendingCount: StateFlow<Int> = _pendingCount
 
     /** 서버 백업이 켜져 있는지 (기본 켜짐) */
-    val isEnabled: Boolean get() = !::prefs.isInitialized || prefs.getBoolean(KEY_ENABLED, true)
+    val isEnabled: Boolean get() = !BuildConfig.PREVIEW_BUILD && (!::prefs.isInitialized || prefs.getBoolean(KEY_ENABLED, true))
 
     /** New high-entropy recovery code. The old device ID remains local for verified migration only. */
     val backupCode: String? get() = DataAuth.recoveryCode
