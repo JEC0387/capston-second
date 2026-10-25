@@ -28,7 +28,7 @@ def test_every_personal_route_rejects_device_ids_and_invalid_bearers(auth):
     client, _ = auth
     personal = ("/api/wardrobe", "/api/wear-logs", "/api/body-measurements", "/api/profile",
                 "/api/style-preference", "/api/product-interests", "/api/taste-events",
-                "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me")
+                "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup")
     public_aggregates = {"/api/recommendations/stats/all", "/api/product-interests/popular"}
     checked = []
     for route in main.app.routes:
@@ -125,3 +125,19 @@ def test_account_token_cannot_read_cross_user_analytics(auth):
     headers = bearer(register(client)["accessToken"])
     for path in ("/api/product-interests/popular", "/api/recommendations/stats/all", "/api/stats/overview"):
         assert client.get(path, headers=headers).status_code == 401
+
+
+def test_snapshot_is_authenticated_account_scoped_and_has_photo_manifest(auth):
+    client, _ = auth
+    a, b = register(client), register(client)
+    item = {"id": "only-a", "name": "private", "category": "상의", "colorName": "검정",
+            "colorValue": 0xFF000000, "imageUri": ""}
+    assert client.post("/api/wardrobe/sync", headers=bearer(a["accessToken"]), json={"items": [item]}).status_code == 200
+    response = client.get("/api/backup/snapshot", headers=bearer(a["accessToken"]))
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    snapshot = response.json()
+    assert snapshot["version"] == 1
+    assert snapshot["wardrobe"]["items"][0]["clientId"] == "only-a"
+    assert snapshot["photos"] == {}
+    assert client.get("/api/backup/snapshot", headers=bearer(b["accessToken"])).json()["wardrobe"]["items"] == []

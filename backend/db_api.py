@@ -998,13 +998,37 @@ def get_outfit_plans(db: Session = Depends(get_db), user: User = Depends(current
 
 
 # ──────────────────────────────────────────────
-# 전체 통계 (발표용 — 개인 정보 없이 숫자만)
+# 전체 통계 (발표용 — 운영자 인증 필요)
 # ──────────────────────────────────────────────
 
 def _count(db: Session, model) -> int:
     if not schema_has(db, model.__tablename__):
         return 0
     return db.scalar(select(func.count()).select_from(model)) or 0
+
+
+@app.get("/api/backup/snapshot", tags=["백업"])
+def backup_snapshot(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Credential row lock serializes this snapshot with every write/recovery.
+
+    Photos are fetched separately and must match this manifest before local install.
+    Missing schema fails the whole snapshot instead of restoring partial empty data.
+    """
+    for table in ("clothing_photos", "product_interests", "taste_events", "saved_outfits", "outfit_plans"):
+        require_table(db, table)
+    return {
+        "version": 1,
+        "wardrobe": get_wardrobe(db=db, user=user),
+        "wearLogs": get_wear_logs(db=db, user=user),
+        "profile": get_profile(db=db, user=user),
+        "interests": get_product_interests(db=db, user=user),
+        "tasteEvents": list_taste_events(db=db, user=user),
+        "stylePreference": get_style_preference(db=db, user=user),
+        "savedOutfits": get_saved_outfits(db=db, user=user),
+        "outfitPlans": get_outfit_plans(db=db, user=user),
+        "photos": {photo.client_id: photo.sha256 for photo in db.scalars(
+            select(ClothingPhoto).where(ClothingPhoto.user_id == user.id))},
+    }
 
 
 def _top(rows, n: int = 5) -> list[dict]:

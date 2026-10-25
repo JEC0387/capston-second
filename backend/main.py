@@ -420,7 +420,7 @@ async def private_response_cache_policy(request, call_next):
     private = ("/api/auth", "/api/wardrobe", "/api/wear-logs", "/api/body-measurements",
                "/api/profile", "/api/style-preference", "/api/product-interests",
                "/api/taste-events", "/api/recommendations", "/api/saved-outfits",
-               "/api/outfit-plans", "/api/me")
+               "/api/outfit-plans", "/api/me", "/api/backup")
     private += ("/api/stats",)
     if any(request.url.path == p or request.url.path.startswith(p + "/") for p in private):
         response.headers["Cache-Control"] = "no-store"

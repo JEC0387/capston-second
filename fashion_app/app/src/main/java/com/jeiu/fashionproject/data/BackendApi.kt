@@ -41,13 +41,13 @@ object BackendApi {
     private fun privatePath(path: String): Boolean = listOf(
         "/api/wardrobe", "/api/wear-logs", "/api/body-measurements", "/api/profile",
         "/api/style-preference", "/api/product-interests", "/api/taste-events",
-        "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me"
+        "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup"
     ).any { path == it || path.startsWith("$it/") || path.startsWith("$it?") }
 
     private fun HttpURLConnection.addPrivateAuthorization(path: String) {
         if (!privatePath(path) || url.protocol != "https" ||
             !url.toString().startsWith(BackendApi.BASE_URL + "/")) return
-        DataAuth.accessToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+        DataAuth.authorizationFor(url)?.let { setRequestProperty("Authorization", "Bearer $it") }
     }
 
     private fun HttpURLConnection.noteUnauthorized(path: String, code: Int) {

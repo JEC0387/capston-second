@@ -45,7 +45,8 @@ def _credential(db: Session, authorization: str | None, lock: bool = False) -> A
 
 
 def current_credential(request: Request, db: Session = Depends(get_db), authorization: str | None = Header(None)) -> AuthCredential:
-    return _credential(db, authorization, lock=request.method not in ("GET", "HEAD"))
+    return _credential(db, authorization, lock=(request.method not in ("GET", "HEAD") or
+                                               request.url.path == "/api/backup/snapshot"))
 
 
 def current_user(db: Session = Depends(get_db), credential: AuthCredential = Depends(current_credential)) -> User:

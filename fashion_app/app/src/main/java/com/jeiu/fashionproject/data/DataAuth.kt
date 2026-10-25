@@ -12,6 +12,13 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 
+/** One immutable token/destination pair is swapped atomically after secure persistence. */
+internal data class ServerBoundToken(val token: String, val server: String) {
+    fun forDestination(currentServer: String, url: URL): String? = token.takeIf {
+        server == currentServer && url.protocol == "https" && url.toString().startsWith(server + "/")
+    }
+}
+
 /** One private server account per installation. Old device IDs are never sent as credentials. */
 object DataAuth {
     private val lock = Mutex()
@@ -19,15 +26,21 @@ object DataAuth {
     private lateinit var vault: CredentialVault
     @Volatile private var storageLocked = false
     @Volatile private var recovery: String? = null
-    @Volatile private var token: String? = null
-    @Volatile private var origin: String? = null
+    @Volatile private var binding: ServerBoundToken? = null
+    private val token: String? get() = binding?.token
+    private val origin: String? get() = binding?.server
     @Volatile private var enabled = false
     @Volatile private var restorePending = false
     @Volatile private var legacyPending = false
     private val _state = MutableStateFlow("uninitialized")
     val state: StateFlow<String> = _state
 
-    val accessToken: String? get() = token?.takeIf { origin == BackendApi.BASE_URL }
+    val accessToken: String? get() = binding?.let { it.token.takeIf { _ -> it.server == BackendApi.BASE_URL } }
+
+    /** Capture token and its destination atomically, including concurrent settings changes. */
+    internal fun authorizationFor(url: URL): String? = binding?.let { saved ->
+        if (storageLocked) null else saved.forDestination(BackendApi.BASE_URL, url)
+    }
     val recoveryCode: String? get() = recovery
     val needsLegacyDecision: Boolean get() = legacyPending && !enabled
     val canSync: Boolean get() = !storageLocked && accessToken != null && enabled && !restorePending
@@ -44,9 +57,15 @@ object DataAuth {
             _state.value = "secure_storage_unavailable"
             return
         }
-        token = saved.optString("token").takeIf { it.isNotEmpty() }
+        val access = saved.optString("token").takeIf { it.isNotEmpty() }
         recovery = saved.optString("recovery").takeIf { it.isNotEmpty() }
-        origin = saved.optString("origin").takeIf { it.isNotEmpty() }
+        val savedOrigin = saved.optString("origin")
+        if (access != null && savedOrigin.isBlank()) {
+            storageLocked = true
+            _state.value = "secure_storage_unavailable"
+            return
+        }
+        binding = access?.let { ServerBoundToken(it, savedOrigin) }
         enabled = saved.optBoolean("enabled", false)
         restorePending = saved.optBoolean("restore_pending", false)
         legacyPending = saved.optBoolean("legacy_pending", token == null && legacyDeviceId != null)
@@ -73,8 +92,7 @@ object DataAuth {
         this.recovery = recovery
         restorePending = pending
         legacyPending = oldAccount
-        token = access
-        origin = if (access == null) null else server
+        binding = access?.let { ServerBoundToken(it, server) }
         enabled = dataEnabled
         _state.value = when {
             pending -> "restore_pending"

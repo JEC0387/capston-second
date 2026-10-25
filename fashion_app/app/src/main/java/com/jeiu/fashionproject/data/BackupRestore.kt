@@ -53,7 +53,7 @@ object BackupRestore {
     ) {
         val isEmpty: Boolean
             get() = clothes.isEmpty() && wearLogs.isEmpty() && interests.isEmpty() && tasteEvents.isEmpty() &&
-                preferredStyles.isEmpty() && styleRatedCount == 0 && savedOutfits.isEmpty() && plans.isEmpty()
+                preferredStyles.isEmpty() && gender == null && styleRatedCount == 0 && savedOutfits.isEmpty() && plans.isEmpty()
     }
 
     // ── 서버 응답 읽기 (PC 단위 테스트 가능) ──────────────────
@@ -179,6 +179,23 @@ object BackupRestore {
         return scores to o.optInt("ratedCount")
     }
 
+    /** Versioned single-account snapshot. Parse every section before touching local stores. */
+    fun parseSnapshot(document: JSONObject): Snapshot {
+        require(document.getInt("version") == 1)
+        val profile = parseProfile(document.getJSONObject("profile").toString())
+        val preference = parseStylePreference(document.getJSONObject("stylePreference").toString())
+        return Snapshot(parseWardrobe(document.getJSONObject("wardrobe").toString()),
+            parseWearLogs(document.getJSONObject("wearLogs").toString()), profile.first, profile.second,
+            parseInterests(document.getJSONObject("interests").toString()),
+            parseTasteEvents(document.getJSONObject("tasteEvents").toString()), preference.first, preference.second,
+            parseSavedOutfits(document.getJSONObject("savedOutfits").toString()),
+            parsePlans(document.getJSONObject("outfitPlans").toString()))
+    }
+
+    fun verifyPhoto(bytes: ByteArray, expected: String): Boolean =
+        expected.matches(Regex("[a-f0-9]{64}")) && java.security.MessageDigest.getInstance("SHA-256")
+            .digest(bytes).joinToString("") { "%02x".format(it) } == expected
+
     // ── 복원 ──────────────────────────────────────────
 
     suspend fun restore(context: Context, input: String): Result {
@@ -200,22 +217,10 @@ object BackupRestore {
         val health = BackendApi.getJson("/api/health/database") ?: return@withContext Result.Offline
         if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withContext Result.Offline
 
-        val wardrobe = BackendApi.getJson("/api/wardrobe") ?: return@withContext Result.Offline
-        val wear = BackendApi.getJson("/api/wear-logs") ?: return@withContext Result.Offline
-        val profileBody = BackendApi.getJson("/api/profile") ?: return@withContext Result.Offline
-        val interestsBody = BackendApi.getJson("/api/product-interests") ?: return@withContext Result.Offline
-        val tasteBody = BackendApi.getJson("/api/taste-events") ?: return@withContext Result.Offline
-        val prefBody = BackendApi.getJson("/api/style-preference") ?: return@withContext Result.Offline
-        val savedBody = BackendApi.getJson("/api/saved-outfits") ?: return@withContext Result.Offline
-        val plansBody = BackendApi.getJson("/api/outfit-plans") ?: return@withContext Result.Offline
-
-        val snapshot = runCatching {
-            val profile = parseProfile(profileBody)
-            val pref = parseStylePreference(prefBody)
-            Snapshot(parseWardrobe(wardrobe), parseWearLogs(wear), profile.first, profile.second,
-                parseInterests(interestsBody), parseTasteEvents(tasteBody), pref.first, pref.second,
-                parseSavedOutfits(savedBody), parsePlans(plansBody))
-        }.getOrNull() ?: return@withContext Result.Offline
+        val body = BackendApi.getJson("/api/backup/snapshot") ?: return@withContext Result.Offline
+        val document = runCatching { JSONObject(body) }.getOrNull() ?: return@withContext Result.Offline
+        val snapshot = runCatching { parseSnapshot(document) }.getOrNull() ?: return@withContext Result.Offline
+        val manifest = runCatching { document.getJSONObject("photos") }.getOrNull() ?: return@withContext Result.Offline
         if (snapshot.isEmpty) return@withContext Result.NotFound
 
         // 옷 사진 받기
@@ -227,6 +232,7 @@ object BackupRestore {
             if (!rc.hasPhoto) { items += withPhoto(rc.item, null); continue }
             val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}")
                 ?: return@withContext Result.Offline
+            if (!verifyPhoto(got.first, manifest.optString(rc.item.id))) return@withContext Result.Offline
             val file = runCatching {
                 File(dir, "restored_${java.util.UUID.randomUUID()}.${PhotoBackup.extension(got.second)}")
                     .apply { java.io.FileOutputStream(this).use { out -> out.write(got.first); out.fd.sync() } }

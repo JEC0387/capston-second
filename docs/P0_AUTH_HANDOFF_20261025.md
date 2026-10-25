@@ -105,3 +105,16 @@ fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLog
   이 체크포인트 push 이후 확인해야 한다. P1 개발은 아직 시작하지 않았다.
 - 운영 DB/Railway/유료 API/Merge/Force Push/실제 레거시 데이터 이전은 실행하지 않았다.
   실기기 Keystore·강제 종료·카메라·화면 동작과 운영 프록시 구성을 검증한 결과는 없다.
+
+### P0 로컬 검증 마무리
+
+- 추가한 단일 `/api/backup/snapshot`은 개인 인증과 계정 행 잠금으로 일관된 서버 스냅샷을
+  만든다. 앱은 사진 SHA-256도 일치해야 저널을 설치한다. 구 서버/누락 스키마/응답 버전
+  불일치에는 로컬 데이터를 바꾸지 않는다. 성별만 있는 서버 기록도 복원 대상으로 처리한다.
+- 서버 주소/토큰 바인딩은 하나의 불변 값으로 교체해 설정 변경과 복구가 겹쳐도 서로 다른
+  서버의 토큰/주소가 섞이지 않게 한다.
+- 최종 스냅샷 변경 포함 로컬 백엔드 **99 passed, 8 subtests passed**.
+  Android **247개 / 28개 클래스, 실패·오류·건너뜀 0**, APK 및 instrumented test 코드 컴파일 성공.
+  뒤이은 코드 변경 후에는 테스트를 다시 실행한다.
+- 첫 원격 체크포인트 CI 실행: https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/40196769401
+  백엔드/PostgreSQL 및 Linux·Windows Python 3.11~3.14 서버 시작은 성공. Android는 결과 확인 중이다.

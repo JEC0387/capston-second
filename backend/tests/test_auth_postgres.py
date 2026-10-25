@@ -92,3 +92,31 @@ def test_postgres_competing_claims_consume_ticket_once(postgres):
     with postgres() as db:
         assert len(list(db.scalars(select(AuthCredential).where(AuthCredential.user_id == target)))) == 1
         assert db.scalar(select(LegacyClaimTicket)).consumed_at is not None
+
+
+def test_postgres_personal_data_roundtrip_and_recovery(postgres):
+    import base64
+    import hashlib
+    with TestClient(main.app) as client:
+        a, b = register(client), register(client)
+        headers = bearer(a["accessToken"])
+        item = {"id": "pg-shirt", "name": "원본 옷", "category": "상의", "colorName": "검정",
+                "colorValue": 0xFF000000, "imageUri": "", "price": 30000, "brand": "test"}
+        assert client.post("/api/wardrobe/sync", headers=headers, json={"items": [item]}).status_code == 200
+        photo = b"\xff\xd8\xfftest-only-photo"
+        assert client.post("/api/wardrobe/photos", headers=headers, json={"clientId": "pg-shirt",
+            "mime": "image/jpeg", "data": base64.b64encode(photo).decode()}).status_code == 200
+        assert client.post("/api/wear-logs/sync", headers=headers, json={"logs": [
+            {"date": "2026-10-25", "itemIds": ["pg-shirt"], "memo": "original"}]}).status_code == 200
+        assert client.post("/api/profile/styles", headers=headers, json={"styles": ["미니멀"]}).status_code == 200
+        recovered = client.post("/api/auth/recover", json={"recoveryCode": a["recoveryCode"]})
+        assert recovered.status_code == 200
+        assert client.get("/api/backup/snapshot", headers=headers).status_code == 401
+        headers = bearer(recovered.json()["accessToken"])
+        snapshot = client.get("/api/backup/snapshot", headers=headers).json()
+        assert snapshot["wardrobe"]["items"][0]["name"] == "원본 옷"
+        assert snapshot["wardrobe"]["items"][0]["price"] == 30000
+        assert snapshot["wearLogs"]["logs"][0]["memo"] == "original"
+        assert snapshot["photos"]["pg-shirt"] == hashlib.sha256(photo).hexdigest()
+        assert client.get("/api/wardrobe/photos/pg-shirt", headers=headers).content == photo
+        assert client.get("/api/backup/snapshot", headers=bearer(b["accessToken"])).json()["wardrobe"]["items"] == []

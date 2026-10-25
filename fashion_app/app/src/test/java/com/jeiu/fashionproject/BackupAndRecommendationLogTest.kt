@@ -149,4 +149,28 @@ class BackupAndRecommendationLogTest {
         assertEquals(mapOf("미니멀" to 4, "캐주얼" to -1), scores)
         assertEquals(3, rated)
     }
+
+    @Test
+    fun photoManifestRejectsMissingOrChangedPhotoBeforeLocalInstall() {
+        val bytes = "photo snapshot".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        assertTrue(BackupRestore.verifyPhoto(bytes, hash))
+        assertFalse(BackupRestore.verifyPhoto("changed".toByteArray(), hash))
+        assertFalse(BackupRestore.verifyPhoto(bytes, ""))
+    }
+
+    @Test
+    fun snapshotRejectsUnsupportedOrIncompleteResponse() {
+        val document = org.json.JSONObject("""{
+            "version":1,"wardrobe":{"items":[]},"wearLogs":{"logs":[]},"profile":{"gender":"FEMALE"},
+            "interests":{"items":[]},"tasteEvents":{"events":[]},"stylePreference":{"scores":[]},
+            "savedOutfits":{"outfits":[]},"outfitPlans":{"plans":[]},"photos":{}
+        }""")
+        assertFalse(BackupRestore.parseSnapshot(document).isEmpty)
+        document.put("version", 2)
+        assertTrue(runCatching { BackupRestore.parseSnapshot(document) }.isFailure)
+        document.put("version", 1).remove("wearLogs")
+        assertTrue(runCatching { BackupRestore.parseSnapshot(document) }.isFailure)
+    }
 }
