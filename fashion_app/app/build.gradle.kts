@@ -94,6 +94,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
     androidResources {
         // .tflite 모델은 압축되면 MediaPipe가 로딩하지 못하므로 압축 제외
