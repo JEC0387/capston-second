@@ -78,3 +78,14 @@ bash gradlew :app:testDebugUnitTest :app:assembleDebug :app:compileDebugAndroidT
 - 승인된 환경에 005/006 SQL 적용, 등록 설정, 서버·앱 출시 순서, 기존 사용자 이전 안내와
   독립적인 승인 기록/티켓 전달 담당자를 확정해야 한다. 자료가 부족하면 이전을 보류한다.
 - 운영 DB 변경, Railway 배포, 유료 API 호출, Merge, Force Push는 실행하지 않았다.
+
+
+## 최종 검증 결과
+
+- 코드 `9731363037a7a30b6ebd0c48cfdc7eb70854de51`의
+  [GitHub Actions](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/40199469609)는
+  **7개 job 모두 성공**했고 실패 step은 없다.
+- Android 256개 / 31개 클래스, 실패·오류·건너뜀 0. APK 생성, instrumented test 컴파일, Lint 성공.
+- 백엔드 101 passed / 8 subtests passed / 7 warnings. PostgreSQL 전용 3개 테스트도 실행했다.
+- Linux와 Windows의 서버 시작 검증을 통과했다. 실제 운영 연결/쓰기·배포나 실기기 검증을
+  수행한 결과는 없으며, 운영 적용은 위 승인 전 확인 항목을 해결한 뒤 별도로 진행한다.

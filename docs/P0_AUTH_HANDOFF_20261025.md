@@ -1,5 +1,10 @@
 # P0 인증 작업 인수인계 — 2026-10-25
 
+> **최신 기준:** 후속 개발 브랜치 `codex/p0-hardening-p1-connect-20261025`,
+> 최종 실행 코드 `9731363037a7a30b6ebd0c48cfdc7eb70854de51`.
+> P0/P1 구현과 자동 검증 결과는 이 문서 마지막 절 및 `P1_CONNECTION_HANDOFF_20261025.md`를 우선한다.
+> 운영 DB 적용·배포·실제 사용자 이전·실기기 검증은 수행하지 않았다. 아래 최초 인수인계는 이력으로 보존한다.
+
 ## 저장 위치와 범위
 
 - 작업 브랜치: `codex/p0-user-auth-20261025`
@@ -144,3 +149,29 @@ fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLog
   실기기 검증 완료로 해석하지 않는다. 릴리스 전에 독립적인 소유권 증빙과 프록시 구성을 검증한다.
 - 추가 UI 상태 보완: 서버 백업 재활성화 시 연결 재확인을 즉시 요청한다. 이 변경 후에도
   Android 256개 테스트·APK 빌드·instrumented test 컴파일이 통과했다.
+
+
+### 최종 원격 검증 확정 — 2026-10-25
+
+- 실행 코드: `9731363037a7a30b6ebd0c48cfdc7eb70854de51`.
+- [GitHub Actions 40199469609](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/40199469609)
+  **전체 7개 job 성공, 실패 step 없음**을 확인했다.
+- Android: 기존 240개 포함 **256개 / 31개 클래스**, 실패·오류·건너뜀 0.
+  로컬 테스트 XML 집계와 원격 단위 테스트 성공을 확인했다. 원격 APK 빌드,
+  instrumented test 코드 컴파일, Lint도 각각 성공했다. APK와 테스트 보고서는 해당 Actions 아티팩트에 있다.
+- Linux 백엔드: 원격 **101 passed, 8 subtests passed, 7 warnings**. Linux 전용 tryon 테스트와
+  격리 PostgreSQL 동시성/실제 SQL/데이터 왕복 검증을 포함한다.
+- 서버 시작: Linux Python 3.12, Windows Python 3.11·3.12·3.13·3.14 모두 성공.
+  DB 미설정과 접속 불가능한 Supabase 형식 URL에서도 서버가 동작하고 DB 미준비를 보고했다.
+- `codex/p0-user-auth-20261025`는 원래 `273319be70b7838bff5c82c21f89234cdde2f24f`,
+  `backup/security-phase1-20261025`는 원래 `745e10d9d7e21d71c63a5c7c195ddf0af11cf53e`로 보존했다.
+  최초 작업 디렉터리의 `work` 브랜치도 변경하지 않았다.
+- 변경한 45개 파일에는 삭제 파일이 없고, .env/APK/키스토어/생성 결과물을 Git에 넣지 않았다.
+  고신뢰 비밀키 패턴 검사에서 발견된 항목은 없다. 이는 모든 비밀정보의 부재를 증명하는 검사는 아니다.
+- 이 결과를 확정하는 마지막 커밋은 문서만 변경한다. 실행 코드와 검증 기준 SHA는 위 값을 사용한다.
+
+다음 작업은 승인된 스테이징/실기기 검증부터 시작한다. 운영 SQL 005/006 적용, 등록 활성화,
+Railway 배포, 유료 API 호출, Merge/Force Push, 실제 레거시 데이터 이전은 승인 없이 실행하지 않는다.
+운영 프록시의 시도 제한 식별, 독립적인 소유권 증빙/승인 기록/전달 담당자, 실기기 Keystore와
+강제 종료·오프라인·저장 공간 부족·화면 이동을 확인해야 한다. P0/P1의 이미 통과한 자동 검증을
+미완성으로 간주해 같은 기능을 다시 구현하지 않는다.
