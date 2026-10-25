@@ -9,6 +9,9 @@ object SizeCharts {
         runCatching { parse(body) }.getOrNull()
     }
 
+    private fun JSONObject.number(key: String): Float? = if (isNull(key)) null else
+        optDouble(key).toFloat().takeIf { it.isFinite() && it > 0f }
+
     fun parse(body: String): List<GarmentSizeRow> {
         val rows = JSONObject(body).getJSONArray("rows")
         return List(rows.length()) { index ->
@@ -21,7 +24,10 @@ object SizeCharts {
                 sizeLabel = row.optString("sizeLabel", ""),
                 shoulderCm = shoulder,
                 measureType = row.optString("measureType", ""),
-                sourceUrl = row.optString("sourceUrl", "")
+                sourceUrl = row.optString("sourceUrl", ""),
+                chestCm = row.number("chestCm"), waistCm = row.number("waistCm"), hipCm = row.number("hipCm"),
+                lengthCm = row.number("lengthCm"), thighCm = row.number("thighCm"),
+                productKey = row.optString("productKey").takeIf { it.isNotBlank() && it != "null" }
             )
         }
     }

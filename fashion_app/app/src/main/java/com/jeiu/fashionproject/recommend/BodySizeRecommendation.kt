@@ -9,7 +9,13 @@ data class GarmentSizeRow(
     val sizeLabel: String,
     val shoulderCm: Float?,
     val measureType: String,
-    val sourceUrl: String = ""
+    val sourceUrl: String = "",
+    val chestCm: Float? = null,
+    val waistCm: Float? = null,
+    val hipCm: Float? = null,
+    val lengthCm: Float? = null,
+    val thighCm: Float? = null,
+    val productKey: String? = null
 )
 
 data class ShoulderSizeSuggestion(

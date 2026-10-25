@@ -103,6 +103,7 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
             }, modifier = Modifier.testTag("manualBodyClear")) { Text("직접 입력값 삭제") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (current != null || photo != null) BodyDimensionsCard(BodyDimensions.resolve(current,photo))
+            if (current != null || photo != null) MeasuredSizeCard(BodyDimensions.resolve(current,photo))
         }
     }
 }
