@@ -42,6 +42,7 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
 import com.jeiu.fashionproject.data.OutfitPlanStore
@@ -100,14 +101,16 @@ fun HomeScreen(
     val weatherState by weatherViewModel.state.collectAsState()
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
+    val manualBody by ManualBodyStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
-    LaunchedEffect(sessionMeasurements) {
+    LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
-        if (BodyProfileAnalyzer.fromMeasurements(sessionMeasurements) == null)
+        if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileAnalyzer.fromMeasurements(sessionMeasurements)
-        ?: savedBodyProfile.takeIf { PrivacyConsent.canSaveRecords(context) }
+    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
+        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { weatherViewModel.fetchWeather() }

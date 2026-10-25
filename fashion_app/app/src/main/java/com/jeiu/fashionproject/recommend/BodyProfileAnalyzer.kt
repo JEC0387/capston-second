@@ -8,6 +8,10 @@ import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 data class BodyProfile(val legToHeightRatio: Double, val torsoToLegRatio: Double)
 
 object BodyProfileAnalyzer {
+    fun fromDimensions(profile: com.jeiu.fashionproject.data.BodyDimensionProfile): BodyProfile? = fromLengths(
+        profile[com.jeiu.fashionproject.data.BodyDimension.HEIGHT]?.cm,
+        profile[com.jeiu.fashionproject.data.BodyDimension.LEG_LENGTH]?.cm,
+        profile[com.jeiu.fashionproject.data.BodyDimension.TORSO_LENGTH]?.cm)
     fun fromMeasurements(measurements: BodyMeasurements?): BodyProfile? = measurements?.let {
         if (BodyMeasurementCalculator.isValid(it)) fromLengths(it.heightCm, it.legLengthCm, it.torsoLengthCm) else null
     }

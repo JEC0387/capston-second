@@ -74,14 +74,13 @@ fun OutfitRecommendScreen(
     val manualBody by ManualBodyStore.current.collectAsState()
     LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
-    LaunchedEffect(sessionMeasurements) {
+    LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
-        if (BodyProfileAnalyzer.fromMeasurements(sessionMeasurements) == null)
+        if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileAnalyzer.fromMeasurements(sessionMeasurements)
-        ?: manualBody?.let { BodyProfileAnalyzer.fromLengths(it.heightCm, it.legLengthCm, it.torsoLengthCm) }
-        ?: savedBodyProfile.takeIf { PrivacyConsent.canSaveRecords(context) }
+    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
+        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
         ProductInterestStore.load(context)

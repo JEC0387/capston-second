@@ -35,6 +35,8 @@
 ## 통합 · 인계
 | 문서 | 내용 |
 |---|---|
+| [P2_P6_HANDOFF_20261025.md](P2_P6_HANDOFF_20261025.md) | P2~P6 실제 구현·부분 구현·자동 검증·후속 시작 지점 |
+| [P2_P6_DEVICE_TEST_20261026.md](P2_P6_DEVICE_TEST_20261026.md) | APK 안전한 업데이트와 사용자 실기기 검증 안내 |
 | [CHECKPOINT_HANDOFF_20261025.md](CHECKPOINT_HANDOFF_20261025.md) | P0/P1 완료 상태 중간 저장, 기존 검증 결과와 다음 세션 TODO |
 | [HANDOFF.md](HANDOFF.md) | 10/13 통합본 인계 (옷장 관심 옷 필터 · 추천 범위) |
 | [INTEGRATION_REPORT.md](INTEGRATION_REPORT.md) | 팀원 작업 통합 보고서 |

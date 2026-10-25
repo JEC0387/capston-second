@@ -32,5 +32,8 @@ class MeasuredSizeUiTest {
         compose.onNodeWithTag("sizeFeedbackSave").performScrollTo().performClick()
         compose.onNodeWithText("잘 맞았어요").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(SizeSatisfaction.FIT,SizeFeedbackStore.load(context).single().satisfaction) }
+        compose.onNodeWithText("여유핏").performScrollTo().performClick()
+        compose.onNodeWithTag("sizeFeedbackMessage").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(1,SizeFeedbackStore.load(context).size) }
     }
 }

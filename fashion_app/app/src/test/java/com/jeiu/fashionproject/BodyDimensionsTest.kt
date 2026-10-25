@@ -46,4 +46,18 @@ class BodyDimensionsTest {
         assertEquals("M",BodySizeRecommendation.suggest(BodyDimensions.resolve(manual,photo),rows).single().sizeLabel)
         assertTrue(BodySizeRecommendation.suggest(BodyDimensions.resolve(manual,null),emptyList()).isEmpty())
     }
+
+    @Test fun avatarSizeAndOutfitUseTheSameChosenMeasurements() {
+        val dimensions=BodyDimensions.resolve(manual,photo)
+        val avatar=AvatarParameters.from(dimensions)
+        val outfit=com.jeiu.fashionproject.recommend.BodyProfileRepository.current(manual,photo)!!
+        assertEquals(dimensions[BodyDimension.LEG_LENGTH]!!.cm,avatar.legCm)
+        assertEquals(manual.legLengthCm!!.toDouble()/manual.heightCm,outfit.legToHeightRatio,.00001)
+        assertEquals(manual.torsoLengthCm!!.toDouble()/manual.legLengthCm,outfit.torsoToLegRatio,.00001)
+    }
+    @Test fun missingOrMismatchedCurrentLengthsCannotBorrowOlderPhotoRatios() {
+        val incomplete=manual.copy(heightCm=180f,legLengthCm=null,torsoLengthCm=null)
+        assertNull(com.jeiu.fashionproject.recommend.BodyProfileRepository.current(incomplete,photo))
+        assertNull(com.jeiu.fashionproject.recommend.BodyProfileRepository.current(null,null))
+    }
 }

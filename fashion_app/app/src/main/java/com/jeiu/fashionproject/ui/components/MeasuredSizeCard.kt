@@ -40,7 +40,7 @@ internal fun MeasuredSizeComparison(profile:BodyDimensionProfile,rows:List<Garme
     val context=LocalContext.current
     var preference by remember { mutableStateOf(FitPreference.REGULAR) }
     var saveFeedback by remember { mutableStateOf(false) }
-    var feedbackMessage by remember { mutableStateOf<String?>(null) }
+    var feedbackMessage by remember(profile,rows,preference) { mutableStateOf<String?>(null) }
     val result=remember(profile,rows,preference){MeasuredSizeRecommendation.suggest(profile,rows,preference)}
     Column(Modifier.fillMaxWidth().testTag("measuredSizeComparison"),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text("실측표와 몸 치수 비교",style=MaterialTheme.typography.titleMedium)
