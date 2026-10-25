@@ -2,11 +2,10 @@
 import base64
 import binascii
 import hashlib
-import re
 import uuid
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, undefer
@@ -23,35 +22,9 @@ from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, Wardrob
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
     TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
     OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats)
+from auth_api import current_user
 
 app = APIRouter()
-
-def current_user(
-    db: Session = Depends(get_db),
-    x_device_id: Optional[str] = Header(
-        None, description="앱이 생성한 기기 번호. DB API에 필수이며 로그인 인증을 대신하지는 않음"),
-) -> User:
-    """
-    로그인 기능이 생기기 전까지 사용자 구분 방법:
-    - 앱은 폰마다 만든 기기 번호를 X-Device-Id 헤더로 보낸다 → 폰마다 따로 저장 (팀원끼리 덮어쓰지 않음)
-    - 헤더가 없으면 공유 데모 계정 대신 요청을 거절한다.
-    로그인을 붙이면 이 함수만 '토큰 → 사용자' 로 바꾸면 된다.
-    """
-    if not x_device_id or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", x_device_id):
-        raise HTTPException(400, "X-Device-Id is required")
-    cond = User.device_id == x_device_id
-    user = db.scalar(select(User).where(cond))
-    if user is None:
-        user = User(device_id=x_device_id, nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
-        db.add(user)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            user = db.scalar(select(User).where(cond))
-            if user is None:
-                raise
-    return user
 
 
 def to_dt(ms: Optional[int]) -> Optional[datetime]:

@@ -51,6 +51,8 @@ capston-second/
    UNSPLASH_ACCESS_KEY=... # 사진 검색(선택)
    ```
    앱에는 이 키를 넣지 않습니다. 해당 기능은 실행 중인 백엔드를 통해 호출합니다.
+   개인 DB API는 새 접속 토큰을 요구합니다. 운영 DB 마이그레이션과 기존 백업 코드 이전 절차는
+   [`backend/AUTH_MIGRATION.md`](backend/AUTH_MIGRATION.md)를 확인하세요. 승인 전 운영 DB에 적용하지 마세요.
 3. **앱**: Android Studio로 `fashion_app` 폴더를 열어 실행
    AI 가상피팅 키는 앱에 넣지 않습니다. 서버에서만 `FASHN_API_KEY`를 설정하고,
    앱의 AI 피팅 화면에서 HTTPS 서버 주소와 사용자별 접속 토큰을 입력합니다.

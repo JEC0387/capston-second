@@ -77,8 +77,9 @@ class BackupAndRecommendationLogTest {
 
     @Test
     fun normalize_code() {
-        assertEquals("3f2a9c1e-1111-2222-3333-444455556666",
-            BackupRestore.normalize(" 3F2A9C1E-1111-2222-3333-444455556666 \n"))
+        val recovery = "AbCdefghijklmnopqrstuvwxyz0123456789_-AbCdef"
+        assertEquals(recovery, BackupRestore.normalize(" $recovery \n"))
+        assertNull(BackupRestore.normalize("3F2A9C1E-1111-2222-3333-444455556666"))
         assertNull(BackupRestore.normalize("short"))
         assertNull(BackupRestore.normalize("bad/code/with/slash"))
     }

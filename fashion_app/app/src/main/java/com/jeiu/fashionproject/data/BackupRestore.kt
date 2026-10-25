@@ -13,7 +13,7 @@ import java.io.File
 /**
  * 백업 코드로 다른 폰(또는 앱을 다시 설치한 폰)의 기록을 서버 DB 에서 가져온다.
  *
- * 백업 코드 = 예전 폰의 기기 번호. 서버는 기기 번호로 사용자를 구분하므로, 이 폰이 그 번호를 이어서 쓰게 된다.
+ * New recovery codes rotate the account access token. Old device IDs cannot read server data.
  * 가져오는 것: 옷장(+ 사진 백업 · 가격 · 브랜드) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 ·
  * 스타일 점수 · 저장한 코디 · 코디 일정.
  * 가져오지 않는 것: 체형 사진(원래 서버에 없음), 체형 동의 상태(이 폰에서 다시 동의), 알림 설정.
@@ -31,10 +31,10 @@ object BackupRestore {
         object NotFound : Result()
     }
 
-    /** 사용자가 입력한 코드 다듬기 (공백 제거 · 소문자). 형식이 틀리면 null */
+    /** Case-sensitive, high-entropy recovery code. Old UUID backup codes are intentionally rejected. */
     fun normalize(input: String): String? {
-        val code = input.filterNot { it.isWhitespace() }.lowercase()
-        return code.takeIf { Regex("[a-z0-9-]{8,64}").matches(it) }
+        val code = input.trim()
+        return code.takeIf { Regex("[A-Za-z0-9_-]{40,100}").matches(it) }
     }
 
     data class RemoteClothing(val item: WardrobeItem, val hasPhoto: Boolean)
@@ -181,24 +181,37 @@ object BackupRestore {
 
     // ── 복원 ──────────────────────────────────────────
 
-    suspend fun restore(context: Context, input: String): Result = withContext(Dispatchers.IO) {
-        val code = normalize(input) ?: return@withContext Result.InvalidCode
-        if (code == DbSync.backupCode?.lowercase()) return@withContext Result.SameCode
+    suspend fun restore(context: Context, input: String): Result {
+        val code = normalize(input) ?: return Result.InvalidCode
+        if (code == DbSync.backupCode) return Result.SameCode
+
+        if (!DataAuth.recover(code)) return Result.Offline
+        return restoreAuthenticated(context)
+    }
+
+    /** Called after an operator-approved legacy claim; sync remains paused until all writes finish. */
+    suspend fun restoreClaimed(context: Context): Result =
+        if (DataAuth.isRestorePending) restoreAuthenticated(context) else Result.Offline
+
+    private suspend fun restoreAuthenticated(context: Context): Result = withContext(Dispatchers.IO) {
         val health = BackendApi.getJson("/api/health/database") ?: return@withContext Result.Offline
         if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withContext Result.Offline
 
-        val wardrobe = BackendApi.getJson("/api/wardrobe", code) ?: return@withContext Result.Offline
-        val wear = BackendApi.getJson("/api/wear-logs", code) ?: return@withContext Result.Offline
-        val profile = BackendApi.getJson("/api/profile", code)?.let { runCatching { parseProfile(it) }.getOrNull() }
-        val interests = BackendApi.getJson("/api/product-interests", code)?.let { runCatching { parseInterests(it) }.getOrNull() }
-        val taste = BackendApi.getJson("/api/taste-events", code)?.let { runCatching { parseTasteEvents(it) }.getOrNull() }
-        val pref = BackendApi.getJson("/api/style-preference", code)?.let { runCatching { parseStylePreference(it) }.getOrNull() }
-        val savedOutfits = BackendApi.getJson("/api/saved-outfits", code)?.let { runCatching { parseSavedOutfits(it) }.getOrNull() }
-        val plans = BackendApi.getJson("/api/outfit-plans", code)?.let { runCatching { parsePlans(it) }.getOrNull() }
+        val wardrobe = BackendApi.getJson("/api/wardrobe") ?: return@withContext Result.Offline
+        val wear = BackendApi.getJson("/api/wear-logs") ?: return@withContext Result.Offline
+        val profileBody = BackendApi.getJson("/api/profile") ?: return@withContext Result.Offline
+        val interestsBody = BackendApi.getJson("/api/product-interests") ?: return@withContext Result.Offline
+        val tasteBody = BackendApi.getJson("/api/taste-events") ?: return@withContext Result.Offline
+        val prefBody = BackendApi.getJson("/api/style-preference") ?: return@withContext Result.Offline
+        val savedBody = BackendApi.getJson("/api/saved-outfits") ?: return@withContext Result.Offline
+        val plansBody = BackendApi.getJson("/api/outfit-plans") ?: return@withContext Result.Offline
 
         val snapshot = runCatching {
-            Snapshot(parseWardrobe(wardrobe), parseWearLogs(wear), profile?.first.orEmpty(), profile?.second,
-                interests.orEmpty(), taste.orEmpty(), pref?.first, pref?.second ?: 0, savedOutfits.orEmpty(), plans.orEmpty())
+            val profile = parseProfile(profileBody)
+            val pref = parseStylePreference(prefBody)
+            Snapshot(parseWardrobe(wardrobe), parseWearLogs(wear), profile.first, profile.second,
+                parseInterests(interestsBody), parseTasteEvents(tasteBody), pref.first, pref.second,
+                parseSavedOutfits(savedBody), parsePlans(plansBody))
         }.getOrNull() ?: return@withContext Result.Offline
         if (snapshot.isEmpty) return@withContext Result.NotFound
 
@@ -207,22 +220,20 @@ object BackupRestore {
         val files = mutableMapOf<String, File>()
         val uris = mutableMapOf<String, String>()
         val stamp = System.currentTimeMillis()
-        val items = snapshot.clothes.map { rc ->
-            if (!rc.hasPhoto) return@map withPhoto(rc.item, null)
-            val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}", code)
-            val file = got?.let { (bytes, mime) ->
-                runCatching {
-                    val safeId = rc.item.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-                    File(dir, "restored_${safeId}_$stamp.${PhotoBackup.extension(mime)}").apply { writeBytes(bytes) }
-                }.getOrNull()
-            }
-            if (file == null) withPhoto(rc.item, null)
-            else {
-                val uri = Uri.fromFile(file).toString()
-                files[rc.item.id] = file
-                uris[rc.item.id] = uri
-                withPhoto(rc.item, uri)
-            }
+        val items = mutableListOf<WardrobeItem>()
+        for (rc in snapshot.clothes) {
+            if (!rc.hasPhoto) { items += withPhoto(rc.item, null); continue }
+            val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}")
+                ?: return@withContext Result.Offline
+            val file = runCatching {
+                val safeId = rc.item.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                File(dir, "restored_${safeId}_$stamp.${PhotoBackup.extension(got.second)}")
+                    .apply { writeBytes(got.first) }
+            }.getOrNull() ?: return@withContext Result.Offline
+            val uri = Uri.fromFile(file).toString()
+            files[rc.item.id] = file
+            uris[rc.item.id] = uri
+            items += withPhoto(rc.item, uri)
         }
 
         // 이 폰 저장소를 바꿔 쓰기 (앱을 다시 시작하면 불러옴)
@@ -237,7 +248,7 @@ object BackupRestore {
         SavedOutfitStore.writeForRestore(context, snapshot.savedOutfits)
         OutfitPlanStore.writeForRestore(context, snapshot.plans)
         RecommendationLog.clearForRestore(context)
-        DbSync.adoptForRestore(code, files, uris)
+        DbSync.adoptForRestore(files, uris)
 
         Result.Done(items.size, files.size, snapshot.wearLogs.size, snapshot.interests.size, snapshot.tasteEvents.size)
     }

@@ -14,6 +14,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.DbSync
+import com.jeiu.fashionproject.data.DataAuth
 import org.json.JSONObject
 import com.jeiu.fashionproject.data.BackendApi
 import com.jeiu.fashionproject.ui.theme.*
@@ -30,6 +31,7 @@ private val Online = Color(0xFF4CAF50)
 fun ServerStatusBadge(modifier: Modifier = Modifier) {
     // null = 확인 중
     val pending by DbSync.pendingCount.collectAsState()
+    val authState by DataAuth.state.collectAsState()
     var online by remember { mutableStateOf<Boolean?>(null) }
     var checkKey by remember { mutableIntStateOf(0) }
 
@@ -43,7 +45,9 @@ fun ServerStatusBadge(modifier: Modifier = Modifier) {
 
     val (dot, label) = when (online) {
         null -> MediumGray to "서버 확인 중…"
-        true -> Online to "DB 연결 가능 · 동기화 대기 ${pending}건"
+        true -> if (!DbSync.isEnabled) MediumGray to "DB 연결 · 서버 백업 꺼짐"
+            else if (authState == "ready") Online to "DB 연결 가능 · 동기화 대기 ${pending}건"
+            else MediumGray to "DB 연결 · 백업 인증/이전 필요 · 대기 ${pending}건"
         false -> MediumGray to "DB 연결 안 됨 · 로컬 사용 가능 · 대기 ${pending}건"
     }
     Row(

@@ -11,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db
+from tests.support_auth import AuthHeaders
 from db_models import OutfitPlan, SavedOutfit
 
 
@@ -31,6 +32,7 @@ class OutfitBookApiTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
+        self.auth = AuthHeaders(self.client)
 
     def tearDown(self):
         self.client.close()
@@ -38,10 +40,10 @@ class OutfitBookApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def post(self, path, payload, device='device-a'):
-        return self.client.post(path, json=payload, headers={'X-Device-Id': device})
+        return self.client.post(path, json=payload, headers=self.auth(device))
 
     def get(self, path, device='device-a'):
-        return self.client.get(path, headers={'X-Device-Id': device})
+        return self.client.get(path, headers=self.auth(device))
 
     def count(self, model):
         with self.factory() as db:
@@ -104,7 +106,7 @@ class OutfitBookApiTest(unittest.TestCase):
         self.post('/api/saved-outfits/sync', {'outfits': [{'itemIds': ['a']}]})
         self.post('/api/outfit-plans/sync', {'plans': [{'date': '2026-10-20', 'itemIds': ['a']}]})
         self.post('/api/saved-outfits/sync', {'outfits': [{'itemIds': ['a']}]}, device='device-b')
-        d = self.client.delete('/api/me', headers={'X-Device-Id': 'device-a'}).json()['deleted']
+        d = self.client.delete('/api/me', headers=self.auth('device-a')).json()['deleted']
         self.assertEqual((1, 1), (d['saved_outfits'], d['outfit_plans']))
         self.assertEqual(1, self.count(SavedOutfit))
         self.assertEqual(0, self.count(OutfitPlan))

@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db
 from db_models import ClothingPhoto, RecommendationLog, User
+from tests.support_auth import AuthHeaders
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 32
 JPEG = b'\xff\xd8\xff\xe0' + b'\x00' * 32
@@ -39,6 +40,7 @@ class BackupApiTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
+        self.auth = AuthHeaders(self.client)
 
     def tearDown(self):
         self.client.close()
@@ -46,10 +48,10 @@ class BackupApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def post(self, path, payload, device='device-a'):
-        return self.client.post(path, json=payload, headers={'X-Device-Id': device})
+        return self.client.post(path, json=payload, headers=self.auth(device))
 
     def get(self, path, device='device-a'):
-        return self.client.get(path, headers={'X-Device-Id': device})
+        return self.client.get(path, headers=self.auth(device))
 
     def count(self, model):
         with self.factory() as db:
@@ -179,7 +181,7 @@ class BackupApiTest(unittest.TestCase):
                       device=device)
             self.post('/api/recommendations/sync', {'logs': [self.rec('2026-10-18', 'home', ['c1'])]}, device=device)
             self.post('/api/product-interests/sync', {'productIds': ['https://example.com/p']}, device=device)
-        r = self.client.delete('/api/me', headers={'X-Device-Id': 'device-a'})
+        r = self.client.delete('/api/me', headers=self.auth('device-a'))
         self.assertEqual(200, r.status_code, r.text)
         d = r.json()['deleted']
         self.assertEqual(1, d['clothes'])
@@ -188,8 +190,8 @@ class BackupApiTest(unittest.TestCase):
         self.assertEqual(1, self.count(ClothingPhoto))
         self.assertEqual(1, self.count(RecommendationLog))
         with self.factory() as db:
-            self.assertEqual(['device-b'], list(db.scalars(select(User.device_id))))
-        self.assertEqual(0, self.get('/api/wardrobe').json()['totalCount'])        # 새 빈 사용자
+            self.assertEqual(1, db.query(User).count())
+        self.assertEqual(401, self.get('/api/wardrobe').status_code)  # deleted token cannot recreate the account
         self.assertEqual(1, self.get('/api/wardrobe', device='device-b').json()['totalCount'])
 
 

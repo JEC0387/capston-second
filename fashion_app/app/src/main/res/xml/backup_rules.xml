@@ -9,6 +9,7 @@
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="db_sync.xml" />
+    <exclude domain="sharedpref" path="data_auth.xml" />
     <exclude domain="sharedpref" path="privacy_consent.xml" />
     <exclude domain="sharedpref" path="manual_body_measurements.xml" />
 </full-backup-content>

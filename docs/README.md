@@ -17,6 +17,8 @@
 | [AI_TRYON_STATUS.md](AI_TRYON_STATUS.md) | 이전 클라이언트 직접 호출 방식의 기록. 현재 방식은 [서버 설정](../backend/AI_TRYON_SETUP.md) 참고 |
 | [PHASE1_REPORT.md](PHASE1_REPORT.md) | 최신 ZIP과 보안 브랜치 비교, P0~P2 통합·검증 결과 |
 
+개인 DB API 인증 전환과 레거시 데이터 이전 절차: [backend/AUTH_MIGRATION.md](../backend/AUTH_MIGRATION.md).
+
 ## 체형 분석 · 실기기 수정 기록 (이지민, 10/18)
 | 문서 | 내용 |
 |---|---|

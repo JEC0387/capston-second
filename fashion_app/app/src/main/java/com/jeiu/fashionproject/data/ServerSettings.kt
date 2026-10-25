@@ -37,12 +37,14 @@ object ServerSettings {
     fun save(context: Context, url: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, url).apply()
         BackendApi.BASE_URL = url
+        DataAuth.onServerChanged()
         DbSync.retry()   // 새 주소로 밀린 기록을 바로 보내 본다
     }
 
     fun reset(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
         BackendApi.BASE_URL = defaultUrl
+        DataAuth.onServerChanged()
         DbSync.retry()
     }
 

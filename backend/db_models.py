@@ -54,6 +54,29 @@ class User(Base):
     clothes: Mapped[list["Clothing"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
+class AuthCredential(Base):
+    """One active device per account; only hashes of high-entropy secrets are stored."""
+    __tablename__ = "auth_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    recovery_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    data_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LegacyClaimTicket(Base):
+    """Operator-issued, one-use proof after out-of-band ownership verification."""
+    __tablename__ = "legacy_claim_tickets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    ticket_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
 class Clothing(Base):
     __tablename__ = "clothes"
     __table_args__ = (UniqueConstraint("user_id", "client_id", name="uq_clothes_user_client"),)

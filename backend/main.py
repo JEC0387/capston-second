@@ -36,6 +36,7 @@ import io
 from contextlib import asynccontextmanager
 from database import initialize_database, database_status, optional_db
 from db_api import app as db_router, catalog_rows
+from auth_api import router as auth_router
 from tryon_proxy import create_router as tryon_router, close_service as close_tryon
 
 import cv2
@@ -408,6 +409,7 @@ def root():
     return {"service": "FashionProject API", "docs": "/docs"}
 
 
+app.include_router(auth_router)
 app.include_router(db_router)
 app.include_router(tryon_router())
 

@@ -124,7 +124,10 @@ def database_status():
 _M002 = '002_user_data_tables.sql'
 _M003 = '003_backup_and_recommendation_logs.sql'
 _M004 = '004_outfit_book_and_prices.sql'
+_M005 = '005_auth_credentials.sql'
 _SCHEMA_CHECKS = [
+    ('auth_credentials', 'SELECT token_hash FROM auth_credentials LIMIT 0', _M005),
+    ('legacy_claim_tickets', 'SELECT ticket_hash FROM legacy_claim_tickets LIMIT 0', _M005),
     ('users.gender', 'SELECT gender FROM users LIMIT 0', _M002),
     ('products.product_key', 'SELECT product_key FROM products LIMIT 0', _M002),
     ('product_interests', 'SELECT product_key FROM product_interests LIMIT 0', _M002),

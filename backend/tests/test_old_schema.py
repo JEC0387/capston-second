@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db, reset_schema_cache
+from tests.support_auth import AuthHeaders
 
 NEW_TABLES = ('clothing_photos', 'recommendation_logs', 'saved_outfits', 'outfit_plans', 'product_interests', 'taste_events')
 NEW_COLUMNS = (('clothes', 'brand'), ('clothes', 'price'), ('users', 'gender'))
@@ -33,7 +34,7 @@ class OldSchemaTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
-        self.h = {'X-Device-Id': 'old-db'}
+        self.h = AuthHeaders(self.client)('old-db')
 
     def tearDown(self):
         self.client.close()

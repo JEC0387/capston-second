@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db
+from tests.support_auth import AuthHeaders
 
 
 class OfflineStartupTest(unittest.TestCase):
@@ -40,7 +41,8 @@ class DbApiTest(unittest.TestCase):
                 yield session
         main.app.dependency_overrides[get_db]=test_db
         self.client=TestClient(main.app)
-        self.headers={'X-Device-Id':'test-device-a'}
+        self.auth=AuthHeaders(self.client)
+        self.headers=self.auth('test-device-a')
 
     def tearDown(self):
         self.client.close()
@@ -68,7 +70,7 @@ class DbApiTest(unittest.TestCase):
         self.assertEqual(1,self.get('/api/body-measurements').json()['totalCount'])
         self.assertEqual(50,a.json()['torsoCm'])
         self.assertFalse(a.json()['isSample'])
-        other=self.client.get('/api/body-measurements',headers={'X-Device-Id':'test-device-b'})
+        other=self.client.get('/api/body-measurements',headers=self.auth('test-device-b'))
         self.assertEqual(0,other.json()['totalCount'])
         self.assertEqual(204,self.client.delete('/api/body-measurements',headers=self.headers).status_code)
         self.assertEqual(0,self.get('/api/body-measurements').json()['totalCount'])
@@ -97,7 +99,7 @@ class DbApiTest(unittest.TestCase):
         row=self.get('/api/wardrobe').json()['items'][0]
         self.assertEqual('수정 셔츠',row['name']); self.assertEqual('local-id',row['clientId'])
         self.assertTrue(row['isCutout'])
-        self.assertEqual(0,self.client.get('/api/wardrobe',headers={'X-Device-Id':'other'}).json()['totalCount'])
+        self.assertEqual(0,self.client.get('/api/wardrobe',headers=self.auth('other')).json()['totalCount'])
         self.post('/api/wardrobe/sync',{'items':[]})
         self.assertEqual(0,self.get('/api/wardrobe').json()['totalCount'])
 
@@ -115,7 +117,7 @@ class DbApiTest(unittest.TestCase):
         self.assertEqual(0,self.get('/api/size-charts').json()['totalCount'])
 
     def test_identity_required(self):
-        self.assertEqual(400,self.client.get('/api/profile').status_code)
+        self.assertEqual(401,self.client.get('/api/profile').status_code)
 
 
 if __name__=='__main__': unittest.main()
