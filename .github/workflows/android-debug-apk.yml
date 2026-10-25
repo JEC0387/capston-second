@@ -130,6 +130,11 @@ jobs:
         working-directory: .
         run: python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk fashion_app/build/validation-apk
 
+      - name: Preserve complete primary regression results before Preview replaces test outputs
+        run: |
+          cp -R app/build/test-results/testDebugUnitTest build/primary-test-results
+          cp -R app/build/reports/tests/testDebugUnitTest build/primary-test-reports
+
       - name: Build isolated Preview and test personal-data isolation
         run: |
           bash gradlew :app:assembleDebug :app:testDebugUnitTest -PfashionPreview=true --tests '*PreviewIsolationTest' --tests '*AppBuildInfoTest' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
@@ -188,6 +193,8 @@ jobs:
         with:
           name: test-and-lint-reports
           path: |
+            fashion_app/build/primary-test-results/
+            fashion_app/build/primary-test-reports/
             fashion_app/app/build/test-results/testDebugUnitTest/
             fashion_app/app/build/reports/tests/
             fashion_app/app/build/reports/lint-results-debug.*
