@@ -14,6 +14,9 @@ import java.io.File
  */
 internal object RestoreJournal {
     private fun journal(context: Context) = AtomicFile(File(context.noBackupFilesDir, "restore-journal.json"))
+    fun hasPending(context: Context): Boolean = journal(context).let {
+        it.baseFile.exists() || File(it.baseFile.path + ".bak").exists()
+    }
 
     private fun encode(values: Map<String, *>): JSONObject = JSONObject().apply {
         values.forEach { (key, value) ->
@@ -53,7 +56,7 @@ internal object RestoreJournal {
 
     /** Writers only touch staging preferences; the journal includes all changed stores. */
     @Synchronized fun stage(context: Context, write: (Context) -> Unit) {
-        check(!journal(context).baseFile.exists()) { "Restore restart required" }
+        check(!hasPending(context)) { "Restore restart required" }
         val names = linkedSetOf<String>()
         val old = JSONObject()
         val staging = object : ContextWrapper(context) {

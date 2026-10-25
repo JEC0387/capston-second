@@ -15,6 +15,8 @@
 |---|---|
 | [BODY_DATA_PRIVACY.md](BODY_DATA_PRIVACY.md) | 체형 사진 · 측정값 처리, 저장 동의, 서버 기록 삭제, 백업 코드 |
 | [AI_TRYON_STATUS.md](AI_TRYON_STATUS.md) | 이전 클라이언트 직접 호출 방식의 기록. 현재 방식은 [서버 설정](../backend/AI_TRYON_SETUP.md) 참고 |
+| [P0_AUTH_HANDOFF_20261025.md](P0_AUTH_HANDOFF_20261025.md) | P0 인증·개인정보 보호 후속 구현과 최신 검증 결과 |
+| [P1_CONNECTION_HANDOFF_20261025.md](P1_CONNECTION_HANDOFF_20261025.md) | 자동 서버 연결·DB 동기화·장애 복구와 출시 전 확인 |
 | [PHASE1_REPORT.md](PHASE1_REPORT.md) | 최신 ZIP과 보안 브랜치 비교, P0~P2 통합·검증 결과 |
 
 개인 DB API 인증 전환과 레거시 데이터 이전 절차: [backend/AUTH_MIGRATION.md](../backend/AUTH_MIGRATION.md).

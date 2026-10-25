@@ -82,9 +82,9 @@ object DbSync {
         if (!isEnabled) return@withLock
         val batch = synchronized(queueLock) { pending.toMap() }
         if (batch.isEmpty()) return@withLock
-        if (!DataAuth.ensureReady() || !DataAuth.canSync) return@withLock
         val health = BackendApi.getJson("/api/health/database") ?: return@withLock
-        if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withLock
+        if (!runCatching { JSONObject(health).let { it.optBoolean("syncReady") && it.optInt("authProtocol") == 2 } }.getOrDefault(false)) return@withLock
+        if (!DataAuth.ensureReady() || !DataAuth.canSync) return@withLock
         val account = DataAuth.accessToken
         for ((key, request) in batch) {
             if (!DataAuth.canSync || DataAuth.accessToken != account) return@withLock

@@ -102,7 +102,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                             val claimed = DataAuth.claimLegacy(claimTicket.trim())
                             val result = if (claimed) BackupRestore.restoreClaimed(context.applicationContext) else null
                             busy = false
-                            if (result is BackupRestore.Result.Done) BackupRestore.restartApp(context.applicationContext)
+                            if (result is BackupRestore.Result.Done || result is BackupRestore.Result.RestartRequired) BackupRestore.restartApp(context.applicationContext)
                             else message = if (claimed) "승인은 완료됐지만 복원하지 못했어요. 아래의 '복원 이어하기'로 다시 시도하세요."
                                 else "승인 코드를 확인하거나 운영자에게 문의해 주세요."
                         }
@@ -117,7 +117,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                         scope.launch {
                             val result = BackupRestore.restoreClaimed(context.applicationContext)
                             busy = false
-                            if (result is BackupRestore.Result.Done) BackupRestore.restartApp(context.applicationContext)
+                            if (result is BackupRestore.Result.Done || result is BackupRestore.Result.RestartRequired) BackupRestore.restartApp(context.applicationContext)
                             else message = "복원을 마치지 못했어요. 서버 연결과 기록을 확인한 뒤 다시 시도하세요."
                         }
                     }, enabled = !busy) { Text("복원 이어하기") }
@@ -191,10 +191,11 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                                     Toast.LENGTH_LONG).show()
                                 BackupRestore.restartApp(context.applicationContext)
                             }
+                            BackupRestore.Result.RestartRequired -> BackupRestore.restartApp(context.applicationContext)
                             BackupRestore.Result.InvalidCode -> message = "새 복구 코드 형식이 맞지 않아요. 예전 기기 번호는 운영자 확인 후 이전해야 해요."
                             BackupRestore.Result.SameCode -> message = "이 폰의 백업 코드예요. 다른 폰의 코드를 넣어 주세요."
                             BackupRestore.Result.NotFound -> message = "이 코드로 저장된 기록이 없어요. 코드를 다시 확인해 주세요."
-                            BackupRestore.Result.Offline -> message = "서버 연결 또는 복구 코드를 확인해 주세요. 폰의 기존 기록은 그대로예요."
+                            BackupRestore.Result.Offline -> message = "연결·복구 코드·저장 공간을 확인해 주세요. 기록은 보존했으며, 중단된 복원은 이어서 진행할 수 있어요."
                         }
                     }
                 }) { Text("가져오기", color = Camel) }

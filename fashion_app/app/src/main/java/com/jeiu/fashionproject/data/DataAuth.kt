@@ -26,6 +26,8 @@ object DataAuth {
     private lateinit var vault: CredentialVault
     @Volatile private var storageLocked = false
     @Volatile private var recovery: String? = null
+    @Volatile private var requestedRecovery: String? = null
+    @Volatile private var requestedRecoveryServer: String? = null
     @Volatile private var binding: ServerBoundToken? = null
     private val token: String? get() = binding?.token
     private val origin: String? get() = binding?.server
@@ -43,15 +45,18 @@ object DataAuth {
     }
     val recoveryCode: String? get() = recovery
     val needsLegacyDecision: Boolean get() = legacyPending && !enabled
-    val canSync: Boolean get() = !storageLocked && accessToken != null && enabled && !restorePending
+    val canSync: Boolean get() = !storageLocked && accessToken != null && enabled && !restorePending &&
+        (!::context.isInitialized || !RestoreJournal.hasPending(context))
     val isRestorePending: Boolean get() = restorePending
     val legacyDeviceId: String? get() = if (::context.isInitialized)
         context.getSharedPreferences("db_sync", Context.MODE_PRIVATE).getString("device_id", null) else null
 
-    fun init(appContext: Context) {
+    fun init(appContext: Context) = initialize(appContext, CredentialVault(appContext))
+
+    internal fun initialize(appContext: Context, storage: CredentialVault) {
         if (::context.isInitialized) return
         context = appContext.applicationContext
-        vault = CredentialVault(context)
+        vault = storage
         val saved = runCatching { vault.read() }.getOrElse {
             storageLocked = true
             _state.value = "secure_storage_unavailable"
@@ -59,6 +64,8 @@ object DataAuth {
         }
         val access = saved.optString("token").takeIf { it.isNotEmpty() }
         recovery = saved.optString("recovery").takeIf { it.isNotEmpty() }
+        requestedRecovery = saved.optString("requested_recovery").takeIf { it.isNotEmpty() }
+        requestedRecoveryServer = saved.optString("requested_recovery_server").takeIf { it.isNotEmpty() }
         val savedOrigin = saved.optString("origin")
         if (access != null && savedOrigin.isBlank()) {
             storageLocked = true
@@ -78,11 +85,14 @@ object DataAuth {
         }
     }
 
-    private fun persist(access: String?, recovery: String?, dataEnabled: Boolean,
-                        pending: Boolean, oldAccount: Boolean, server: String = origin ?: BackendApi.BASE_URL): Boolean {
+    @Synchronized private fun persist(access: String?, recovery: String?, dataEnabled: Boolean,
+                        pending: Boolean, oldAccount: Boolean, server: String = origin ?: BackendApi.BASE_URL,
+                        requestedRecovery: String? = this.requestedRecovery,
+                        requestedRecoveryServer: String? = this.requestedRecoveryServer): Boolean {
         val saved = JSONObject().put("enabled", dataEnabled).put("restore_pending", pending)
             .put("legacy_pending", oldAccount).put("token", access).put("recovery", recovery)
-            .put("origin", if (access == null) null else server)
+            .put("origin", if (access == null) null else server).put("requested_recovery", requestedRecovery)
+            .put("requested_recovery_server", if (requestedRecovery == null) null else requestedRecoveryServer)
         if (!runCatching { vault.write(saved) }.getOrDefault(false)) {
             storageLocked = true
             _state.value = "secure_storage_unavailable"
@@ -90,6 +100,8 @@ object DataAuth {
         }
         storageLocked = false
         this.recovery = recovery
+        this.requestedRecovery = requestedRecovery
+        this.requestedRecoveryServer = if (requestedRecovery == null) null else requestedRecoveryServer
         restorePending = pending
         legacyPending = oldAccount
         binding = access?.let { ServerBoundToken(it, server) }
@@ -106,13 +118,16 @@ object DataAuth {
     private data class Reply(val code: Int, val body: String, val server: String)
 
     /** Credentials are transmitted only to HTTPS endpoints; redirects are never followed. */
-    private suspend fun call(path: String, body: JSONObject, bearer: String? = null, method: String = "POST"): Reply? = withContext(Dispatchers.IO) {
+    private suspend fun call(path: String, body: JSONObject, bearer: String? = null, method: String = "POST", server: String = BackendApi.BASE_URL): Reply? = withContext(Dispatchers.IO) {
         runCatching {
-            val base = BackendApi.BASE_URL
+            val base = server
             val uri = URI(base)
             if (uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null ||
                 uri.rawQuery != null || uri.rawFragment != null) return@runCatching null
-            val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
+            val destination = URL(base + path)
+            if (bearer != null && (base != BackendApi.BASE_URL || binding?.forDestination(base, destination) != bearer))
+                return@runCatching null
+            val connection = (destination.openConnection() as HttpURLConnection).apply {
                 requestMethod = method; doOutput = method == "POST"; instanceFollowRedirects = false
                 connectTimeout = 5_000; readTimeout = 10_000
                 setRequestProperty("Content-Type", "application/json")
@@ -149,28 +164,46 @@ object DataAuth {
         canSync
     }
 
+    /** Startup/reconnect handshake; a cached token alone does not establish server access. */
+    suspend fun validateSession(): Boolean {
+        if (!ensureReady()) return false
+        return lock.withLock {
+            val access = accessToken ?: return@withLock false
+            val reply = call("/api/auth/status", JSONObject(), access, "GET")
+            if (reply?.server != BackendApi.BASE_URL) return@withLock false
+            if (reply.code == 401) { markUnauthorized(access); return@withLock false }
+            if (reply.code != 200) return@withLock false
+            val dataEnabled = runCatching { JSONObject(reply.body).getBoolean("dataEnabled") }.getOrDefault(false)
+            if (!dataEnabled) return@withLock false
+            canSync
+        }
+    }
+
     /** Existing installations explicitly choose to upload local data into a fresh, empty account. */
     suspend fun startFresh(): Boolean = DbSync.exclusiveAccountChange {
+        if (::context.isInitialized && RestoreJournal.hasPending(context)) return@exclusiveAccountChange false
         ensureReady()
         lock.withLock {
             val access = accessToken ?: return@withLock false
             val reply = call("/api/auth/start-fresh", JSONObject(), access)
             if (reply?.code != 200 || reply.server != BackendApi.BASE_URL) return@withLock false
-            persist(access, recoveryCode, true, false, false)
+            persist(access, recoveryCode, true, false, false, requestedRecovery = null)
         }
     }
 
     /** A recovery code rotates the server access token and pauses sync until restore completes. */
     suspend fun recover(code: String): Boolean = lock.withLock {
         if (!::context.isInitialized || !Regex("[A-Za-z0-9_-]{40,100}").matches(code)) return@withLock false
-        // Persist the pause before token rotation, including lost responses/process death.
-        if (!persist(token, recoveryCode, enabled, true, legacyPending)) return@withLock false
-        val reply = call("/api/auth/recover", JSONObject().put("recoveryCode", code))
+        // Persist the intended account/server before rotation, including lost responses/process death.
+        val destination = BackendApi.BASE_URL
+        if (!persist(token, recoveryCode, enabled, true, legacyPending, requestedRecovery = code,
+                requestedRecoveryServer = destination)) return@withLock false
+        val reply = call("/api/auth/recover", JSONObject().put("recoveryCode", code), server = destination)
         if (reply?.code != 200 || reply.server != BackendApi.BASE_URL) return@withLock false
         val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return@withLock false
         val access = json.optString("accessToken")
         if (access.length < 40) return@withLock false
-        persist(access, code, json.optBoolean("dataEnabled"), true, false, reply.server)
+        persist(access, code, json.optBoolean("dataEnabled"), true, false, reply.server, requestedRecovery = null)
     }
 
     /** Only an operator-issued ticket can attach old server data; sync stays paused for restore. */
@@ -179,11 +212,20 @@ object DataAuth {
         lock.withLock {
             val access = accessToken ?: return@withLock false
             if (!legacyPending || !Regex("[A-Za-z0-9_-]{40,100}").matches(ticket)) return@withLock false
-            if (!persist(access, recoveryCode, false, true, true)) return@withLock false
+            if (!persist(access, recoveryCode, false, true, true, requestedRecovery = null)) return@withLock false
             val reply = call("/api/auth/claim-legacy", JSONObject().put("ticket", ticket), access)
             if (reply?.code != 200 || reply.server != BackendApi.BASE_URL) return@withLock false
             persist(access, recoveryCode, true, true, false)
         }
+    }
+
+    suspend fun resumePendingAuthentication(): Boolean {
+        val code = requestedRecovery
+        if (code != null && requestedRecoveryServer != BackendApi.BASE_URL) {
+            _state.value = "server_mismatch"
+            return false
+        }
+        return if (code != null) recover(code) else reconcileClaim()
     }
 
     /** Reconcile a successful server claim whose response was lost before local persistence. */
@@ -198,12 +240,12 @@ object DataAuth {
 
     fun completeRestore(): Boolean {
         val access = accessToken
-        return ::context.isInitialized && restorePending && access != null &&
-            persist(access, recoveryCode, enabled, false, false)
+        return ::context.isInitialized && enabled && access != null &&
+            persist(access, recoveryCode, enabled, false, false, requestedRecovery = null)
     }
 
-    fun markUnauthorized() {
-        if (!::context.isInitialized || accessToken == null) return
+    @Synchronized fun markUnauthorized(sentToken: String) {
+        if (!::context.isInitialized || accessToken != sentToken) return
         enabled = false
         persist(token, recoveryCode, false, restorePending, legacyPending)
         _state.value = "reauth_required"
@@ -215,6 +257,6 @@ object DataAuth {
     }
 
     fun clearAfterServerDelete() {
-        if (::context.isInitialized) persist(null, null, false, false, false)
+        if (::context.isInitialized) persist(null, null, false, false, false, requestedRecovery = null)
     }
 }

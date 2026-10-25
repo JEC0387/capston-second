@@ -43,6 +43,7 @@ class RestoreJournalTest {
             staged.getSharedPreferences("wardrobe_store", 0).edit().putString("items", "restored").commit()
             staged.getSharedPreferences("db_sync", 0).edit().putString("pending", "{}").commit()
         }
+        assertTrue(RestoreJournal.hasPending(context))
         // Simulate one file still at its old value after process death.
         wardrobe.edit().putString("items", "original-private").commit()
         assertTrue(RestoreJournal.recover(context))
@@ -52,6 +53,7 @@ class RestoreJournalTest {
         val original = context.noBackupFilesDir.listFiles()!!.single { it.name.startsWith("restore-original-") }.readText()
         assertTrue(original.contains("unsent-private-queue"))
         RestoreJournal.finish(context)
+        assertFalse(RestoreJournal.hasPending(context))
         assertFalse(RestoreJournal.recover(context))
     }
 }

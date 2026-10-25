@@ -29,6 +29,7 @@ object BackupRestore {
         object SameCode : Result()
         object Offline : Result()
         object NotFound : Result()
+        object RestartRequired : Result()
     }
 
     /** Case-sensitive, high-entropy recovery code. Old UUID backup codes are intentionally rejected. */
@@ -210,10 +211,11 @@ object BackupRestore {
     /** Called after an operator-approved legacy claim; sync remains paused until all writes finish. */
     suspend fun restoreClaimed(context: Context): Result =
         DbSync.exclusiveAccountChange {
-            if (DataAuth.isRestorePending && DataAuth.reconcileClaim()) restoreAuthenticated(context) else Result.Offline
+            if (DataAuth.isRestorePending && DataAuth.resumePendingAuthentication()) restoreAuthenticated(context) else Result.Offline
         }
 
     private suspend fun restoreAuthenticated(context: Context): Result = withContext(Dispatchers.IO) {
+        if (RestoreJournal.hasPending(context)) return@withContext Result.RestartRequired
         val health = BackendApi.getJson("/api/health/database") ?: return@withContext Result.Offline
         if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withContext Result.Offline
 

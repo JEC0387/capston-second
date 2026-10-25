@@ -118,3 +118,27 @@ fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLog
   뒤이은 코드 변경 후에는 테스트를 다시 실행한다.
 - 첫 원격 체크포인트 CI 실행: https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/40196769401
   백엔드/PostgreSQL 및 Linux·Windows Python 3.11~3.14 서버 시작은 성공. Android는 결과 확인 중이다.
+
+
+### P0/P1 후속 최종 코드 검증
+
+- P0 원격 체크포인트 `7f477d4`의 [Actions 40196769401](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/40196769401):
+  **전체 7개 job 성공**. Android APK/245개 단위 테스트/instrumented test 컴파일/Lint 성공,
+  Linux 백엔드 및 PostgreSQL 검증, Windows Python 3.11·3.12·3.13·3.14와 Linux 3.12 서버 시작 성공.
+- 이후 스냅샷/원자적 서버 바인딩/P1 및 장애 처리 변경까지 포함한 최종 로컬 검증:
+  Android **256개 / 31개 클래스, 실패 0·오류 0·건너뜀 0**, Debug APK 생성 및
+  instrumented test 코드 컴파일 성공. 기존 240개를 포함한다.
+- 최종 Linux 백엔드 **101 passed, 8 subtests passed, 7 warnings**.
+  Linux 전용 tryon 프록시 테스트를 제외하지 않았고 실제 로컬 PostgreSQL 16.2 전용 테스트 3개도
+  실행했다. 모델/유료 API 호출이나 운영 데이터 접근은 없다.
+- 추가 보완: 복구 요청 계정/서버를 암호화해 재시도, 늦은 이전 토큰 401 무시,
+  개인 API의 HTTPS/Bearer 부재 시 본문 전송 자체 차단, 저널 미완료 시 업로드·취소 차단.
+  로컬 HTTPS 모의 서버로 응답 손실/서버 변경/복구 재시도/HTTP 전송 차단을 검증했다.
+- P1 앱 시작 자동 연결/인증 확인, 네트워크 복귀와 제한된 지수 재시도, DB 스키마 준비
+  판단 및 로컬 유지 상태 표시를 구현했다. 자세한 내용은
+  [P1_CONNECTION_HANDOFF_20261025.md](P1_CONNECTION_HANDOFF_20261025.md).
+- 위 최종 코드는 별도 개발 브랜치에 저장 후 다시 GitHub Actions를 실행한다.
+  마지막 CI 실행 링크와 상태는 아래 후속 기록 또는 브랜치 Actions에서 확인한다.
+- 운영 Railway/Supabase 접속·저장 확인, 운영 SQL 적용/배포/등록 활성화, 실제 레거시 이전,
+  실기기 Keystore/강제 종료/카메라/화면 검증은 미실행이다. 자동 테스트 통과를 운영 적용이나
+  실기기 검증 완료로 해석하지 않는다. 릴리스 전에 독립적인 소유권 증빙과 프록시 구성을 검증한다.

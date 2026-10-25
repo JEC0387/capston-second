@@ -44,15 +44,16 @@ object BackendApi {
         "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup"
     ).any { path == it || path.startsWith("$it/") || path.startsWith("$it?") }
 
-    private fun HttpURLConnection.addPrivateAuthorization(path: String) {
-        if (!privatePath(path) || url.protocol != "https" ||
-            !url.toString().startsWith(BackendApi.BASE_URL + "/")) return
-        DataAuth.authorizationFor(url)?.let { setRequestProperty("Authorization", "Bearer $it") }
+    private fun HttpURLConnection.addPrivateAuthorization(path: String): String? {
+        if (!privatePath(path)) return null
+        val token = DataAuth.authorizationFor(url) ?: return null
+        setRequestProperty("Authorization", "Bearer $token")
+        return token
     }
 
-    private fun HttpURLConnection.noteUnauthorized(path: String, code: Int) {
-        if (code == 401 && privatePath(path) && url.protocol == "https" && DataAuth.accessToken != null)
-            DataAuth.markUnauthorized()
+    private fun HttpURLConnection.noteUnauthorized(path: String, code: Int, sentToken: String?) {
+        if (code == 401 && privatePath(path) && url.protocol == "https" && sentToken != null)
+            DataAuth.markUnauthorized(sentToken)
     }
 
     // ── 공용 HTTP 헬퍼 ──────────────────────────────────────────────
@@ -63,14 +64,15 @@ object BackendApi {
     suspend fun getJson(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
+            instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 10_000
-                addPrivateAuthorization(path)
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             val code = conn.responseCode
-            conn.noteUnauthorized(path, code)
+            conn.noteUnauthorized(path, code, sentToken)
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }
             conn.disconnect()
@@ -82,17 +84,18 @@ object BackendApi {
     suspend fun postJson(path: String, jsonBody: String, readTimeoutMs: Int = 5_000): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
+            instanceFollowRedirects = false
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 3_000
                 readTimeout = readTimeoutMs
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                addPrivateAuthorization(path)
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
-            conn.noteUnauthorized(path, code)
+            conn.noteUnauthorized(path, code, sentToken)
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }
             conn.disconnect()
@@ -104,15 +107,16 @@ object BackendApi {
     suspend fun getBytes(path: String): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
+            instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 15_000
-                addPrivateAuthorization(path)
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             try {
                 val code = conn.responseCode
-                conn.noteUnauthorized(path, code)
+                conn.noteUnauthorized(path, code, sentToken)
                 if (code !in 200..299) return@runCatching null
                 val type = conn.contentType?.substringBefore(';')?.trim().orEmpty()
                 val bytes = conn.inputStream.use { input ->
@@ -137,14 +141,15 @@ object BackendApi {
     suspend fun delete(path: String, readTimeoutMs: Int = 5_000): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
+            instanceFollowRedirects = false
                 requestMethod = "DELETE"
                 connectTimeout = 3_000
                 readTimeout = readTimeoutMs
-                addPrivateAuthorization(path)
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching false }
             val code = conn.responseCode
-            conn.noteUnauthorized(path, code)
+            conn.noteUnauthorized(path, code, sentToken)
             conn.disconnect()
             code in 200..299
         }.getOrDefault(false)
@@ -212,14 +217,15 @@ object BackendApi {
     ): String {
         val boundary = "----FashionBoundary${System.currentTimeMillis()}"
         val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                instanceFollowRedirects = false
+            instanceFollowRedirects = false
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 5_000
             readTimeout = readTimeoutMs
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            addPrivateAuthorization(path)
         }
+        val sentToken = conn.addPrivateAuthorization(path)
+        if (privatePath(path) && sentToken == null) { conn.disconnect(); error("보안 백업 인증이 필요합니다") }
 
         val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalStateException("이미지를 읽을 수 없습니다")

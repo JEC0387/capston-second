@@ -39,6 +39,7 @@ object ServerSettings {
         BackendApi.BASE_URL = url
         DataAuth.onServerChanged()
         DbSync.retry()   // 새 주소로 밀린 기록을 바로 보내 본다
+        ServerConnection.retry()
     }
 
     fun reset(context: Context) {
@@ -46,6 +47,7 @@ object ServerSettings {
         BackendApi.BASE_URL = defaultUrl
         DataAuth.onServerChanged()
         DbSync.retry()
+        ServerConnection.retry()
     }
 
     /**
@@ -71,7 +73,8 @@ object ServerSettings {
     }
 
     /** 연결 확인 결과 */
-    data class Check(val reachable: Boolean, val dbReady: Boolean = false, val dbStatus: String? = null, val missing: List<String> = emptyList()) {
+    data class Check(val reachable: Boolean, val dbReady: Boolean = false, val dbStatus: String? = null,
+                     val missing: List<String> = emptyList(), val syncReady: Boolean = false, val authProtocol: Int = 0) {
         val message: String get() = when {
             !reachable -> "서버에 연결되지 않아요. 같은 와이파이인지, 서버를 --host 0.0.0.0 으로 켰는지, PC 방화벽이 8000번을 막지 않는지 확인해 주세요."
             dbReady && missing.isEmpty() -> "연결됐어요. 서버와 DB 모두 준비됐어요."
@@ -89,7 +92,8 @@ object ServerSettings {
         val health = get("$url/api/health/database")?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: return@withContext Check(reachable = true, dbStatus = "unknown")
         val missing = health.optJSONArray("missing")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty()
-        Check(true, health.optBoolean("ready"), health.optString("status"), missing)
+        Check(true, health.optBoolean("ready"), health.optString("status"), missing,
+            health.optBoolean("syncReady"), health.optInt("authProtocol"))
     }
 
     private fun get(url: String): String? = runCatching {
