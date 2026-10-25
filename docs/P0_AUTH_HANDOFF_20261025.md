@@ -142,3 +142,5 @@ fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLog
 - 운영 Railway/Supabase 접속·저장 확인, 운영 SQL 적용/배포/등록 활성화, 실제 레거시 이전,
   실기기 Keystore/강제 종료/카메라/화면 검증은 미실행이다. 자동 테스트 통과를 운영 적용이나
   실기기 검증 완료로 해석하지 않는다. 릴리스 전에 독립적인 소유권 증빙과 프록시 구성을 검증한다.
+- 추가 UI 상태 보완: 서버 백업 재활성화 시 연결 재확인을 즉시 요청한다. 이 변경 후에도
+  Android 256개 테스트·APK 빌드·instrumented test 컴파일이 통과했다.

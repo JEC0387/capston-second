@@ -238,6 +238,7 @@ object DbSync {
     fun enable(appContext: Context) {
         if (!::prefs.isInitialized) init(appContext)
         prefs.edit().putBoolean(KEY_ENABLED, true).apply()
+        ServerConnection.retry()
         WardrobeStore.load(appContext); WearLogStore.load(appContext)
         TastePreferenceStore.load(appContext); ProductInterestStore.load(appContext); RecommendationLog.load(appContext)
         SavedOutfitStore.load(appContext); OutfitPlanStore.load(appContext)
