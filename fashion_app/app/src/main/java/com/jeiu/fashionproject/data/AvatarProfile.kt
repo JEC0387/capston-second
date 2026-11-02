@@ -16,11 +16,13 @@ data class AvatarProfile(
     val thigh: Float = 1f, val leg: Float = 1f,
     val chest: Float = 1f, val torso: Float = 1f,
     val source: AvatarSource = AvatarSource.BMI,
-    val applied: Map<BodyDimension, DimensionValue> = emptyMap()
+    val applied: Map<BodyDimension, DimensionValue> = emptyMap(),
+    val centimeters: AvatarCentimeters? = null
 ) {
     fun valid() = heightCm.isFinite() && heightCm in 100f..230f &&
         weightKg.isFinite() && weightKg in 25f..300f &&
         listOf(shoulder, waist, hip, thigh, leg, chest, torso).all { it.isFinite() && it in .8f..1.2f } &&
+        (centimeters==null || centimeters.heightCm==heightCm && centimeters.weightKg==weightKg && centimeters.issue()==null) &&
         (if(source == AvatarSource.BMI) applied.isEmpty() else validApplied() &&
             applied[BodyDimension.HEIGHT]?.cm == heightCm && applied.isNotEmpty() && applied.all { (key,value) ->
                 value.at > 0 && value.cm.isFinite() && value.cm > 0 &&
@@ -49,6 +51,7 @@ data class AvatarProfile(
 
     fun parameters(): AvatarParameters {
         require(valid())
+        centimeters?.let {return it.parameters()}
         if(source != AvatarSource.BMI) {
             val base=AvatarParameters.from(BodyDimensionProfile(applied,emptyList(),emptyList()))
             return base.copy(shoulderCm=(base.shoulderCm*shoulder).coerceIn(heightCm*.10f,heightCm*.45f),
@@ -104,19 +107,19 @@ object AvatarProfileStore {
         if (raw == null) { _current.value = null; _issue.value = null; return }
         val parsed = runCatching {
             val json = JSONObject(raw)
-            val schema=json.getInt("schema");require(schema in 1..2)
+            val schema=json.getInt("schema");require(schema in 1..3)
             AvatarProfile(json.getDouble("height").toFloat(), json.getDouble("weight").toFloat(),
                 json.getDouble("shoulder").toFloat(), json.getDouble("waist").toFloat(),
                 json.getDouble("hip").toFloat(), json.getDouble("thigh").toFloat(),
                 json.getDouble("leg").toFloat(),
-                if(schema==2) json.getDouble("chest").toFloat() else 1f,
-                if(schema==2) json.getDouble("torso").toFloat() else 1f,
-                if(schema==2) AvatarSource.valueOf(json.getString("source")) else AvatarSource.BMI,
-                if(schema==2) json.getJSONObject("applied").let { values -> values.keys().asSequence().associate { key ->
+                if(schema>=2) json.getDouble("chest").toFloat() else 1f,
+                if(schema>=2) json.getDouble("torso").toFloat() else 1f,
+                if(schema>=2) AvatarSource.valueOf(json.getString("source")) else AvatarSource.BMI,
+                if(schema>=2) json.getJSONObject("applied").let { values -> values.keys().asSequence().associate { key ->
                     val item=values.getJSONObject(key)
                     BodyDimension.valueOf(key) to DimensionValue(item.getDouble("cm").toFloat(),
                         MeasurementOrigin.valueOf(item.getString("origin")),item.getLong("at"))
-                } } else emptyMap()).takeIf { it.valid() }
+                } } else emptyMap(),if(schema==3)AvatarCentimeters.fromJson(json.getJSONObject("centimeters")) else null).takeIf { it.valid() }
         }.getOrNull()
         _current.value = parsed
         _issue.value = if (parsed == null) "저장된 3D 표시값을 읽지 못했어요. 원본을 보존했어요." else null
@@ -125,7 +128,7 @@ object AvatarProfileStore {
     fun save(context: Context, profile: AvatarProfile): Boolean {
         load(context) // Recheck disk corruption, even if another caller has not loaded the store yet.
         if (!profile.valid() || _issue.value != null) return false
-        val json = JSONObject().put("schema", 2).put("height", profile.heightCm)
+        val json = JSONObject().put("schema", if(profile.centimeters==null)2 else 3).put("height", profile.heightCm)
             .put("weight", profile.weightKg).put("shoulder", profile.shoulder)
             .put("waist", profile.waist).put("hip", profile.hip)
             .put("thigh", profile.thigh).put("leg", profile.leg).put("chest",profile.chest).put("torso",profile.torso)
@@ -133,18 +136,21 @@ object AvatarProfileStore {
                 profile.applied.forEach { (key,value) -> values.put(key.name,JSONObject().put("cm",value.cm)
                     .put("origin",value.origin.name).put("at",value.at)) }
             })
+        profile.centimeters?.let {json.put("centimeters",it.toJson())}
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
         val original=prefs.getString(KEY,null)
         val edit=prefs.edit()
         if(original!=null && JSONObject(original).getInt("schema")==1 && !prefs.contains("profile_v1_preserved"))
             edit.putString("profile_v1_preserved",original)
+        if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains("profile_pre_cm_preserved"))
+            edit.putString("profile_pre_cm_preserved",original)
         val ok = edit.putString(KEY, json.toString()).commit()
         if (ok) _current.value = profile
         return ok
     }
 
     fun clear(context: Context): Boolean {
-        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove("profile_v1_preserved").commit()
+        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove("profile_v1_preserved").remove("profile_pre_cm_preserved").commit()
         if (ok) { _current.value = null; _issue.value = null }
         return ok
     }

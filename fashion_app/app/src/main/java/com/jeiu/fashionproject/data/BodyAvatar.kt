@@ -7,14 +7,16 @@ data class AvatarParameters(
     val waistWidthCm: Float = 29f, val hipWidthCm: Float = 36f,
     val legCm: Float = 79f, val torsoCm: Float = 46f,
     val sources: List<String> = listOf("기본 비율"),
-    val notes: List<String> = listOf("깊이·얼굴·팔·다리는 단순화한 기본 형상이에요. 신체 복원이나 실제 착용 예측이 아니에요.")
+    val notes: List<String> = listOf("깊이·얼굴·팔·다리는 단순화한 기본 형상이에요. 신체 복원이나 실제 착용 예측이 아니에요."),
+    val centimeters:AvatarCentimeters? = null
 ) {
     fun joints(): AvatarJoints {
         val h=heightCm/100f
-        val hip=(legCm/100f+h*.04f).coerceIn(h*.42f,h*.60f)
-        return AvatarJoints(hip,(hip+torsoCm/100f).coerceIn(h*.72f,h*.84f))
+        val hip=legCm/100f+h*.04f
+        if(centimeters!=null)return AvatarJoints(hip,hip+torsoCm/100f)
+        return AvatarJoints(hip.coerceIn(h*.42f,h*.60f),(hip.coerceIn(h*.42f,h*.60f)+torsoCm/100f).coerceIn(h*.72f,h*.84f))
     }
-    fun isValid(): Boolean = heightCm.isFinite() && heightCm in 100f..230f &&
+    fun isValid(): Boolean = if(centimeters!=null)centimeters.heightCm==heightCm && centimeters.issue()==null else heightCm.isFinite() && heightCm in 100f..230f &&
         listOf(shoulderCm,chestWidthCm,waistWidthCm,hipWidthCm).all { it.isFinite() && it/heightCm in .10f.. .45f } &&
         legCm.isFinite() && legCm/heightCm in .25f.. .65f && torsoCm.isFinite() && torsoCm/heightCm in .15f.. .40f
 
