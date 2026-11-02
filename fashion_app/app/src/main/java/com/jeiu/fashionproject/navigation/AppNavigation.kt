@@ -236,6 +236,19 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.BodyAnalysis.route) {
+                BodyMethodSelectionScreen(
+                    onBack = { navController.popBackStack() },
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) },
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) }
+                )
+            }
+            composable(Screen.BodyAnalysisAvatar.route) {
+                BodyAvatarSetupScreen(
+                    onBack = { navController.popBackStack() },
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
+                )
+            }
+            composable(Screen.BodyAnalysisPhoto.route) {
                 BodyAnalysisScreen(
                     onBack = { navController.popBackStack() },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
