@@ -101,6 +101,52 @@ class P9GeometryTest {
         write("premium.bin",mesh);write("legacy.bin",BodyAvatarMesh.build(AvatarProfile(170f,65f).parameters()))
         File(dir,"README.txt").writeText("Actual Kotlin mesh buffers XYZ/normal/RGB, big-endian float32. CPU review only; not an S25+ GLES capture.\n")
     }
+    @Test fun adjustedAndDifferentHeightProfilesPreserveMeasuredSections() {
+        val profiles=listOf(body.adjusted(AvatarPart.WAIST,77.5f)!!,
+            AvatarCentimeters.generate(100f,25f,1)!!,AvatarCentimeters.generate(230f,300f,1)!!)
+        for(b in profiles) {
+            val data=PremiumAvatarMesh.build(b);val shape=PremiumAvatarMesh.Shape(b)
+            for(part in listOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH)) {
+                val section=shape.section(part);val target=if(part==AvatarPart.THIGH)shape.legX*b.heightCm/100 else 0f
+                assertEquals("${b.heightCm} $part",b[part],sectionPerimeter(data,(section.y-.5f)*b.heightCm/100,target),1.3f)
+            }
+        }
+    }
+    @Test fun rulerEndpointsPreserveActualSectionCmAndDoNotInvertTriangles() {
+        val metrics=org.json.JSONArray()
+        for(part in AvatarPart.entries) {
+            val range=CmRulerMath.range(body,part)
+            for(v in listOf(range.start,range.endInclusive)) {
+                val changed=body.adjusted(part,v)!!;val data=PremiumAvatarMesh.build(changed);val shape=PremiumAvatarMesh.Shape(changed)
+                assertTrue(data.all {it.isFinite()})
+                for(sectionPart in listOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH)) {
+                    val section=shape.section(sectionPart);val x=if(sectionPart==AvatarPart.THIGH)shape.legX*changed.heightCm/100 else 0f
+                    val actual=sectionPerimeter(data,(section.y-.5f)*changed.heightCm/100,x)
+                    metrics.put(org.json.JSONObject().put("adjusted",part.name).put("value",v).put("section",sectionPart.name)
+                        .put("requested",changed[sectionPart]).put("rendered",actual).put("errorCm",abs(actual-changed[sectionPart])))
+                    assertEquals("$part=$v section $sectionPart",changed[sectionPart],actual,1.3f)
+                }
+            }
+        }
+        File("build/p9-visual/section-metrics.json").also {it.parentFile.mkdirs()}.writeText(metrics.toString(2))
+    }
+    @Test fun importedTapeValuesAndLegacyV1AssumptionsArePreserved() {
+        val manual=ManualBodyMeasurements(170f,42f,94f,78f,98f,82f,47f,1)
+        val legacy=AvatarMeasurementImport.manual(manual)!!
+        val converted=AvatarCentimeters.fromLegacy(legacy,1)!!
+        assertEquals(78f,converted[AvatarPart.WAIST]);assertEquals(AvatarValueOrigin.MANUAL,converted.values.getValue(AvatarPart.WAIST).origin)
+        assertEquals(AvatarValueOrigin.AUTO,converted.values.getValue(AvatarPart.THIGH).origin)
+        assertEquals(AvatarValueOrigin.ADJUSTED,converted.adjusted(AvatarPart.WAIST,77.5f)!!.values.getValue(AvatarPart.WAIST).origin)
+        assertEquals(78f,converted.references.getValue(AvatarPart.WAIST).cm)
+        val old=body.copy(assumption=AvatarCentimeters.LEGACY_ASSUMPTION)
+        assertEquals(old,AvatarCentimeters.fromJson(old.toJson()))
+        assertNotNull(converted.copy(values=converted.values+(AvatarPart.WAIST to AvatarCm(78f,AvatarValueOrigin.PHOTO))).issue())
+    }
+    @Test fun wrongPreferenceTypeIsReportedWithoutErasingOriginal() {
+        val prefs=app.getSharedPreferences("avatar_visual_profile_v1",0);prefs.edit().putInt("profile",42).commit()
+        AvatarProfileStore.load(app);assertNull(AvatarProfileStore.current.value);assertNotNull(AvatarProfileStore.issue.value)
+        assertFalse(AvatarProfileStore.save(app,AvatarProfile(170f,65f)));assertEquals(42,prefs.getInt("profile",0))
+    }
     companion object {
         private val body by lazy {AvatarCentimeters.generate(170f,65f,1)!!}
         private val mesh by lazy {PremiumAvatarMesh.build(body)}

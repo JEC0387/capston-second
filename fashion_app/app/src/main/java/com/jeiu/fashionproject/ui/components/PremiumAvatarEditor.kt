@@ -53,7 +53,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         val next=body.adjusted(selected,value)
         if(next!=null)update(next) else message="이 표시 모델에서 지원하지 않는 조합이에요. 원본과 현재 값은 유지했어요."
     }
-    fun leave() {if(json!=initialJson && json!=lastSaved)askLeave=true else onDismiss()}
+    fun leave() {if(json!=(lastSaved ?: initialJson))askLeave=true else onDismiss()}
     fun openInput() {text=String.format(Locale.KOREA,"%.1f",body[selected]);measured=false;input=true}
     val candidate=initial.copy(centimeters=body)
     BackHandler(onBack=::leave)
@@ -134,6 +134,12 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                     if(details) {
                         Text("키 ${body.heightCm} cm · 몸무게 ${body.weightKg} kg. 자동 초기값은 검증된 평균이 아닌 임시 형상이에요.")
                         Text("깊이는 타원 가정이며 실제 신체 스캔·의복 물리·정확한 착용 핏이 아니에요.")
+                        Text("가슴은 기본 깊이/너비 0.72를 쓰고 어깨 폭을 넘으면 깊이를 늘려 둘레를 맞춰요(최대 1.6). 허리 0.70, 힙 0.76, 허벅지 0.92도 표시 가정이에요.")
+                        if(selected in setOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH)) {
+                            val radii=body.radii(selected)
+                            Text(String.format(Locale.KOREA,"표시용 타원: 너비 %.1f / 깊이 %.1f / 계산 둘레 %.1f cm. 실제 피부 표면·메시 수치 근사와는 구분해요.",
+                                radii.first*2,radii.second*2,AvatarCentimeters.circumference(radii.first,radii.second)))
+                        } else if(selected==AvatarPart.SHOULDER)Text("어깨는 모델의 좌우 어깨 기준점 간 너비예요. 팔을 포함한 최대 외곽 폭과 달라요.")
                         Text("모델 표시 범위는 의학적 신체 정상 범위가 아니에요. 지원하지 않는 조합의 원본 치수는 그대로 보존해요.")
                         body.photoFrontWidths.forEach {(key,value)->Text("사진 ${if(key=="waist")"허리" else "힙"} 정면 너비 $value cm · 둘레로 변환하지 않음")}
                         body.references.forEach {(part,value)->if(body[part]!=value.cm)Text("${part.label} 원본 ${value.cm} cm는 표시 단위/범위 차이로 현재 ${body[part]} cm와 달라요.")}

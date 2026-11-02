@@ -25,12 +25,14 @@ data class AvatarCentimeters(
     operator fun get(part:AvatarPart)=values.getValue(part).cm
     fun issue():String? {
         if(!heightCm.isFinite() || heightCm !in 100f..230f || !weightKg.isFinite() || weightKg !in 25f..300f ||
-            createdAt<=0 || updatedAt<createdAt || assumption!=ASSUMPTION)return "키·몸무게와 저장 형식을 확인해주세요."
+            createdAt<=0 || updatedAt<createdAt || assumption !in setOf(ASSUMPTION,LEGACY_ASSUMPTION))return "키·몸무게와 저장 형식을 확인해주세요."
         if(initial.keys!=AvatarPart.entries.toSet() || values.keys!=AvatarPart.entries.toSet())return "필요한 부위 치수가 빠져 있어요."
         if(values.any {(p,v)->!v.cm.isFinite() || v.cm !in range(p,heightCm)} ||
             initial.any {(p,v)->!v.isFinite() || v !in range(p,heightCm)})return "이 표시 모델의 부위별 cm 범위를 벗어났어요. 원본 치수는 바꾸지 않았어요."
         if(values.values.any {abs(it.cm*2-round(it.cm*2))>.0001f} || initial.values.any {abs(it*2-round(it*2))>.0001f})
             return "표시 치수는 0.5cm 단위로 조절해요. 원본 실측은 별도 참고값으로 유지해요."
+        if((values.entries+references.entries).any {(p,v)->v.origin==AvatarValueOrigin.PHOTO && p in setOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH)})
+            return "사진 정면 너비는 둘레 출처로 저장할 수 없어요."
         if(references.any {(_,v)->!v.cm.isFinite() || v.cm !in 1f..350f} ||
             photoFrontWidths.keys.any {it !in setOf("waist","hip")} || photoFrontWidths.values.any {!it.isFinite() || it !in heightCm*.08f..heightCm*.5f})
             return "원본 치수의 단위·출처를 확인해주세요."
@@ -38,6 +40,8 @@ data class AvatarCentimeters(
         if(length<heightCm*.64f-.0001f || length>heightCm*.80f+.0001f)return "다리와 상체 길이 합은 키의 64~80% 표시 범위가 필요해요. 실제 치수의 오류를 뜻하지 않아요."
         // Prevent intersecting thigh sections. This is a mannequin limitation, not an anatomical rule.
         if(this[AvatarPart.THIGH]>this[AvatarPart.HIP]*.64f+.0001f)return "이 모델에서는 허벅지 둘레가 엉덩이 둘레의 64% 이하여야 분리돼 보여요. 원본 실측은 보존해요."
+        if(assumption==ASSUMPTION && (this[AvatarPart.TORSO]<heightCm*.20f-.0001f || this[AvatarPart.CHEST]>chestLimit(this[AvatarPart.SHOULDER])+.0001f))
+            return "상체 길이 또는 가슴·어깨 조합이 표시용 깊이 범위를 벗어나요. 원본 실측은 보존해요."
         return null
     }
     fun adjusted(part:AvatarPart,value:Float):AvatarCentimeters? {
@@ -50,7 +54,12 @@ data class AvatarCentimeters(
     fun resetAll()=copy(values=initial.mapValues {AvatarCm(it.value,AvatarValueOrigin.AUTO)})
     fun radii(part:AvatarPart):Pair<Float,Float> {
         require(part in setOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH))
-        return ellipse(this[part],depthRatio(part))
+        val basic=ellipse(this[part],depthRatio(part))
+        if(part!=AvatarPart.CHEST || assumption==LEGACY_ASSUMPTION || basic.first<=this[AvatarPart.SHOULDER]*.55f)return basic
+        val a=this[AvatarPart.SHOULDER]*.55f
+        var low=a*.72f;var high=a*1.6f
+        repeat(32) {val middle=(low+high)/2;if(circumference(a,middle)<this[part])low=middle else high=middle}
+        return a to (low+high)/2
     }
     fun parameters():AvatarParameters {
         require(issue()==null)
@@ -67,7 +76,9 @@ data class AvatarCentimeters(
         .put("photoFrontWidths",JSONObject().also {j->photoFrontWidths.forEach {(k,v)->j.put(k,v)}})
 
     companion object {
-        const val ASSUMPTION="fashionai-ellipse-v1"
+        const val ASSUMPTION="fashionai-ellipse-v2"
+        const val LEGACY_ASSUMPTION="fashionai-ellipse-v1"
+        fun chestLimit(shoulder:Float)=circumference(shoulder*.55f,shoulder*.55f*1.6f)
         fun snap(v:Float)=round(v*2f)/2f
         fun range(part:AvatarPart,h:Float):ClosedFloatingPointRange<Float> {
             val raw=when(part) {

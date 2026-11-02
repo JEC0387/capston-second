@@ -79,10 +79,11 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("내 3D 모델",style=MaterialTheme.typography.titleMedium)
-            Text(if (saved != null) "저장된 3D 설정: ${saved!!.source.label}" else "아직 저장한 3D 설정이 없어요.",
+            Text(if(saved?.centimeters!=null)"저장된 cm 아바타 · 부위별 출처 구분" else if (saved != null) "저장된 3D 설정: ${saved!!.source.label}" else "아직 저장한 3D 설정이 없어요.",
                 style=MaterialTheme.typography.bodySmall)
             Button(onClick={showAvatar=true},enabled=draft.valid(),
-                modifier=Modifier.fillMaxWidth().testTag("avatarShow")) { Text("3D 모델 보기") }
+                modifier=Modifier.fillMaxWidth().testTag("avatarShow")) { Text(if(draft.centimeters!=null)"저장된 cm 3D 모델 보기" else "이전 형상 3D 미리보기") }
+            Text("새 마네킹은 아래 키·몸무게 확인 후 ‘3D 아바타 생성 · cm 줄자로 조절’에서 만들어요.",style=MaterialTheme.typography.bodySmall)
             Text("체형 생성 방법",style=MaterialTheme.typography.titleMedium)
             Text("3D 형상 출처 선택 · 현재 ${draft.source.label}",modifier=Modifier.testTag("avatarSource"))
             OutlinedButton(onClick={proposal=AvatarProfile(height.toFloatOrNull() ?: Float.NaN,weight.toFloatOrNull() ?: Float.NaN).takeIf {it.valid()}},

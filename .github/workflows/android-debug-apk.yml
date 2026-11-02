@@ -33,6 +33,8 @@ concurrency:
 
 jobs:
   build:
+    # Never publish an update APK when a backend regression or startup matrix has failed.
+    needs: [backend, server-start]
     # Serialize distribution checks/uploads across branches to reject stale builds.
     concurrency:
       group: fashionai-apk-distribution

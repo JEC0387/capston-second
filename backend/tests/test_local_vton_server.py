@@ -50,7 +50,16 @@ def settings(tmp_path):
 async def setup(settings,monkeypatch):
     def forbid(*a,**k):raise AssertionError('External requests/paid API are forbidden')
     monkeypatch.setattr('urllib.request.OpenerDirector.open',forbid)
+    class Clock:
+        now=1_800_000_000.0
+        def time(self):return self.now
+        def advance(self,seconds):self.now+=seconds
+    clock=Clock()
+    # An 80ms synthetic TTL must not expire merely because a shared CI runner was paused.
+    # Patch only this server's module binding; production time/TTL and asyncio deadlines are unchanged.
+    monkeypatch.setattr('local_vton_server.time',clock)
     engine=FakeEngine();app=create_app(settings,engine)
+    app.state.vton.test_clock=clock
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),base_url='https://testserver',headers=AUTH) as client:
             yield client,app.state.vton,engine
@@ -58,7 +67,7 @@ async def setup(settings,monkeypatch):
 async def wait(client,id):
     for _ in range(100):
         result=(await client.get('/api/local-vton/jobs/'+id)).json()
-        if result['status'] in ('completed','failed','cancelled','timeout','interrupted'):return result
+        if result['status'] in ('completed','failed','cancelled','timeout','interrupted','expired'):return result
         await asyncio.sleep(.005)
     raise AssertionError('Job did not terminate')
 
@@ -131,8 +140,10 @@ async def test_oom_is_reported_without_an_image(setup):
 
 @pytest.mark.anyio
 async def test_ttl_and_explicit_delete_remove_result(setup):
-    client,_,_=setup;data=body();await client.post('/api/local-vton/jobs',json=data);await wait(client,data['request_id'])
-    await asyncio.sleep(.1)
+    client,service,_=setup;data=body();await client.post('/api/local-vton/jobs',json=data);await wait(client,data['request_id'])
+    service.test_clock.advance(service.settings.result_ttl/2)
+    assert (await client.get('/api/local-vton/jobs/'+data['request_id']+'/result')).status_code==200
+    service.test_clock.advance(service.settings.result_ttl/2+.001)
     assert (await client.get('/api/local-vton/jobs/'+data['request_id']+'/result')).status_code==410
     assert (await client.get('/api/local-vton/jobs/'+data['request_id'])).json()['status']=='expired'
 

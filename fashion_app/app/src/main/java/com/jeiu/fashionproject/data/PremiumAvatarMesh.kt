@@ -15,14 +15,14 @@ object PremiumAvatarMesh {
         val hip=body[AvatarPart.LEG]/h+ankle
         val shoulder=hip+body[AvatarPart.TORSO]/h
         val waist=hip+(shoulder-hip)*.40f
-        val chest=hip+(shoulder-hip)*.76f
+        val chest=max(waist+.025f,shoulder-.095f).coerceAtMost(shoulder-.060f)
         val thigh=hip-.09f
-        val legX=body.radii(AvatarPart.HIP).first/h*.56f
         private fun section(part:AvatarPart,y:Float)=body.radii(part).let {Section(y,it.first/h,it.second/h)}
         private val hipR=section(AvatarPart.HIP,hip)
         private val waistR=section(AvatarPart.WAIST,waist)
         private val chestR=section(AvatarPart.CHEST,chest)
         private val thighR=section(AvatarPart.THIGH,thigh)
+        val legX=max(hipR.a*.56f,thighR.a+min(.008f,hipR.a*.12f))
         private val headBottom=max(.865f,shoulder+.025f)
         private val headRadius=(1-headBottom)/2
         private val headCenter=1-headRadius
@@ -32,12 +32,12 @@ object PremiumAvatarMesh {
             Section(shoulder+.005f,body[AvatarPart.SHOULDER]/h*.28f,.048f),
             Section(shoulder+.028f,.032f,.030f),Section(headBottom+.018f,.030f,.030f))
         private val knee=ankle+(hip-ankle)*.52f
-        private val leg=listOf(Section(.018f,.022f,.027f),Section(ankle,.021f,.026f),
-            Section(ankle+(knee-ankle)*.48f,.033f,.037f),Section(knee,.025f,.028f),
-            thighR,Section(hip-.020f,thighR.a*.86f,thighR.b*.88f),Section(hip+.025f,.020f,.025f))
-        private val rootX=body[AvatarPart.SHOULDER]/h/2-.031f
+        private val leg=listOf(Section(.018f,thighR.a*.43f,thighR.a*.52f),Section(ankle,thighR.a*.40f,thighR.a*.49f),
+            Section(ankle+(knee-ankle)*.48f,thighR.a*.67f,thighR.a*.75f),Section(knee,thighR.a*.53f,thighR.a*.59f),
+            thighR,Section(hip-.020f,thighR.a*.65f,thighR.b*.65f),Section(hip+.025f,thighR.a*.12f,thighR.b*.12f))
+        private val rootX=body[AvatarPart.SHOULDER]/h/2-.026f
         private val upperX=max(rootX+.050f,chestR.a+.063f)
-        private val elbowX=max(upperX+.010f,waistR.a+.045f)
+        private val elbowX=max(upperX+.010f,max(waistR.a+.045f,hipR.a+.055f))
         private val wristX=max(elbowX+.003f,hipR.a+.043f)
         private val upperY=shoulder-.060f;private val elbowY=shoulder-.17f;private val wristY=shoulder-.345f
         val extentX=max(wristX+.045f,max(hipR.a,thighR.a+legX)+.025f)
@@ -88,7 +88,7 @@ object PremiumAvatarMesh {
                 d=if(y>hip-.055f)smooth(d,legD,.014f*join) else min(d,legD)
                 val foot=ellipsoid(x,y,z,side*legX,.023f,.028f,.029f,.023f,.065f)
                 d=smooth(d,foot,.008f)
-                var arm=capsule(x,y,z,side*rootX,shoulder-.022f,0f,side*upperX,upperY,0f,.032f,.030f)
+                var arm=capsule(x,y,z,side*rootX,shoulder-.010f,0f,side*upperX,upperY,0f,.026f,.030f)
                 arm=smooth(arm,capsule(x,y,z,side*upperX,upperY,0f,side*elbowX,elbowY,0f,.030f,.024f),.008f)
                 arm=smooth(arm,capsule(x,y,z,side*elbowX,elbowY,0f,side*wristX,wristY,0f,.024f,.016f),.008f)
                 val hand=ellipsoid(x,y,z,side*(wristX+.003f),wristY-.023f,.002f,.020f,.033f,.012f)

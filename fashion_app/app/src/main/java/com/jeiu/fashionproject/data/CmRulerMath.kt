@@ -13,6 +13,12 @@ object CmRulerMath {
             AvatarPart.HIP -> low=max(low,body[AvatarPart.THIGH]/.64f)
             else->Unit
         }
+        if(body.assumption==AvatarCentimeters.ASSUMPTION)when(part) {
+            AvatarPart.CHEST -> high=min(high,AvatarCentimeters.chestLimit(body[AvatarPart.SHOULDER]))
+            AvatarPart.SHOULDER -> low=max(low,body[AvatarPart.CHEST]/AvatarCentimeters.chestLimit(1f))
+            AvatarPart.TORSO -> low=max(low,body.heightCm*.20f)
+            else->Unit
+        }
         return ceil((low-.00001f)*2)/2..floor((high+.00001f)*2)/2
     }
     fun drag(start:Float,deltaPx:Float,pixelsPerCm:Float,range:ClosedFloatingPointRange<Float>):Float {
