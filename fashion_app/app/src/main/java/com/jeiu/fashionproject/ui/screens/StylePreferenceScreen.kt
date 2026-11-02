@@ -50,7 +50,7 @@ private data class PrefStyleCard(
 )
 
 /** 스타일마다 카드 색 (사진을 못 불러올 때의 바탕 · 선호도 막대 색) */
-internal val styleColors = mapOf(
+private val prefStyleColors = mapOf(
     "캐주얼" to Color(0xFF8BA888),
     "스트릿" to Color(0xFFC88FA8),
     "미니멀" to Color(0xFFB59B80),
@@ -61,7 +61,7 @@ internal val styleColors = mapOf(
     "포멀" to Color(0xFF4F5A6E)
 )
 
-private fun colorOf(style: String) = styleColors[style] ?: Camel
+private fun colorOf(style: String) = prefStyleColors[style] ?: Camel
 
 // 스타일마다 2장 — 1바퀴(8스타일 한 장씩) → 2바퀴 순서로 섞어 한 스타일이 연달아 나오지 않게 한다
 private val firstRound = listOf(
