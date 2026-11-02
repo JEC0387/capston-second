@@ -39,9 +39,32 @@ class SampleWardrobePreviewTest {
         val personal = bundled.copy(imageUri = "content://photos/my-item", originalUri = "file:///private/custom.jpg")
         assertEquals(personal, SampleWardrobe.rebaseBundledUris(personal, bundled, newPackage))
         val unknown = bundled.copy(imageUri = oldPrefix + "not_a_sample")
-        assertEquals(unknown, SampleWardrobe.rebaseBundledUris(unknown, bundled, newPackage))
+        // Each photo version is repaired independently. The custom display URI stays intact,
+        // while its still-bundled original must resolve in the installed Preview package.
+        assertEquals(unknown.copy(originalUri = newPrefix + "sample_05"),
+            SampleWardrobe.rebaseBundledUris(unknown, bundled, newPackage))
         val different = bundled.copy(id = "user-owned")
         assertEquals(different, SampleWardrobe.rebaseBundledUris(different, bundled, newPackage))
+    }
+
+    @Test fun mixedPhotoVersionsOnlyRepairTheRecognizedBundledField() {
+        val bundled = SampleWardrobe.items().first { it.id == "sample_01" }
+        val saved = bundled.copy(name = "직접 편집한 옷", imageUri = "content://photos/custom",
+            originalUri = "file:///private/original.jpg", cutoutUri = oldPrefix + "unknown_cutout",
+            garmentUri = oldPrefix + "sample_01", addedAt = 100L, favoritedAt = 200L,
+            keptAt = 300L, brand = "내 브랜드", price = 12345)
+        val expected = saved.copy(garmentUri = newPrefix + "sample_01")
+        assertEquals(expected, SampleWardrobe.rebaseBundledUris(saved, bundled, newPackage))
+        assertEquals(expected, SampleWardrobe.rebaseBundledUris(expected, bundled, newPackage))
+    }
+
+    @Test fun similarNamesAndForeignPackagesAreNotRebased() {
+        val bundled = SampleWardrobe.items().first { it.id == "sample_05" }
+        listOf("android.resource://another.app/drawable/sample_05", oldPrefix + "sample_05_custom",
+            oldPrefix + "sample_05?custom=true", oldPrefix + "../sample_05").forEach { uri ->
+            val saved = bundled.copy(imageUri = uri, originalUri = uri, cutoutUri = uri, garmentUri = uri)
+            assertEquals(saved, SampleWardrobe.rebaseBundledUris(saved, bundled, newPackage))
+        }
     }
 
     @Test fun bundledOriginalAndGarmentVersionsAreBothRebased() {

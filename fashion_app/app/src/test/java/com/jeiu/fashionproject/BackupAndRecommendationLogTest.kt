@@ -106,7 +106,7 @@ class BackupAndRecommendationLogTest {
         assertEquals(listOf("sample_01", "user-1"), list.map { it.item.id })
         val sample = list[0]
         assertFalse(sample.hasPhoto)                                       // 샘플은 사진을 받지 않음
-        assertTrue(sample.item.imageUri.startsWith("android.resource://com.jeiu.fashionproject/"))
+        assertTrue(sample.item.imageUri.startsWith("android.resource://${BuildConfig.APPLICATION_ID}/"))
         val user = list[1]
         assertTrue(user.hasPhoto)
         assertEquals(0xFF1F2A44L, user.item.colorValue)

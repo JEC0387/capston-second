@@ -5,7 +5,8 @@
 
 ## 발표 준비
 
-최신 테스트 APK와 서명·설치·백업 안내는 [APK 업데이트 인수인계](APK_UPDATE_HANDOFF_20261026.md)를 먼저 확인하세요. 새 배포는 별도 패키지의 **FashionAI Preview**입니다.
+최신 빌드 오류 수정·검증·APK는 [2026-11-02 Preview 빌드 인수인계](PREVIEW_BUILD_FIX_HANDOFF_20261102.md)를 확인하세요.
+서명·백업 배경은 [APK 업데이트 인수인계](APK_UPDATE_HANDOFF_20261026.md)에 보존했습니다. 배포 패키지는 **FashionAI Preview**입니다.
 
 | 문서 | 내용 |
 |---|---|

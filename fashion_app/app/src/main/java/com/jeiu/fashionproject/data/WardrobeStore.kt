@@ -71,7 +71,12 @@ object WardrobeStore {
                     if (!o.has("id")) needsSave = true
                     fromJson(o)
                 }
-            }.getOrDefault(emptyList())
+            }.getOrElse {
+                // Unreadable saved data is not an empty wardrobe. Preserve the original
+                // preferences and photos instead of seeding/persisting or cleaning files.
+                loaded = false
+                return
+            }
         } ?: emptyList()
 
         // 샘플 옷은 첫 실행 때 한 번만 넣는다. (사용자가 지운 샘플이 다시 생기지 않도록)
@@ -152,7 +157,7 @@ object WardrobeStore {
      */
     fun addDemoSamplesIfEmpty(context: Context): Boolean {
         load(context) // Never overwrite saved wardrobe data before its first read.
-        if (_items.value.isNotEmpty()) return false
+        if (!loaded || _items.value.isNotEmpty()) return false
         val restored = SampleWardrobe.items()
         _items.value = restored
         persist(context)

@@ -135,9 +135,16 @@ jobs:
           cp -R app/build/test-results/testDebugUnitTest build/primary-test-results
           cp -R app/build/reports/tests/testDebugUnitTest build/primary-test-reports
 
-      - name: Build isolated Preview and test personal-data isolation
+      - name: Build isolated Preview and test isolation, sample photos and body entry
         run: |
-          bash gradlew :app:assembleDebug :app:testDebugUnitTest -PfashionPreview=true --tests '*PreviewIsolationTest' --tests '*AppBuildInfoTest' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+          # Keep the complete primary regression above. Also exercise package-dependent
+          # sample resources, data preservation and Compose entry flows in the distributed app.
+          bash gradlew :app:assembleDebug :app:testDebugUnitTest -PfashionPreview=true \
+            --tests '*PreviewIsolationTest' --tests '*AppBuildInfoTest' \
+            --tests '*SampleWardrobePreviewTest' --tests '*WardrobeSampleRestoreUiTest' \
+            --tests '*BackupAndRecommendationLogTest' --tests '*BodyMethodSelectionUiTest' \
+            --tests '*BodyPhotoEntryUiTest' --tests '*BodyAvatarTest' \
+            --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Record distribution readiness
         id: distribution
@@ -181,6 +188,9 @@ jobs:
             fashion_app/build/validation-apk/BUILD_INFO.txt
             fashion_app/build/validation-apk/BUILD_INFO.json
             fashion_app/build/validation-apk/SHA256SUMS.txt
+            apk-artifact/BUILD_INFO.txt
+            apk-artifact/BUILD_INFO.json
+            apk-artifact/SHA256SUMS.txt
           if-no-files-found: error
 
       - name: Remove temporary signing key
