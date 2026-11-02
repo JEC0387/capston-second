@@ -150,34 +150,56 @@ class P9GeometryTest {
     companion object {
         private val body by lazy {AvatarCentimeters.generate(170f,65f,1)!!}
         private val mesh by lazy {PremiumAvatarMesh.build(body)}
-        private fun sectionPerimeter(data:FloatArray,y:Float,targetX:Float):Float {
-            data class P(val x:Float,val z:Float)
-            fun key(p:P)="${round(p.x*100000).toInt()},${round(p.z*100000).toInt()}"
-            val points=mutableMapOf<String,P>();val graph=mutableMapOf<String,MutableSet<String>>()
+        internal fun sectionPerimeter(data:FloatArray,y:Float,targetX:Float):Float {
+            data class P(val x:Double,val z:Double)
+            val tolerance=.000001 // 0.001mm proximity welding; far below the unchanged 1.3cm contract.
+            // Avoid a cut coincident with triangle edges: 5 micrometres above the named section.
+            val plane=y.toDouble()+.000005
+            val points=ArrayList<P>();val parent=ArrayList<Int>()
+            val buckets=HashMap<Pair<Int,Int>,MutableList<Int>>();val edges=ArrayList<Pair<Int,Int>>()
+            fun root(v:Int):Int {var x=v;while(parent[x]!=x){parent[x]=parent[parent[x]];x=parent[x]};return x}
+            fun vertex(p:P):Int {
+                val id=points.size;points.add(p);parent.add(id)
+                val cx=floor(p.x/tolerance).toInt();val cz=floor(p.z/tolerance).toInt()
+                for(dx in -1..1)for(dz in -1..1)for(other in buckets[cx+dx to cz+dz].orEmpty()) {
+                    val q=points[other];if(hypot(p.x-q.x,p.z-q.z)<=tolerance)parent[root(id)]=root(other)
+                }
+                buckets.getOrPut(cx to cz){mutableListOf()}.add(id);return id
+            }
             for(i in data.indices.step(27)) {
-                val hits=mutableListOf<P>()
+                val hits=linkedSetOf<Int>()
                 for((a,b) in listOf(0 to 9,9 to 18,18 to 0)) {
-                    val ya=data[i+a+1];val yb=data[i+b+1]
-                    if((ya<y&&yb>=y)||(yb<y&&ya>=y)) {
-                        val t=(y-ya)/(yb-ya)
-                        hits+=P(data[i+a]+(data[i+b]-data[i+a])*t,data[i+a+2]+(data[i+b+2]-data[i+a+2])*t)
+                    val ya=data[i+a+1].toDouble()-plane;val yb=data[i+b+1].toDouble()-plane
+                    val onA=abs(ya)<.0000000001;val onB=abs(yb)<.0000000001
+                    if(onA)hits.add(vertex(P(data[i+a].toDouble(),data[i+a+2].toDouble())))
+                    if(onB)hits.add(vertex(P(data[i+b].toDouble(),data[i+b+2].toDouble())))
+                    if(!onA&&!onB&&ya*yb<0) {
+                        val t=ya/(ya-yb)
+                        hits.add(vertex(P(data[i+a]+(data[i+b].toDouble()-data[i+a])*t,
+                            data[i+a+2]+(data[i+b+2].toDouble()-data[i+a+2])*t)))
                     }
                 }
-                if(hits.size!=2)continue
-                val a=key(hits[0]);val b=key(hits[1]);if(a==b)continue
-                points[a]=hits[0];points[b]=hits[1]
-                graph.getOrPut(a){mutableSetOf()}.add(b);graph.getOrPut(b){mutableSetOf()}.add(a)
+                val unique=hits.distinctBy {root(it)}
+                if(unique.size==2)edges.add(unique.first() to unique.last())
             }
-            val visited=mutableSetOf<String>();val components=mutableListOf<Set<String>>()
+            val graph=HashMap<Int,MutableSet<Int>>()
+            for((a0,b0) in edges) {
+                val a=root(a0);val b=root(b0)
+                if(a!=b){graph.getOrPut(a){mutableSetOf()}.add(b);graph.getOrPut(b){mutableSetOf()}.add(a)}
+            }
+            check(graph.isNotEmpty() && graph.values.all {it.size==2}) {"Mesh section at $y is open or branched: ${graph.values.groupingBy {it.size}.eachCount()}"}
+            val visited=HashSet<Int>();val components=ArrayList<Set<Int>>()
             for(start in graph.keys)if(visited.add(start)) {
-                val component=mutableSetOf(start);val queue=ArrayDeque<String>();queue.add(start)
+                val component=mutableSetOf(start);val queue=ArrayDeque<Int>();queue.add(start)
                 while(queue.isNotEmpty())for(next in graph.getValue(queue.removeFirst()))if(visited.add(next)){component.add(next);queue.add(next)}
-                components+=component
+                components.add(component)
             }
-            val chosen=components.minBy {abs(it.map {k->points.getValue(k).x}.average()-targetX)}
-            return (chosen.sumOf {a->graph.getValue(a).sumOf {b->
-                val p=points.getValue(a);val q=points.getValue(b);hypot((p.x-q.x).toDouble(),(p.z-q.z).toDouble())
-            }}*50).toFloat()
+            fun length(component:Set<Int>)=component.sumOf {a->graph.getValue(a).sumOf {b->
+                val p=points[a];val q=points[b];hypot(p.x-q.x,p.z-q.z)
+            }}*50
+            val enclosing=components.filter {c->c.minOf {points[it].x}<=targetX && c.maxOf {points[it].x}>=targetX}
+            val chosen=enclosing.maxByOrNull {length(it)} ?: components.minBy {abs(it.map {k->points[k].x}.average()-targetX)}
+            return length(chosen).toFloat()
         }
     }
 }

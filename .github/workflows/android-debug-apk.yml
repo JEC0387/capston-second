@@ -149,8 +149,14 @@ jobs:
             --tests '*BodyAvatarTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
             --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*P7*' \
-            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' \
+            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Render synthetic P9 and P10 mesh comparisons (CPU only)
+        working-directory: .
+        run: |
+          python -m pip install --disable-pip-version-check numpy==2.4.6 Pillow==13.0.0
+          python tools/render_p10_review.py fashion_app/app/build/p10-visual
 
       - name: Record distribution readiness
         id: distribution
@@ -215,6 +221,7 @@ jobs:
             fashion_app/app/build/reports/tests/
             fashion_app/app/build/reports/lint-results-debug.*
             fashion_app/app/build/p9-visual/
+            fashion_app/app/build/p10-visual/
           if-no-files-found: warn
           retention-days: 30
 

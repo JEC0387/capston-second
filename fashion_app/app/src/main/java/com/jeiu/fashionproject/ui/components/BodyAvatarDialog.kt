@@ -132,7 +132,8 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
                 try {
                     val mesh=request.p.centimeters?.let {PremiumAvatarMesh.build(it,cancelled={!isActive})}
                         ?: BodyAvatarMesh.build(request.p,request.s,request.w,request.h,request.thigh)
-                    if(isActive && latest==request)queueEvent {avatar.setGeometry(mesh);requestRender()}
+                    val stage=request.p.centimeters?.let {MannequinStage.build(it,mesh)}
+                    if(isActive && latest==request)queueEvent {avatar.setGeometry(mesh,stage);requestRender()}
                 } catch(_:java.util.concurrent.CancellationException) {break}
                 catch(_:IllegalArgumentException) {post {onError()}}
                 catch(_:IllegalStateException) {post {onError()}}
@@ -189,12 +190,16 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
     private var failed=false
     private var count=0
     private var buffer:FloatBuffer?=null
+    private var stageBuffer:FloatBuffer?=null
+    private var stage:MannequinStage.Geometry?=null
     private var position=0;private var normal=0;private var color=0;private var mvpLocation=0;private var modelLocation=0
     private val projection=FloatArray(16);private val view=FloatArray(16);private val model=FloatArray(16)
     private val combined=FloatArray(16);private val mvp=FloatArray(16)
-    fun setGeometry(data:FloatArray) {
+    fun setGeometry(data:FloatArray,stage:MannequinStage.Geometry?) {
         buffer=ByteBuffer.allocateDirect(data.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply { put(data);position(0) }
         count=data.size/BodyAvatarMesh.STRIDE
+        this.stage=stage
+        stageBuffer=stage?.vertices?.let {vertices->ByteBuffer.allocateDirect(vertices.size*4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {put(vertices);position(0)}}
     }
     private fun shader(type:Int,source:String):Int {
         val id=GLES20.glCreateShader(type);GLES20.glShaderSource(id,source);GLES20.glCompileShader(id)
@@ -206,19 +211,34 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
             val vertex=shader(GLES20.GL_VERTEX_SHADER,"""
                 uniform mat4 uMvp; uniform mat4 uModel;
                 attribute vec3 aPosition; attribute vec3 aNormal; attribute vec3 aColor;
-                varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition;
+                varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition; varying mediump vec3 vLocal;
                 void main() {
                     vNormal=normalize(mat3(uModel)*aNormal);vPosition=(uModel*vec4(aPosition,1.0)).xyz;
-                    vColor=aColor;gl_Position=uMvp*vec4(aPosition,1.0);
+                    vLocal=aPosition;vColor=aColor;gl_Position=uMvp*vec4(aPosition,1.0);
                 }
             """.trimIndent())
             val fragment=shader(GLES20.GL_FRAGMENT_SHADER,"""
-                precision mediump float; varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition;
+                precision mediump float; varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition; varying mediump vec3 vLocal;
+                uniform float uStageMode; uniform vec2 uStageSize; uniform float uEyeZ;
                 void main(){
+                    if(uStageMode>0.5){
+                        vec2 p=vLocal.xz/uStageSize.x;
+                        float foot=uStageSize.y/uStageSize.x;
+                        vec2 a=(p-vec2(foot,0.018))/vec2(0.035,0.068);
+                        vec2 b=(p-vec2(-foot,0.018))/vec2(0.035,0.068);
+                        vec2 ambient=p/vec2(0.19,0.12);
+                        float contact=max(exp(-dot(a,a)*1.5),exp(-dot(b,b)*1.5));
+                        float shade=0.17*contact+0.045*exp(-dot(ambient,ambient));
+                        gl_FragColor=vec4(vColor*(1.0-shade),1.0);return;
+                    }
                     vec3 n=normalize(vNormal);vec3 key=normalize(vec3(-0.4,0.7,1.0));
                     float light=0.48+0.43*max(dot(n,key),0.0)+0.12*max(dot(n,normalize(vec3(0.8,0.15,0.5))),0.0)+0.06*max(n.y,0.0);
-                    vec3 eye=normalize(vec3(0.0,0.1,3.8)-vPosition);
+                    vec3 eye=normalize(vec3(0.0,0.1,uEyeZ)-vPosition);
                     float sheen=0.045*pow(max(dot(n,normalize(key+eye)),0.0),32.0);
+                    if(uStageMode> -0.5){
+                        light=0.50+0.38*max(dot(n,key),0.0)+0.10*max(dot(n,normalize(vec3(0.8,0.15,0.5))),0.0)+0.06*(n.y*0.5+0.5);
+                        sheen=0.020*pow(max(dot(n,normalize(key+eye)),0.0),8.0);
+                    }
                     gl_FragColor=vec4(vColor*light+vec3(sheen),1.0);
                 }
             """.trimIndent())
@@ -236,16 +256,24 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
     }
     override fun onDrawFrame(gl:GL10?) {
         if(failed)return
-        val data=buffer?:return
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
+        val data=buffer?:return
         Matrix.setLookAtM(view,0,0f,0f,distance/zoom.coerceIn(.8f,2f),0f,0f,0f,0f,1f,0f)
         Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,yaw,0f,1f,0f)
         Matrix.multiplyMM(combined,0,view,0,model,0);Matrix.multiplyMM(mvp,0,projection,0,combined,0)
         GLES20.glUseProgram(program);GLES20.glUniformMatrix4fv(mvpLocation,1,false,mvp,0);GLES20.glUniformMatrix4fv(modelLocation,1,false,model,0)
-        listOf(position to 0,normal to 3,color to 6).forEach { (location,offset) ->
-            data.position(offset);GLES20.glVertexAttribPointer(location,3,GLES20.GL_FLOAT,false,BodyAvatarMesh.STRIDE*4,data);GLES20.glEnableVertexAttribArray(location)
+        val mode=GLES20.glGetUniformLocation(program,"uStageMode")
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(program,"uEyeZ"),distance/zoom.coerceIn(.8f,2f))
+        fun draw(vertices:FloatBuffer,verticesCount:Int) {
+            listOf(position to 0,normal to 3,color to 6).forEach { (location,offset) ->
+                vertices.position(offset);GLES20.glVertexAttribPointer(location,3,GLES20.GL_FLOAT,false,BodyAvatarMesh.STRIDE*4,vertices);GLES20.glEnableVertexAttribArray(location)
+            }
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,verticesCount)
         }
-        GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,count)
+        stageBuffer?.let {floor->stage?.let {s->
+            GLES20.glUniform1f(mode,1f);GLES20.glUniform2f(GLES20.glGetUniformLocation(program,"uStageSize"),s.height,s.footX);draw(floor,6)
+        }}
+        GLES20.glUniform1f(mode,if(stage==null)-1f else 0f);draw(data,count)
         if(GLES20.glGetError()!=GLES20.GL_NO_ERROR) {failed=true;onError()}
     }
 }

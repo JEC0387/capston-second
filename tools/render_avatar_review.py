@@ -9,7 +9,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 
-def render(data, yaw, size=(320, 600), legacy=False):
+def render(data, yaw, size=(320, 600), legacy=False, cull_backfaces=False, stage=False, foot_x=.095):
     vertices=np.asarray(data,dtype=np.float64).reshape(-1,9)
     assert len(vertices)%3==0 and np.isfinite(vertices).all()
     angle=np.deg2rad(yaw);c,s=np.cos(angle),np.sin(angle)
@@ -20,6 +20,21 @@ def render(data, yaw, size=(320, 600), legacy=False):
     z=distance-xyz[:,2]
     screen=np.column_stack((w/2+xyz[:,0]*scale/z,h/2-xyz[:,1]*scale/z))
     canvas=np.full((h,w,3),[250,248,245],dtype=np.uint8);depth=np.full((h,w),np.inf)
+    if stage:
+        # Same analytic floor/contact-shadow idea as GLES; not a real light-space shadow map.
+        xx,yy=np.meshgrid(np.arange(w)+.5,np.arange(h)+.5)
+        dy=-(yy-h/2)/scale
+        ground=float(vertices[:,1].min())-.0034
+        t=np.divide(ground,dy,out=np.zeros_like(dy),where=dy<-.0001)
+        floor_x=t*(xx-w/2)/scale;floor_z=distance-t
+        local_x=floor_x*c-floor_z*s;local_z=floor_x*s+floor_z*c
+        p_x=local_x/1.7;p_z=local_z/1.7;foot=foot_x/1.7
+        contact=np.maximum(np.exp(-1.5*(((p_x-foot)/.035)**2+((p_z-.018)/.068)**2)),
+                           np.exp(-1.5*(((p_x+foot)/.035)**2+((p_z-.018)/.068)**2)))
+        shade=.17*contact+.045*np.exp(-((p_x/.19)**2+(p_z/.12)**2))
+        mask=(dy<-.0001)&(np.abs(local_x)<.816)&(local_z>-.544)&(local_z<.714)
+        canvas[mask]=(np.array([250,248,245])*(1-shade[mask,None])).astype(np.uint8)
+        depth[mask]=t[mask]
     light=np.array([-.4,.7,1.0]);light/=np.linalg.norm(light)
     fill=np.array([.8,.15,.5]);fill/=np.linalg.norm(fill)
     for start in range(0,len(vertices),3):
@@ -29,6 +44,7 @@ def render(data, yaw, size=(320, 600), legacy=False):
         if x1<x0 or y1<y0:continue
         a,b,c=p;den=(b[1]-c[1])*(a[0]-c[0])+(c[0]-b[0])*(a[1]-c[1])
         if abs(den)<1e-8:continue
+        if cull_backfaces and den>0:continue
         xx,yy=np.meshgrid(np.arange(x0,x1+1)+.5,np.arange(y0,y1+1)+.5)
         u=((b[1]-c[1])*(xx-c[0])+(c[0]-b[0])*(yy-c[1]))/den
         v=((c[1]-a[1])*(xx-c[0])+(a[0]-c[0])*(yy-c[1]))/den;t=1-u-v
@@ -41,6 +57,8 @@ def render(data, yaw, size=(320, 600), legacy=False):
         color=weights@vertices[start:start+3,6:9]
         if legacy:
             lit=.35+.65*np.maximum(n@light,0)
+        elif stage:
+            lit=.50+.38*np.maximum(n@light,0)+.10*np.maximum(n@fill,0)+.06*(n[...,1]*.5+.5)
         else:
             lit=.48+.43*np.maximum(n@light,0)+.12*np.maximum(n@fill,0)+.06*np.maximum(n[...,1],0)
         rgb=np.clip(color*lit[...,None]*255,0,255).astype(np.uint8)
