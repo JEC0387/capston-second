@@ -74,7 +74,7 @@ P6-2 독립 서버, P6-3 Android 모드 분리 및 P6-4 입력/품질 검증 도
 - 로컬 APK: `C:\Users\USER\Documents\ChatGPT\capston\p6-vton-20261102\fashion_app\build\p6-evidence\preview-vc13501\fashionai-1.1.35.1-preview-vc13501-ba5b0573.apk`
 - 실제 manifest: `com.jeiu.fashionproject.preview`, `1.1.35.1-preview`, `versionCode=13501`, build `35.1`. assets/build_identity.json·BUILD_INFO.json·Git SHA와 일치한다.
 - 서명 SHA-256: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`. 안정 APK `12701`을 직접 내려받아 인증서를 대조했고 동일하다. 새 키를 생성/교체하지 않았다. 패키지/서명 동일 +13501>12701로 업데이트 사전 검사 통과. 실제 기기 설치/데이터 보존 결과는 미검증이다.
-- APK SHA-256: `8aa0b8cd164b8a3214e9f217c40b376c1556fd8dcaf5cd7d3d8451cf9e8b2fc5`. APK ZIP CRC 정상. 3D/치수 직접 입력/기존 AI/새 자체 AI 클래스·엔진 등10개 필수 DEX 표식 확인. 기존 데이터 마이그레이션/저장소 코드는 수정하지 않았다.
+- APK SHA-256: `8aa0b8cd164b8a3214e9f217c40b376c1556fd8dcaf5cd7d3d8451cf9e8b2fc5`. APK ZIP CRC 정상. 3D/치수 직접 입력/기존 AI/새 자체 AI 클래스·엔진 등9개 필수 DEX 표식 확인. 기존 데이터 마이그레이션/저장소 코드는 수정하지 않았다.
 - APK에서 서명키/.env/모델 가중치 파일 및 검사한 개인키/GitHub/cloud-key 패턴 미검출. CI는 실제 서명 파일/비밀번호 바이트가 APK에 섞이지 않았는지도 검사했다. Gradle BuildConfig에 새 외부 API 키를 추가하지 않았다. 모든 종류의 비밀정보를 탐지하는 보증은 아니며 기존 서명·토큰 관리 정책을 유지한다.
 - 로컬 증거 `fashion_app/build/p6-evidence/P6_APK_VERIFICATION.json`, `ci-reports/`, `preview-vc13501/BUILD_INFO.json`은 ignored build 디렉터리에 있으며 Git에 올리지 않는다. 안정 APK·기존 백업도 유지했다.
 
