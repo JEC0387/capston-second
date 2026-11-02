@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.TryOnRepository
-import com.jeiu.fashionproject.data.TryOnBatch
+import com.jeiu.fashionproject.data.TryOnPipeline
 import com.jeiu.fashionproject.data.TryOnPlan
 import com.jeiu.fashionproject.data.TryOnGarment
 import com.jeiu.fashionproject.data.TryOnFailure
@@ -724,13 +724,11 @@ private fun TryOnView(
             errorText = null; resultUrl = null; showOriginal = false
             try {
                 progress = "사진 준비 중…"
-                val input = TryOnRepository.uriToDataUri(context, person)
                 val plan = TryOnPlan.build(wearable.map { TryOnGarment(it.name, it.name, it.category, it.image.toString()) })
-                resultUrl = TryOnBatch.run(plan, input, generate = { current, item ->
-                    val garment = if (TryOnBatch.isResultUrl(item.image)) item.image
-                        else TryOnRepository.uriToDataUri(context, Uri.parse(item.image))
-                    TryOnRepository.tryOn(current, garment, TryOnRepository.categoryFor(item.category)!!)
-                }, progress = { index, total -> progress = "AI가 옷을 입혀주고 있어요… ($index/$total)" })
+                // ① 자세 추정 → ②③④ FASHN(인체 분할 · 옷 변형 · 이미지 생성) → ⑤ 얼굴 합성 (TryOnPipeline)
+                resultUrl = TryOnPipeline.run(context, person, plan, seed = 42 + (System.currentTimeMillis() % 10_000).toInt()) {
+                    progress = it
+                }.image
             } catch (_: TimeoutCancellationException) {
                 errorText = "AI 피팅이 오래 걸려요. 서버 작업·차감 여부를 확인한 뒤 재시도해주세요."
             } catch (cancelled: CancellationException) {

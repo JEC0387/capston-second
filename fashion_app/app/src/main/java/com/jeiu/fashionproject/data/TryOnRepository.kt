@@ -23,7 +23,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * FASHN AI 가상피팅 API (tryon-v1.6).
+ * FASHN AI 가상피팅 API (tryon-v1.6). 사진 준비 · 얼굴 합성은 TryOnPipeline.
  * 1) POST /v1/run 으로 사람 사진 + 옷 사진을 보내면 작업 id를 받고
  * 2) GET /v1/status/{id} 를 3초마다 확인해서 completed 가 되면 결과 이미지 URL을 받는다.
  * 생성은 유료이며 요청별 요금·크레딧은 현재 서비스 정책을 확인한다.
@@ -91,7 +91,10 @@ object TryOnRepository {
      * modelImage(사람 사진: URL 또는 data URI)에 garmentUrl 옷을 입힌 결과 이미지 URL을 돌려준다.
      * 이전 결과 URL을 modelImage로 다시 넣으면 상의 → 하의 순서로 겹쳐 입힐 수 있다.
      */
-    suspend fun tryOn(modelImage: String, garmentUrl: String, category: String): String = withContext(Dispatchers.IO) {
+    suspend fun tryOn(
+        modelImage: String, garmentUrl: String, category: String,
+        photoType: String = "auto", seed: Int = 42
+    ): String = withContext(Dispatchers.IO) {
         if (!hasKey()) throw TryOnFailure("AI 피팅 서비스가 아직 연결되지 않았어요.")
         if (category !in setOf("tops", "bottoms", "one-pieces")) throw TryOnFailure("AI가 지원하지 않는 의류 종류예요.")
         val body = JSONObject()
@@ -100,9 +103,14 @@ object TryOnRepository {
                 .put("model_image", modelImage)
                 .put("garment_image", garmentUrl)
                 .put("category", category)
-                .put("mode", "balanced")
+                // 가장 자연스러운 결과: quality 모드(느리지만 주름 · 질감이 가장 좋음) + png(화질 손실 없음)
+                .put("mode", "quality")
+                .put("garment_photo_type", photoType)   // 누끼 옷은 flat-lay → 라벨 · 그림자 무시
+                .put("segmentation_free", true)          // 체형 · 피부 질감 보존 (기본값)
+                .put("moderation_level", "permissive")
+                .put("seed", seed)                        // 다시 입혀볼 때는 다른 seed → 다른 결과
                 .put("num_samples", 1)
-                .put("output_format", "jpeg"))
+                .put("output_format", "png"))
         val run = request("$BASE/run", body.toString())
         run.optString("error").takeIf { it.isNotBlank() && it != "null" }?.let { throw TryOnFailure(friendly(it)) }
         val id = run.getString("id")
@@ -132,15 +140,40 @@ object TryOnRepository {
         else -> "AI 피팅을 완료하지 못했어요. 사진과 서비스 상태를 확인해주세요."
     }
 
-    /** Save only a validated JPEG result using the system document picker; no broad storage permission. */
+    /** 결과 이미지를 시스템 저장 창으로 고른 위치에 JPEG로 저장 (저장소 권한 불필요). */
     suspend fun saveResult(context: Context, source: String, target: Uri) = withContext(Dispatchers.IO) {
+        val raw = localResult(context, source) ?: download(source)
+        // FASHN 결과는 PNG — 갤러리에서 바로 열리게 JPEG로 바꿔 저장한다
+        val bytes = when {
+            raw.size >= 3 && raw[0] == 0xff.toByte() && raw[1] == 0xd8.toByte() -> raw
+            raw.size >= 8 && raw[0] == 0x89.toByte() && raw[1] == 'P'.code.toByte() -> {
+                val bmp = BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: throw TryOnFailure("저장할 이미지를 확인하지 못했어요.")
+                ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 95, it); bmp.recycle() }.toByteArray()
+            }
+            else -> throw TryOnFailure("저장할 이미지를 확인하지 못했어요.")
+        }
+        coroutineContext.ensureActive()
+        context.contentResolver.openOutputStream(target)?.use { it.write(bytes) }
+            ?: throw TryOnFailure("저장 위치를 열지 못했어요.")
+    }
+
+    /** 폰에서 얼굴을 합성한 결과(캐시 tryon 폴더의 file://)면 그 파일 내용 */
+    private fun localResult(context: Context, source: String): ByteArray? {
+        val path = Uri.parse(source).takeIf { it.scheme == "file" }?.path ?: return null
+        val file = java.io.File(path)
+        if (file.parentFile?.canonicalPath != java.io.File(context.cacheDir, "tryon").canonicalPath)
+            throw TryOnFailure("결과 이미지 주소가 올바르지 않아요.")
+        return file.readBytes()
+    }
+
+    private suspend fun download(source: String): ByteArray {
         if (!TryOnBatch.isResultUrl(source)) throw TryOnFailure("결과 이미지 주소가 올바르지 않아요.")
         val conn = URL(source).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 20_000; conn.readTimeout = 30_000
             conn.instanceFollowRedirects = false
             if (conn.responseCode !in 200..299) throw TryOnFailure("결과 이미지를 내려받지 못했어요.")
-            val bytes = conn.inputStream.use { input ->
+            return conn.inputStream.use { input ->
                 val out = ByteArrayOutputStream()
                 val buffer = ByteArray(8192)
                 while (true) {
@@ -152,11 +185,6 @@ object TryOnRepository {
                 }
                 out.toByteArray()
             }
-            if (bytes.size < 3 || bytes[0] != 0xff.toByte() || bytes[1] != 0xd8.toByte())
-                throw TryOnFailure("저장할 JPEG 이미지를 확인하지 못했어요.")
-            coroutineContext.ensureActive()
-            context.contentResolver.openOutputStream(target)?.use { it.write(bytes) }
-                ?: throw TryOnFailure("저장 위치를 열지 못했어요.")
         } finally { conn.disconnect() }
     }
 

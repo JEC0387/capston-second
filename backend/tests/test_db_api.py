@@ -118,6 +118,12 @@ class DbApiTest(unittest.TestCase):
         self.post('/api/profile/styles',{'styles':[]})
         r=self.post('/api/style-preference/rate',{'style':'캐주얼','like':True})
         self.assertEqual(1,r.json()['ratedCount'])
+        # 8가지 스타일(댄디 등) 평가 · 예전 이름(클래식 → 포멀)은 합쳐서 센다
+        self.post('/api/style-preference/rate',{'style':'댄디','like':True})
+        r=self.post('/api/style-preference/rate',{'style':'클래식','like':True})
+        got={x['style']:x['score'] for x in r.json()['scores']}
+        self.assertEqual(2,got['댄디']); self.assertEqual(2,got['포멀']); self.assertNotIn('클래식',got)
+        self.assertEqual(400,self.post('/api/style-preference/rate',{'style':'없는스타일','like':True}).status_code)
         self.assertEqual(0,self.get('/api/size-charts').json()['totalCount'])
 
     def test_identity_required(self):

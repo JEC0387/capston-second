@@ -16,6 +16,7 @@ DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 �
   recommendation_logs 앱이 보여 준 추천 코디 기록 (👍 · 실제 착용과 비교해 추천 성능을 잰다)
   saved_outfits      저장한 코디 (룩북 — 추천 카드의 🔖)
   outfit_plans       코디 일정 (날짜마다 입기로 정한 코디 하나)
+  user_logins        구글 로그인 연결 (구글 계정 고유 번호 sub → users 한 명)
 
 동기화 원칙: 앱(폰)에 저장된 내용이 기준이고, 서버 DB 는 그 내용을 그대로 따라 저장한다.
 """
@@ -291,3 +292,21 @@ class OutfitPlan(Base):
     item_ids: Mapped[list] = mapped_column(JSON, default=list)
     note: Mapped[Optional[str]] = mapped_column(String(100))
     created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class UserLogin(Base):
+    """
+    구글 로그인 연결 — 같은 구글 계정이면 어느 폰에서 로그인해도 같은 users 한 명(같은 옷장 · 취향)을 쓴다.
+    subject = 구글 계정 고유 번호(sub). 처음 로그인할 때 그 폰의 기록을 이 계정으로 이어 받는다.
+    """
+    __tablename__ = "user_logins"
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_user_login_provider_subject"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(20))            # google
+    subject: Mapped[str] = mapped_column(String(255))
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    name: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

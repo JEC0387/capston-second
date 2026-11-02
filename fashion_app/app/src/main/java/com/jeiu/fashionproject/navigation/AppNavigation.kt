@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.navigation
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -79,6 +80,13 @@ fun AppNavigation() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavRoutes
+    // 로그인하지 않았으면(구글 · 게스트 둘 다 아님) 로그인 화면부터
+    val startRoute = androidx.compose.runtime.remember {
+        com.jeiu.fashionproject.data.AuthStore.load(context)
+        if (com.jeiu.fashionproject.data.AuthStore.mode.value == com.jeiu.fashionproject.data.AuthStore.Mode.NONE)
+            Screen.Login.route else Screen.Onboarding.route
+    }
+    val authScope = androidx.compose.runtime.rememberCoroutineScope()
 
     Scaffold(
         bottomBar = {
@@ -118,9 +126,19 @@ fun AppNavigation() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Screen.Onboarding.route,
+            startDestination = startRoute,
             modifier = Modifier.padding(innerPadding)
         ) {
+            composable(Screen.Login.route) {
+                // 마이페이지(게스트)에서 들어왔으면 돌아가고, 앱 첫 화면이면 온보딩으로
+                val fromInside = navController.previousBackStackEntry != null
+                com.jeiu.fashionproject.ui.screens.LoginScreen(onDone = {
+                    if (fromInside) navController.popBackStack()
+                    else navController.navigate(Screen.Onboarding.route) {
+                        popUpTo(Screen.Login.route) { inclusive = true }
+                    }
+                }, allowGuest = !fromInside)
+            }
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(onStart = {
                     navController.navigate(Screen.Home.route) {
@@ -165,7 +183,8 @@ fun AppNavigation() {
                     onWearLog = { navController.navigate(Screen.WearLog.route()) },
                     onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
                     onMissingItem = { navController.navigate(Screen.MissingItem.route) },
-                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) }
+                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) },
+                    gender = gender
                 )
             }
             composable(Screen.MusinsaCloset.route) {
@@ -205,10 +224,10 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.MissingItem.route) {
-                MissingItemScreen(onBack = { navController.popBackStack() })
+                MissingItemScreen(onBack = { navController.popBackStack() }, gender = gender)
             }
             composable(Screen.StylePreference.route) {
-                StylePreferenceScreen(onBack = { navController.popBackStack() })
+                StylePreferenceScreen(onBack = { navController.popBackStack() }, gender = gender)
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
@@ -232,7 +251,8 @@ fun AppNavigation() {
                     onShop = { navController.navigate(Screen.Shop.route) },
                     onBack = { navController.popBackStack() },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
-                    weatherViewModel = weatherViewModel
+                    weatherViewModel = weatherViewModel,
+                    gender = gender
                 )
             }
             composable(Screen.BodyAnalysis.route) {
@@ -276,9 +296,14 @@ fun AppNavigation() {
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onBodyHistory = { navController.navigate(Screen.BodyHistory.route) },
                     onOutfitBook = { navController.navigate(Screen.OutfitBook.route()) },
+                    onLogin = { navController.navigate(Screen.Login.route) },
                     onLogout = {
-                        navController.navigate(Screen.Onboarding.route) {
-                            popUpTo(0) { inclusive = true }
+                        // 보내지 못한 기록을 서버로 보낸 뒤 이 폰의 기록을 지우고 로그인 화면으로 다시 시작
+                        authScope.launch {
+                            val synced = com.jeiu.fashionproject.data.AuthStore.signOut(context)
+                            if (!synced) android.widget.Toast.makeText(context,
+                                "서버에 연결되지 않아 일부 기록을 보내지 못했어요", android.widget.Toast.LENGTH_LONG).show()
+                            com.jeiu.fashionproject.data.BackupRestore.restartApp(context)
                         }
                     }
                 )

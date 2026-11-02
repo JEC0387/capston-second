@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.BasicItems
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.recommend.MissingItemFinder
@@ -44,15 +45,15 @@ import kotlinx.coroutines.withContext
  * 후보 옷은 사진이 없어서 색 칸으로, 쇼핑 상품은 상품 사진으로 보여준다.
  */
 @Composable
-fun MissingItemScreen(onBack: () -> Unit) {
+fun MissingItemScreen(onBack: () -> Unit, gender: Gender? = null) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { WardrobeStore.load(context) }
     val wardrobe by WardrobeStore.items.collectAsState()
 
     // 후보마다 조합을 다 맞춰 보느라 잠깐 걸릴 수 있어 화면이 멈추지 않게 따로 계산한다
     var report by remember { mutableStateOf<MissingItemFinder.Report?>(null) }
-    LaunchedEffect(wardrobe) {
-        report = withContext(Dispatchers.Default) { MissingItemFinder.analyze(wardrobe) }
+    LaunchedEffect(wardrobe, gender) {
+        report = withContext(Dispatchers.Default) { MissingItemFinder.analyze(wardrobe, gender = gender) }
     }
     var searchKeyword by remember { mutableStateOf<String?>(null) }
     var expanded by remember { mutableStateOf<String?>(null) }   // 예시를 펼친 후보 id

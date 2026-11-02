@@ -188,8 +188,10 @@ LEGACY_STYLE_OPTIONS = ["페미닌", "빈티지", "클래식"]
 
 
 # ---------- 스타일 취향 학습 (StylePreferenceScreen.kt) ----------
-# 앱 StylePreferenceStore 와 동일한 5개 스타일. 서버는 인메모리로 점수를 누적한다.
-STYLE_PREFERENCE_STYLES = ["미니멀", "캐주얼", "클래식", "스트릿", "빈티지"]
+# 앱 StylePreferenceStore 와 동일한 8개 스타일 (선호 스타일 STYLE_OPTIONS 와 같음).
+STYLE_PREFERENCE_STYLES = list(STYLE_OPTIONS)
+# 예전 앱(5개 스타일)이 보낸 평가 — 받아서 새 이름으로 합쳐 센다
+LEGACY_STYLE_MAP = {"클래식": "포멀", "빈티지": "아메카지"}
 
 STYLE_PREFERENCE_STATE = {
     "scores": {s: 0 for s in STYLE_PREFERENCE_STYLES},

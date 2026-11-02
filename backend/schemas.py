@@ -232,6 +232,23 @@ class Profile(BaseModel):
     interestCount: int = 0           # 관심 상품 수
 
 
+class GoogleLoginRequest(BaseModel):
+    """앱이 구글 계정 선택 뒤 받은 ID 토큰"""
+    idToken: str
+
+
+class LoginResponse(BaseModel):
+    """
+    accountKey: 이 계정의 기록을 가리키는 번호 — 앱은 이 값을 기기 번호(X-Device-Id)로 바꿔 쓴다.
+    switched: True 면 다른 폰에서 쓰던 계정이라 앱이 서버 기록을 받아 와야 함 (False 면 이 폰 기록을 그대로 이어 씀).
+    """
+    accountKey: str
+    email: str
+    name: str
+    isNewAccount: bool
+    switched: bool
+
+
 class GenderRequest(BaseModel):
     """마이페이지 성별 설정 (null 이면 설정 해제)"""
     gender: Optional[Literal["FEMALE", "MALE"]] = None

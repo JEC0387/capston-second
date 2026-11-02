@@ -3,43 +3,80 @@ package com.jeiu.fashionproject.ui.viewmodel
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.ImageDecoder
+import android.graphics.Paint
+import android.graphics.RectF
 import android.net.Uri
 import android.os.Build
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
+import com.google.android.gms.tasks.Task
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
 import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * 옷 사진 누끼(배경 제거) — ML Kit 피사체 분리(Subject Segmentation), 폰 안에서 동작.
+ * 옷 사진 누끼(배경 제거) + 옷장 사진 통일 — 폰 안에서 동작.
  *
- * 사진 한 장으로 세 가지 파일을 만든다.
- *  - 누끼 PNG (배경 투명, 옷 영역만 잘라 가운데 정렬) → 앱 전용 폴더
- *  - 원본 복사본 JPG ("원본으로 저장" 선택용)        → 앱 전용 폴더
- *  - 서버 전송용 JPG (투명 배경을 흰색으로 채움)      → 캐시 폴더 (전송 후 삭제)
+ * 배경 지우기 순서 (앞 방법이 실패하면 다음 방법):
+ *  ① ML Kit 피사체 분리(Subject Segmentation). 모델이 아직 폰에 없으면 내려받기를 요청하고 잠깐 기다렸다가 다시 시도
+ *  ② 단색 배경 지우기 (ClosetPhotoRules.plainBackgroundMask) — 바닥 · 벽 · 침대처럼 고른 배경
+ *  ③ (등록 화면) 서버 DeepFashion2 옷 윤곽 마스크로 "옷만" 오려내기 — cutGarment
+ *
+ * 사진 한 장으로 만드는 파일:
+ *  - 통일 누끼 PNG (900×900 투명 캔버스, 옷 긴 변 78% 가운데, 옅은 그림자) → 앱 전용 폴더 (옷장에 보이는 사진)
+ *  - 원본 복사본 JPG ("원본으로 저장" 선택용)                           → 앱 전용 폴더
+ *  - 마스크 기준 PNG (자르기만 한 누끼 — 서버에 보낸 사진과 같은 비율)       → 캐시 폴더
+ *  - 서버 전송용 JPG (투명 배경을 흰색으로 채움)                          → 캐시 폴더 (전송 후 삭제)
  * 갤러리 주소 대신 앱 폴더에 사진을 보관하므로 갤러리 권한이 끊겨도 사진이 유지된다.
  */
 object BackgroundRemover {
 
     data class Result(
-        val cutoutPath: String?,     // 누끼 실패 시 null
+        val cutoutPath: String?,     // 통일 누끼 (배경 제거 실패 시 null)
         val originalPath: String,
         val uploadPath: String,      // 서버로 보낼 이미지 (누끼 실패 시 원본 사본과 같음)
+        val maskBasePath: String,    // 서버 마스크를 씌울 기준 이미지 (자른 누끼, 실패 시 원본 사본)
         val cutoutBitmap: Bitmap?    // 색 추출용 (사용 후 recycle)
     )
 
     private const val MAX_SIDE = 1024
+    /** 통일 처리한 사진 파일 이름 끝 — 이미 통일한 사진은 다시 처리하지 않는다 */
+    const val STD_SUFFIX = "_std.png"
 
     /** 앱 전용 옷 사진 폴더. 옷을 지울 때 이 폴더 안의 파일만 함께 지운다. */
     fun wardrobeDir(context: Context): File = File(context.filesDir, "wardrobe").apply { mkdirs() }
+
+    private fun segmenterOptions() = SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
+
+    /**
+     * ML Kit 누끼 모델을 미리 내려받아 둔다 (Google Play 서비스 모듈). 옷 등록 화면을 열 때 부른다.
+     * 이미 있으면 아무것도 하지 않고, 실패해도 등록은 예비 방법으로 계속된다.
+     */
+    suspend fun prepare(context: Context): Boolean = runCatching {
+        val client = ModuleInstall.getClient(context.applicationContext)
+        val segmenter = SubjectSegmentation.getClient(segmenterOptions())
+        try {
+            if (client.areModulesAvailable(segmenter).awaitTask().areModulesAvailable()) return@runCatching true
+            client.installModules(ModuleInstallRequest.newBuilder().addApi(segmenter).build()).awaitTask()
+            // 내려받기는 Play 서비스가 따로 진행 — 최대 25초 동안 준비됐는지 확인
+            withTimeoutOrNull(25_000L) {
+                while (!client.areModulesAvailable(segmenter).awaitTask().areModulesAvailable()) delay(1_000)
+                true
+            } ?: false
+        } finally { segmenter.close() }
+    }.getOrDefault(false)
 
     suspend fun process(context: Context, uri: Uri): Result = withContext(Dispatchers.Default) {
         val id = UUID.randomUUID().toString()
@@ -48,15 +85,22 @@ object BackgroundRemover {
         val originalFile = File(wardrobeDir(context), "${id}_orig.jpg")
         originalFile.outputStream().use { original.compress(Bitmap.CompressFormat.JPEG, 90, it) }
 
-        val cutout = runCatching { segment(original) }.getOrNull()?.let { cropToSubject(it) }
+        val cutout = removeBackground(context, original)
         original.recycle()
 
         if (cutout == null) {
-            return@withContext Result(null, originalFile.absolutePath, originalFile.absolutePath, null)
+            return@withContext Result(null, originalFile.absolutePath, originalFile.absolutePath, originalFile.absolutePath, null)
         }
 
-        val cutoutFile = File(wardrobeDir(context), "${id}_cut.png")
-        cutoutFile.outputStream().use { cutout.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // 마스크 기준(자르기만 한 누끼) — 서버에 보내는 사진과 같은 크기라 옷 윤곽 마스크가 정확히 겹친다
+        val baseFile = File(context.cacheDir, "maskbase_$id.png")
+        baseFile.outputStream().use { cutout.compress(Bitmap.CompressFormat.PNG, 100, it) }
+
+        // 옷장에 보일 통일 사진
+        val stdFile = File(wardrobeDir(context), "${id}_cut$STD_SUFFIX")
+        val std = standardize(cutout)
+        stdFile.outputStream().use { std.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        std.recycle()
 
         // 서버 모델은 투명 배경을 학습하지 않았으므로 흰 배경으로 채워서 보낸다.
         val uploadFile = File(context.cacheDir, "upload_$id.jpg")
@@ -68,7 +112,86 @@ object BackgroundRemover {
         uploadFile.outputStream().use { white.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         white.recycle()
 
-        Result(cutoutFile.absolutePath, originalFile.absolutePath, uploadFile.absolutePath, cutout)
+        Result(stdFile.absolutePath, originalFile.absolutePath, uploadFile.absolutePath, baseFile.absolutePath, cutout)
+    }
+
+    /** ① ML Kit → (모델 내려받기 후 한 번 더) → ② 단색 배경. 모두 실패하면 null. 결과는 옷 영역에 맞춰 자른 투명 PNG */
+    private suspend fun removeBackground(context: Context, original: Bitmap): Bitmap? {
+        runCatching { segment(original) }.getOrNull()?.let { fg -> cropToSubject(fg)?.let { return it } }
+        if (prepare(context)) {
+            runCatching { segment(original) }.getOrNull()?.let { fg -> cropToSubject(fg)?.let { return it } }
+        }
+        return runCatching { plainBackgroundCut(original) }.getOrNull()?.let { cropToSubject(it) }
+    }
+
+    /** ② 단색 배경 지우기 — 경계는 1px 부드럽게 */
+    private fun plainBackgroundCut(src: Bitmap): Bitmap? {
+        val w = src.width; val h = src.height
+        val px = IntArray(w * h).also { src.getPixels(it, 0, w, 0, 0, w, h) }
+        val bg = ClosetPhotoRules.plainBackgroundMask(px, w, h) ?: return null
+        val out = IntArray(w * h)
+        for (i in px.indices) {
+            if (bg[i]) { out[i] = 0; continue }
+            val x = i % w; val y = i / w
+            val edge = (x > 0 && bg[i - 1]) || (x < w - 1 && bg[i + 1]) || (y > 0 && bg[i - w]) || (y < h - 1 && bg[i + w])
+            val alpha = if (edge) 0x99 else 0xFF
+            out[i] = (alpha shl 24) or (px[i] and 0x00FFFFFF)
+        }
+        return Bitmap.createBitmap(out, w, h, Bitmap.Config.ARGB_8888)
+    }
+
+    /**
+     * 통일 사진 — 900×900 투명 캔버스 가운데에 옷을 같은 비율로 놓고, 아래에 옅은 그림자를 깐다.
+     * 모든 옷이 같은 크기 · 같은 위치 · 같은 그림자로 보여 옷장이 한 쇼핑몰 상품 사진처럼 정돈된다.
+     */
+    fun standardize(cutout: Bitmap): Bitmap {
+        val size = ClosetPhotoRules.CANVAS
+        val place = ClosetPhotoRules.layout(cutout.width, cutout.height)
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val dst = RectF(place.left, place.top, place.left + place.width, place.top + place.height)
+        // 그림자: 옷 모양을 흐리게 한 실루엣을 살짝 아래에
+        runCatching {
+            val blur = Paint().apply { maskFilter = BlurMaskFilter(18f, BlurMaskFilter.Blur.NORMAL) }
+            val offset = IntArray(2)
+            val alpha = cutout.extractAlpha(blur, offset)
+            val sx = place.width / cutout.width; val sy = place.height / cutout.height
+            val shadowDst = RectF(
+                dst.left + offset[0] * sx, dst.top + offset[1] * sy + size * 0.018f,
+                dst.left + (offset[0] + alpha.width) * sx, dst.top + (offset[1] + alpha.height) * sy + size * 0.018f
+            )
+            canvas.drawBitmap(alpha, null, shadowDst, Paint(Paint.FILTER_BITMAP_FLAG).apply { color = 0x2E000000 })
+            alpha.recycle()
+        }
+        canvas.drawBitmap(cutout, null, dst, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
+        return out
+    }
+
+    /** 이미 저장된 누끼 사진(파일)을 통일 사진으로 다시 만든다. 이미 통일했거나 읽지 못하면 null */
+    suspend fun restandardize(context: Context, uri: String): String? = withContext(Dispatchers.Default) {
+        if (uri.endsWith(STD_SUFFIX)) return@withContext null
+        val bitmap = runCatching {
+            context.contentResolver.openInputStream(Uri.parse(uri))!!.use { BitmapFactory.decodeStream(it) }
+        }.getOrNull()?.copy(Bitmap.Config.ARGB_8888, false) ?: return@withContext null
+        val cropped = cropToSubject(bitmap) ?: return@withContext null
+        saveStd(context, cropped)
+    }
+
+    /** 배경이 남은 원본 사진에서 배경을 지워 통일 사진을 만든다. 실패하면 null */
+    suspend fun cutoutFromOriginal(context: Context, uri: String): String? = withContext(Dispatchers.Default) {
+        val original = runCatching { decode(context, Uri.parse(uri)) }.getOrNull() ?: return@withContext null
+        val cut = removeBackground(context, original)
+        original.recycle()
+        cut?.let { saveStd(context, it) }
+    }
+
+    private fun saveStd(context: Context, cropped: Bitmap): String {
+        val std = standardize(cropped)
+        cropped.recycle()
+        val file = File(wardrobeDir(context), "${UUID.randomUUID()}_cut$STD_SUFFIX")
+        file.outputStream().use { std.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        std.recycle()
+        return Uri.fromFile(file).toString()
     }
 
     data class GarmentCut(
@@ -79,8 +202,8 @@ object BackgroundRemover {
 
     /**
      * 옷만 오려내기 — 서버(DeepFashion2)가 준 옷 윤곽 마스크로 사람 몸·다른 옷을 지운다.
-     * [basePath]는 서버에 보낸 사진과 같은 비율의 이미지(누끼 PNG, 누끼 실패 시 원본 사본)이고,
-     * 마스크는 서버에서 줄인 크기이므로 base 크기에 맞춰 늘려서 쓴다.
+     * [basePath]는 서버에 보낸 사진과 같은 비율의 이미지(자른 누끼, 누끼 실패 시 원본 사본)이고,
+     * 마스크는 서버에서 줄인 크기이므로 base 크기에 맞춰 늘려서 쓴다. 결과는 통일 사진으로 저장한다.
      */
     suspend fun cutGarment(context: Context, basePath: String, maskPngBase64: String): GarmentCut? =
         withContext(Dispatchers.Default) {
@@ -108,8 +231,10 @@ object BackgroundRemover {
             base.setPixels(px, 0, w, 0, 0, w, h)
 
             val cropped = cropToSubject(base) ?: return@withContext null
-            val file = File(wardrobeDir(context), "${UUID.randomUUID()}_garment.png")
-            file.outputStream().use { cropped.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val std = standardize(cropped)
+            val file = File(wardrobeDir(context), "${UUID.randomUUID()}_garment$STD_SUFFIX")
+            file.outputStream().use { std.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            std.recycle()
             GarmentCut(file.absolutePath, cropped, if (before > 0) after.toFloat() / before else 1f)
         }
 
@@ -134,9 +259,7 @@ object BackgroundRemover {
 
     // ── ML Kit 피사체 분리 → 배경이 투명한 비트맵 ─────────────────────────────
     private suspend fun segment(bitmap: Bitmap): Bitmap = suspendCancellableCoroutine { cont ->
-        val segmenter = SubjectSegmentation.getClient(
-            SubjectSegmenterOptions.Builder().enableForegroundBitmap().build()
-        )
+        val segmenter = SubjectSegmentation.getClient(segmenterOptions())
         segmenter.process(InputImage.fromBitmap(bitmap, 0))
             .addOnSuccessListener { result ->
                 val fg = result.foregroundBitmap
@@ -147,9 +270,13 @@ object BackgroundRemover {
             .addOnCompleteListener { segmenter.close() }
     }
 
+    private suspend fun <T> Task<T>.awaitTask(): T = suspendCancellableCoroutine { cont ->
+        addOnSuccessListener { cont.resume(it) }
+        addOnFailureListener { cont.resumeWithException(it) }
+    }
+
     /**
      * 옷(불투명 픽셀)이 있는 영역만 잘라내고 사방에 약간의 여백을 둔다.
-     * 옷장 칸에서 모든 옷이 같은 크기·가운데 정렬로 보이게 하기 위함.
      * 남은 영역이 너무 작으면 누끼 실패로 본다.
      */
     private fun cropToSubject(fg: Bitmap): Bitmap? {

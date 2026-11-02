@@ -124,6 +124,7 @@ def database_status():
 _M002 = '002_user_data_tables.sql'
 _M003 = '003_backup_and_recommendation_logs.sql'
 _M004 = '004_outfit_book_and_prices.sql'
+_M005 = '005_user_logins.sql'
 _SCHEMA_CHECKS = [
     ('users.gender', 'SELECT gender FROM users LIMIT 0', _M002),
     ('products.product_key', 'SELECT product_key FROM products LIMIT 0', _M002),
@@ -134,6 +135,7 @@ _SCHEMA_CHECKS = [
     ('clothes.price', 'SELECT price, brand FROM clothes LIMIT 0', _M004),
     ('saved_outfits', 'SELECT client_key FROM saved_outfits LIMIT 0', _M004),
     ('outfit_plans', 'SELECT date FROM outfit_plans LIMIT 0', _M004),
+    ('user_logins', 'SELECT subject FROM user_logins LIMIT 0', _M005),
 ]
 
 

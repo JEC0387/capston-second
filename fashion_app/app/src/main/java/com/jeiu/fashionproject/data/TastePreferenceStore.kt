@@ -2,6 +2,7 @@ package com.jeiu.fashionproject.data
 
 import android.content.Context
 import com.jeiu.fashionproject.recommend.OutfitEngine
+import com.jeiu.fashionproject.recommend.PreferredStyles
 import com.jeiu.fashionproject.recommend.SituationRules
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -110,7 +111,9 @@ object TastePreferenceStore {
 
     /** 코디 카드 👍👎 — 스타일(기존 저장소)과 색·종류·조합 방식을 함께 학습한다 */
     fun rateOutfit(context: Context, outfit: OutfitEngine.Outfit, like: Boolean) {
-        StylePreferenceStore.rate(context, outfit.style, like)
+        // 스타일 점수는 8가지 기준 — 코디 옷 절반 이상이 맞는 스타일, 없으면 옷 태그 스타일을 가까운 이름으로
+        (PreferredStyles.dominant(outfit.items) ?: PreferredStyles.fromTag(outfit.style))
+            ?.let { StylePreferenceStore.rate(context, it, like) }
         record(
             context,
             TasteEvent(

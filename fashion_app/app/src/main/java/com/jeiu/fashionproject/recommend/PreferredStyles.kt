@@ -73,4 +73,42 @@ object PreferredStyles {
         val best = preferred.map { s -> s to items.count { matches(it, s) } }.maxByOrNull { it.second }
         return Match(MAX_SCORE * coverage, best?.takeIf { it.second * 2 >= items.size }?.first)
     }
+
+    // ── 스타일 취향 학습(좋아요/싫어요) 점수 → 코디 반영 ────────────────────────
+
+    /** 예전 이름으로 쌓인 점수(클래식 · 빈티지)를 새 이름으로 합치고, 8가지에 없는 스타일은 뺀다 */
+    fun canonicalScores(scores: Map<String, Int>): Map<String, Int> {
+        val out = OPTIONS.associateWith { 0 }.toMutableMap()
+        scores.forEach { (k, v) -> val key = LEGACY[k] ?: k; if (key in out) out[key] = out.getValue(key) + v }
+        return out
+    }
+
+    /**
+     * 학습한 스타일 점수로 본 코디 취향도 (−1 ~ 1).
+     * 옷마다 그 옷이 맞는 스타일들의 점수 평균(맞는 스타일이 없으면 0)을 구하고, 코디 옷들의 평균을 가장 큰 점수로 나눈다.
+     */
+    fun learnedAffinity(items: List<WardrobeItem>, scores: Map<String, Int>): Double {
+        val learned = canonicalScores(scores).filterValues { it != 0 }
+        val max = learned.values.maxOfOrNull { kotlin.math.abs(it) } ?: 0
+        if (max == 0 || items.isEmpty()) return 0.0
+        val perItem = items.map { item ->
+            val hits = learned.filterKeys { matches(item, it) }.values
+            if (hits.isEmpty()) 0.0 else hits.average()
+        }
+        return (perItem.average() / max).coerceIn(-1.0, 1.0)
+    }
+
+    /** 넓은 스타일(캐주얼 · 미니멀)보다 뚜렷한 스타일을 먼저 — 대표 스타일을 고를 때 동점이면 이 순서 */
+    private val SPECIFIC_FIRST = listOf("포멀", "댄디", "스포티", "아메카지", "유니크", "스트릿", "미니멀", "캐주얼")
+
+    /** 코디를 대표하는 스타일 — 옷의 절반 이상이 맞는 스타일 중 가장 많이 맞는 것 (같으면 더 뚜렷한 스타일) */
+    fun dominant(items: List<WardrobeItem>): String? {
+        if (items.isEmpty()) return null
+        return SPECIFIC_FIRST.map { s -> s to items.count { matches(it, s) } }
+            .filter { it.second * 2 >= items.size && it.second > 0 }
+            .maxByOrNull { it.second }?.first
+    }
+
+    /** 옷에 붙는 자동 스타일 태그(StyleTagger 5가지) → 8가지 중 가까운 이름 */
+    fun fromTag(tag: String?): String? = tag?.let { LEGACY[it] ?: it }?.takeIf { it in OPTIONS }
 }

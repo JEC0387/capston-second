@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.ui.theme.CreamDark
+import com.jeiu.fashionproject.ui.viewmodel.BackgroundRemover
 
 /**
  * 옷 사진 한 칸 — 옷장·착용 기록·달력에서 같은 모양으로 보여준다.
@@ -28,6 +29,8 @@ fun ClothingThumb(
     overlay: @Composable BoxScope.() -> Unit = {}
 ) {
     // 일반 사진은 옷 대표색을 사진 로딩 전 자리 표시로 쓴다
+    // 통일 사진(정사각 캔버스에 여백 · 그림자가 이미 들어 있음)은 여백을 더 두지 않는다
+    val unified = item.imageUri.endsWith(BackgroundRemover.STD_SUFFIX)
     Box(modifier = modifier.background(if (item.isCutout) CreamDark else Color(item.colorValue))) {
         AsyncImage(
             model = item.imageUri,
@@ -35,7 +38,7 @@ fun ClothingThumb(
             contentScale = if (item.isCutout) ContentScale.Fit else ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (item.isCutout) cutoutPadding else 0.dp)
+                .padding(if (item.isCutout && !unified) cutoutPadding else 0.dp)
         )
         overlay()
     }

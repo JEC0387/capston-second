@@ -10,6 +10,9 @@ import com.jeiu.fashionproject.data.WardrobeItem
  */
 object StyleTagger {
 
+    /** 옷마다 붙는 스타일 태그 5가지 (옷 등록 · 수정 화면에서 고르는 값) */
+    val STYLES = listOf("미니멀", "캐주얼", "클래식", "스트릿", "빈티지")
+
     /** 이 옷의 스타일 — 사용자가 고른 값이 있으면 그 값, 없으면 자동 규칙 */
     fun styleOf(item: WardrobeItem): String =
         item.style ?: auto(item.name, item.category, item.subCategory, item.detailType, item.colorValue)

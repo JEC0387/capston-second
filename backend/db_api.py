@@ -1,6 +1,7 @@
 """Selective DB/history integration. Existing image and recommendation endpoints stay in main.py."""
 import base64
 import binascii
+import auth_google
 import hashlib
 import re
 import uuid
@@ -14,7 +15,7 @@ from sqlalchemy import inspect as sa_inspect
 import data
 from database import get_db, schema_has
 from db_models import (BodyMeasurement, Clothing, ClothingPhoto, OutfitPlan, Product, ProductInterest, ProductLike,
-    RecommendationLog, SavedOutfit, SizeChart, StyleRating, TasteEvent, User, WearLog)
+    RecommendationLog, SavedOutfit, SizeChart, StyleRating, TasteEvent, User, UserLogin, WearLog)
 from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, WardrobeSyncRequest,
     SyncResult, WearLogSyncRequest, WearLogResponse, BodyMeasurementIn, BodyMeasurementOut,
     BodyMeasurementHistory, SizeChartResponse, Profile, UpdateStylesRequest,
@@ -22,7 +23,7 @@ from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, Wardrob
     ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary,
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
     TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
-    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats)
+    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats, GoogleLoginRequest, LoginResponse)
 
 app = APIRouter()
 
@@ -480,6 +481,7 @@ def _preference_payload(db: Session, user: User) -> dict:
         select(StyleRating.style, StyleRating.liked).where(StyleRating.user_id == user.id)
     ):
         rated += 1
+        style = data.LEGACY_STYLE_MAP.get(style, style)   # 예전 이름(클래식 · 빈티지)은 새 이름으로
         if style in scores:
             scores[style] += 2 if liked else -1
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -500,11 +502,82 @@ def get_style_preference(db: Session = Depends(get_db), user: User = Depends(cur
 def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_db),
                           user: User = Depends(current_user)):
     """코디 카드 좋아요/싫어요 평가를 DB 에 한 줄씩 기록"""
-    if req.style not in data.STYLE_PREFERENCE_STYLES:
+    if req.style not in data.STYLE_PREFERENCE_STYLES and req.style not in data.LEGACY_STYLE_MAP:
         raise HTTPException(400, f"알 수 없는 스타일: {req.style}")
     db.add(StyleRating(user_id=user.id, style=req.style, liked=req.like))
     db.commit()
     return _preference_payload(db, user)
+
+
+# ──────────────────────────────────────────────
+# 구글 로그인
+# ──────────────────────────────────────────────
+
+_DEVICE_RE = re.compile(r"[A-Za-z0-9-]{1,64}")
+
+
+@app.post("/api/auth/google", response_model=LoginResponse, tags=["로그인"])
+def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db),
+                 x_device_id: Optional[str] = Header(None)):
+    """
+    구글 계정으로 로그인. 같은 구글 계정이면 어느 폰에서든 같은 사용자(옷장 · 착용 · 취향)를 쓴다.
+    - 처음 로그인하는 구글 계정: 지금 폰의 기록(X-Device-Id 사용자)을 그대로 이 계정으로 이어 받는다.
+    - 이미 있는 계정: 그 계정 번호(accountKey)를 돌려준다 → 앱은 그 번호로 바꾸고 서버 기록을 받아 온다.
+    """
+    if not schema_has(db, "user_logins"):
+        raise HTTPException(503, "DB 에 로그인 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+    try:
+        claims = auth_google.verify(req.idToken)
+    except auth_google.GoogleNotConfigured:
+        raise HTTPException(503, "서버에 GOOGLE_CLIENT_ID 가 없어요 (Railway Variables 확인)")
+    except auth_google.InvalidGoogleToken:
+        raise HTTPException(401, "구글 로그인 정보를 확인하지 못했어요")
+    except auth_google.GoogleUnavailable:
+        raise HTTPException(502, "구글 로그인 확인 서버에 연결하지 못했어요")
+
+    now = datetime.now(timezone.utc)
+    login = db.scalar(select(UserLogin).where(UserLogin.provider == "google", UserLogin.subject == claims["sub"]))
+    is_new = login is None
+    if login is not None:
+        user = db.get(User, login.user_id)
+        login.last_login_at = now
+        login.email = cut(claims["email"], 255) or login.email
+    else:
+        user = None
+        if x_device_id and _DEVICE_RE.fullmatch(x_device_id):
+            device_user = db.scalar(select(User).where(User.device_id == x_device_id))
+            linked = device_user is not None and db.scalar(
+                select(func.count()).select_from(UserLogin).where(UserLogin.user_id == device_user.id)) > 0
+            if device_user is not None and not linked:
+                user = device_user                    # 이 폰에서 쓰던 기록을 새 계정으로 이어 받기
+            elif device_user is None:
+                user = User(device_id=x_device_id, nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
+                db.add(user)
+        if user is None:                              # 기기 번호가 없거나 이미 다른 계정에 연결된 폰
+            user = User(device_id=str(uuid.uuid4()), nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
+            db.add(user)
+        db.flush()
+        db.add(UserLogin(user_id=user.id, provider="google", subject=claims["sub"],
+                         email=cut(claims["email"], 255), name=cut(claims["name"], 100), last_login_at=now))
+    if user is None:
+        raise HTTPException(404, "연결된 사용자를 찾지 못했어요")
+    if not user.device_id:
+        user.device_id = str(uuid.uuid4())
+    # 프로필 이름 · 이메일을 구글 계정으로 (다른 사용자가 같은 이메일을 쓰고 있으면 이메일은 그대로)
+    if claims["email"] and user.email != claims["email"]:
+        taken = db.scalar(select(User.id).where(User.email == claims["email"], User.id != user.id))
+        if taken is None:
+            user.email = cut(claims["email"], 255)
+    if claims["name"] and user.nickname in (None, "", "나의 스타일"):
+        user.nickname = cut(claims["name"], 50)
+    db.commit()
+    return {
+        "accountKey": user.device_id,
+        "email": user.email or claims["email"],
+        "name": user.nickname,
+        "isNewAccount": is_new,
+        "switched": user.device_id != x_device_id,
+    }
 
 
 # ──────────────────────────────────────────────
@@ -918,7 +991,7 @@ def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_u
     """
     deleted: dict[str, int] = {}
     models = (ClothingPhoto, Clothing, WearLog, BodyMeasurement, StyleRating, TasteEvent,
-              ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan)
+              ProductInterest, ProductLike, RecommendationLog, SavedOutfit, OutfitPlan, UserLogin)
     present = {m.__tablename__: schema_has(db, m.__tablename__) for m in models}   # 지우기 전에 한 번에 확인
     for model in models:
         if not present[model.__tablename__]:   # 아직 만들지 않은 표는 지울 것도 없음
