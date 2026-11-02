@@ -214,6 +214,14 @@ fun WardrobeScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Text(OutfitSources.emptyMessage(selectedScope, selectedCategory), color = MediumGray)
+                if (allDisplayed.isEmpty() && selectedCategory == "전체" &&
+                    selectedScope != ClothingScope.INTERESTED) {
+                    Text("미리 준비된 샘플 옷을 추가해 가상피팅을 테스트할 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                    OutlinedButton(onClick = { WardrobeStore.addDemoSamplesIfEmpty(context) }) {
+                        Text("샘플 옷 12벌 추가")
+                    }
+                }
                 if (selectedScope != ClothingScope.INTERESTED) {
                     TextButton(onClick = onAddClothing) { Text("옷 등록하기") }
                 }
