@@ -9,6 +9,11 @@ data class AvatarParameters(
     val sources: List<String> = listOf("기본 비율"),
     val notes: List<String> = listOf("깊이·얼굴·팔·다리는 단순화한 기본 형상이에요. 신체 복원이나 실제 착용 예측이 아니에요.")
 ) {
+    fun joints(): AvatarJoints {
+        val h=heightCm/100f
+        val hip=(legCm/100f+h*.04f).coerceIn(h*.42f,h*.60f)
+        return AvatarJoints(hip,(hip+torsoCm/100f).coerceIn(h*.72f,h*.84f))
+    }
     fun isValid(): Boolean = heightCm.isFinite() && heightCm in 100f..230f &&
         listOf(shoulderCm,chestWidthCm,waistWidthCm,hipWidthCm).all { it.isFinite() && it/heightCm in .10f.. .45f } &&
         legCm.isFinite() && legCm/heightCm in .25f.. .65f && torsoCm.isFinite() && torsoCm/heightCm in .15f.. .40f
@@ -47,6 +52,8 @@ data class AvatarParameters(
     }
 }
 
+data class AvatarJoints(val hipY:Float,val shoulderY:Float)
+
 /** Original low-poly 3D geometry: interleaved XYZ position, normal and RGB. No photo texture. */
 object BodyAvatarMesh {
     const val STRIDE = 9
@@ -59,19 +66,39 @@ object BodyAvatarMesh {
             val length=sqrt(nx*nx+ny*ny+nz*nz).coerceAtLeast(.0001f)
             vertices.addAll(listOf(x,y-h/2,z,nx/length,ny/length,nz/length,color[0],color[1],color[2]))
         }
-        fun tube(x:Float,rings:List<Triple<Float,Float,Float>>,color:FloatArray) {
-            fun point(ring:Triple<Float,Float,Float>,angle:Double) {
+        fun tube(x:Float,controls:List<Triple<Float,Float,Float>>,color:FloatArray,centerX:(Float)->Float = {x}) {
+            // Smooth radii within each anatomical span; keep ring heights ordered and avoid overshoot.
+            val rings=controls.zipWithNext().flatMap { (a,b) -> (0..2).map { step ->
+                val t=step/3f;val blend=t*t*(3-2*t)
+                Triple(a.first+(b.first-a.first)*t,a.second+(b.second-a.second)*blend,a.third+(b.third-a.third)*blend)
+            } }+controls.last()
+            fun point(index:Int,angle:Double) {
+                val ring=rings[index]
                 val c=cos(angle).toFloat(); val s=sin(angle).toFloat()
-                vertex(x+c*ring.second,ring.first,s*ring.third,c/ring.second,0f,s/ring.third,color)
+                val a=rings[(index-1).coerceAtLeast(0)];val b=rings[(index+1).coerceAtMost(rings.lastIndex)]
+                val dy=(b.first-a.first).coerceAtLeast(.00001f)
+                val nx=c/ring.second;val nz=s/ring.third
+                val ny= -c*c*(b.second-a.second)/dy/ring.second-s*s*(b.third-a.third)/dy/ring.third-
+                    nx*(centerX(b.first)-centerX(a.first))/dy
+                vertex(centerX(ring.first)+c*ring.second,ring.first,s*ring.third,nx,ny,nz,color)
             }
             for (r in 0 until rings.size-1) for (i in 0 until 24) {
                 val a=i*2*PI/24;val b=(i+1)*2*PI/24
-                point(rings[r],a);point(rings[r+1],a);point(rings[r+1],b)
-                point(rings[r],a);point(rings[r+1],b);point(rings[r],b)
+                point(r,a);point(r+1,a);point(r+1,b)
+                point(r,a);point(r+1,b);point(r,b)
+            }
+            // Close open ends, including soles/hands. These remain a simplified overlapping joint model.
+            listOf(0 to -1f,rings.lastIndex to 1f).forEach { (index,normalY) ->
+                val ring=rings[index]
+                for(i in 0 until 24) {
+                    val a=i*2*PI/24;val b=(i+1)*2*PI/24
+                    vertex(centerX(ring.first),ring.first,0f,0f,normalY,0f,color)
+                    listOf(a,b).forEach { angle -> vertex(centerX(ring.first)+cos(angle).toFloat()*ring.second,
+                        ring.first,sin(angle).toFloat()*ring.third,0f,normalY,0f,color) }
+                }
             }
         }
-        val hipY=(parameters.legCm/100f+h*.04f).coerceIn(h*.42f,h*.60f)
-        val shoulderY=(hipY+parameters.torsoCm/100f).coerceIn(h*.72f,h*.84f)
+        val joints=parameters.joints();val hipY=joints.hipY;val shoulderY=joints.shoulderY
         val shoulder=parameters.shoulderCm/200f*shoulderScale
         val waist=parameters.waistWidthCm/200f*waistScale
         val hip=parameters.hipWidthCm/200f*hipScale
@@ -82,10 +109,15 @@ object BodyAvatarMesh {
             Triple(shoulderY-h*.06f,chest,chest*.68f),Triple(shoulderY,shoulder,shoulder*.50f),
             Triple(shoulderY+h*.02f,h*.035f,h*.03f),Triple(h*.865f,h*.035f,h*.03f)),bodyColor)
         for (side in listOf(-1f,1f)) {
-            tube(side*hip*.48f,listOf(Triple(h*.04f,h*.025f,h*.03f),Triple(h*.27f,h*.038f*thighScale,h*.04f*thighScale),
+            tube(side*hip*.48f,listOf(Triple(0f,h*.03f,h*.05f),Triple(h*.055f,h*.025f,h*.03f),
+                Triple(h*.055f+(hipY-h*.055f)*.52f,h*.038f*thighScale,h*.04f*thighScale),
                 Triple(hipY,h*.055f*thighScale,h*.055f*thighScale)),limbColor)
-            tube(side*(shoulder+h*.035f),listOf(Triple(h*.43f,h*.019f,h*.022f),Triple(h*.61f,h*.025f,h*.028f),
-                Triple(shoulderY,h*.034f,h*.035f)),limbColor)
+            tube(0f,listOf(Triple(shoulderY-h*.40f,h*.018f,h*.025f),
+                Triple(shoulderY-h*.36f,h*.019f,h*.022f),Triple(shoulderY-h*.18f,h*.025f,h*.028f),
+                Triple(shoulderY,h*.041f,h*.040f)),limbColor) { y ->
+                val t=((shoulderY-y)/(h*.40f)).coerceIn(0f,1f)
+                side*(shoulder-h*.020f+h*.055f*t)
+            }
         }
         fun head(lat:Double,lon:Double) {
             val nx=(sin(lat)*cos(lon)).toFloat();val ny=cos(lat).toFloat();val nz=(sin(lat)*sin(lon)).toFloat()

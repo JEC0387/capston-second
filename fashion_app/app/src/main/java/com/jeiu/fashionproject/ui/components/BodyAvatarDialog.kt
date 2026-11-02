@@ -55,7 +55,7 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
     }
     AlertDialog(onDismissRequest=onDismiss,title={Text("3D 비율 아바타 · 참고 모델")},text={
         Column(Modifier.heightIn(max=560.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("${parameters.heightCm.toInt()} cm · ${if(configured != null) "키·몸무게 기반 추정 형상" else if(useProfile) "입력/사진 출처 반영" else "기본 모델"}")
+            Text("${parameters.heightCm.toInt()} cm · ${if(configured != null) "선택한 출처의 표시 형상" else if(useProfile) "입력/사진 출처 반영" else "기본 모델"}")
             Text("실제 3D 표면을 회전해 보여줘요. 사진으로 복원한 몸이나 의류 시뮬레이션이 아니에요.")
             if(!supported || failed) Text("이 기기의 3D 화면을 준비하지 못했어요. 기존 체형 분석과 기록은 계속 사용할 수 있어요.")
             else AndroidView(factory={ctx -> AvatarSurface(ctx,{yaw=it},{zoom=it},{failed=true}).also { surface=it }},
@@ -66,6 +66,7 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
                 TextButton(onClick={yaw=90f}) { Text("측면") }
                 TextButton(onClick={yaw=180f}) { Text("후면") }
             }
+            OutlinedButton(onClick={yaw=0f;zoom=.8f}) {Text("모델 전체 보기 · 회전/줌 초기화")}
             Text("확대: ${"%.1f".format(zoom)}배");Slider(zoom,{zoom=it},valueRange=.8f..2f)
             Text("어깨 표시 비율");Slider(shoulder,{shoulder=it},valueRange=.8f..1.2f)
             Text("허리 표시 비율");Slider(waist,{waist=it},valueRange=.8f..1.2f)
@@ -207,5 +208,6 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
             data.position(offset);GLES20.glVertexAttribPointer(location,3,GLES20.GL_FLOAT,false,BodyAvatarMesh.STRIDE*4,data);GLES20.glEnableVertexAttribArray(location)
         }
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES,0,count)
+        if(GLES20.glGetError()!=GLES20.GL_NO_ERROR) {failed=true;onError()}
     }
 }

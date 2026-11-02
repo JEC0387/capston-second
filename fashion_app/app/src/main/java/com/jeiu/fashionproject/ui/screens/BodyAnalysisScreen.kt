@@ -486,6 +486,7 @@ fun BodyAnalysisScreen(
                     }
 
                     result.measurements?.let { BodySizeRecommendationCard(it) }
+                    result.measurements?.let { com.jeiu.fashionproject.ui.components.AvatarSetupCard(photo=it) }
 
                     // 체형 특징
                     Card(

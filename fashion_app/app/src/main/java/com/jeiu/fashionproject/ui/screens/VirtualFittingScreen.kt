@@ -184,8 +184,7 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
         return Placement(Offset.Zero, 0f, 0f)
     val pixelsPerMeter = canvas.height / (2f * 3.8f * kotlin.math.tan(Math.toRadians(19.0)).toFloat())
     val h = p.heightCm / 100f
-    val hipY = (p.legCm / 100f + h * .04f).coerceIn(h * .42f, h * .60f)
-    val shoulderY = (hipY + p.torsoCm / 100f).coerceIn(h * .72f, h * .84f)
+    val joints=p.joints();val hipY=joints.hipY;val shoulderY=joints.shoulderY
     fun screenY(modelY: Float) = canvas.height / 2f - (modelY - h / 2f) * pixelsPerMeter
     fun place(topY: Float, width: Float): Placement {
         val safeWidth = width.coerceIn(canvas.width * .08f, canvas.width * .85f)
