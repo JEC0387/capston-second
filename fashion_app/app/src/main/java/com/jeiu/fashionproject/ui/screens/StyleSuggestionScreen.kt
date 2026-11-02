@@ -9,185 +9,188 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.jeiu.fashionproject.data.BodyRecords
+import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.data.WardrobeItem
+import com.jeiu.fashionproject.data.WardrobeStore
+import com.jeiu.fashionproject.recommend.BodyStyleGuide
+import com.jeiu.fashionproject.ui.components.ClothingThumb
+import com.jeiu.fashionproject.ui.components.OutfitPhotoImage
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
+import com.jeiu.fashionproject.ui.components.outfitQuery
+import com.jeiu.fashionproject.ui.components.rememberOutfitPhoto
 import com.jeiu.fashionproject.ui.theme.*
 
-private data class StyleCard(val title: String, val desc: String, val color: Color)
-private data class RecommendItem(val name: String, val price: String, val color: Color)
-
-private val recommendedStyles = listOf(
-    StyleCard("허리 강조 원피스", "모래시계형에 잘 맞는 허리 라인 원피스", Color(0xFFEDE3D5)),
-    StyleCard("피트 앤 플레어", "상하체 균형을 살려주는 핏", Color(0xFFE8E0D8)),
-    StyleCard("크롭 탑 + 미디스커트", "허리 라인을 자연스럽게 강조", Color(0xFFDDD5C8)),
-    StyleCard("랩 스타일", "체형을 돋보이게 하는 클래식 스타일", Color(0xFFE0D8D0)),
-)
-
-private val avoidStyles = listOf(
-    "오버사이즈 티셔츠 + 와이드 팬츠 조합",
-    "허리 라인이 없는 박시한 원피스",
-    "너무 길고 풍성한 레이어드 스타일",
-)
-
-private val recommendItems = listOf(
-    RecommendItem("랩 미디 원피스", "78,000원", Color(0xFFEDE3D5)),
-    RecommendItem("피트 블라우스", "45,000원", Color(0xFFE8DDD0)),
-    RecommendItem("허리 벨트 팬츠", "62,000원", Color(0xFFD5CABD)),
-    RecommendItem("크롭 니트", "38,000원", Color(0xFFEDE8E0)),
-)
-
+/**
+ * 체형 맞춤 스타일 제안.
+ *  - 체형: 이번 분석 결과, 없으면 서버에 저장된 최근 측정 기록 (둘 다 없으면 체형 분석으로 안내)
+ *  - 제안: 체형 4가지 × 성별 규칙 (BodyStyleGuide) — 예시 사진은 성별 + 제안 검색어로 찾은 실제 코디 사진
+ *  - 내 옷장: 제안에 잘 맞는 옷 · 피하면 좋은 옷
+ *  - 제안 카드를 누르면 쇼핑몰에서 그 스타일을 바로 검색
+ */
 @Composable
-fun StyleSuggestionScreen(onBack: () -> Unit, onProductClick: () -> Unit, analysis: com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisResult? = null) {
+fun StyleSuggestionScreen(
+    onBack: () -> Unit,
+    onProductClick: () -> Unit,
+    analysis: com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisResult? = null,
+    gender: Gender? = null,
+    onBodyAnalysis: () -> Unit = {}
+) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { WardrobeStore.load(context) }
+    val wardrobe by WardrobeStore.items.collectAsState()
+
+    // 이번 분석이 없으면 저장된 최근 측정 기록의 체형
+    var savedType by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(analysis == null) }
+    LaunchedEffect(analysis) {
+        if (analysis == null) {
+            savedType = BodyRecords.load(limit = 5)?.firstOrNull { it.bodyType in BodyStyleGuide.BODY_TYPES }?.bodyType
+            loading = false
+        }
+    }
+    val bodyType = analysis?.bodyTypeKo ?: savedType
+    val guide = remember(bodyType, gender) { BodyStyleGuide.guide(bodyType, gender) }
+    val (good, avoid) = remember(guide, wardrobe, gender) {
+        guide?.let { BodyStyleGuide.sort(wardrobe, it, gender) } ?: (emptyList<WardrobeItem>() to emptyList())
+    }
+    var shopKeyword by remember { mutableStateOf<String?>(null) }
+
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         Row(
             modifier = Modifier.fillMaxWidth().background(White).padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack)
             }
-            Text("체형별 스타일 제안", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            Text("체형 맞춤 스타일 제안", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+        }
+
+        if (guide == null) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    if (loading) CircularProgressIndicator(color = Camel)
+                    else {
+                        Text("아직 체형 분석 기록이 없어요.\n전신 사진으로 체형을 분석하면 체형에 맞는 스타일을 제안해 드려요.",
+                            style = MaterialTheme.typography.bodyMedium, color = MediumGray, textAlign = TextAlign.Center)
+                        Button(onClick = onBodyAnalysis, colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
+                            Text("체형 분석하러 가기")
+                        }
+                    }
+                }
+            }
+            return@Column
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(modifier = Modifier.height(4.dp))
-
-            analysis?.styleAdvice?.forEach { advice ->
-                Text("• $advice", style = MaterialTheme.typography.bodyMedium, color = Brown)
-            }
-            Text("아래 카드는 일반 스타일 예시이며 개인 체형이나 실제 착용 핏을 검증한 추천이 아니에요.",
-                style = MaterialTheme.typography.bodySmall, color = MediumGray)
-            // 체형 배지
+            // 체형 카드
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Camel),
-                elevation = CardDefaults.cardElevation(0.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Camel), elevation = CardDefaults.cardElevation(0.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(if (analysis != null) "이번 사진의 추정 체형" else "최근 측정 기록의 체형",
+                        style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
+                    Text("${guide.bodyType}${gender?.let { " · ${it.label}" } ?: ""}",
+                        style = MaterialTheme.typography.headlineSmall, color = White, fontWeight = FontWeight.Bold)
+                    Text(guide.summary, style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.9f))
+                }
+            }
+            if (gender == null) {
+                Text("마이페이지에서 성별을 고르면 성별에 맞는 제안으로 바뀌어요.", style = MaterialTheme.typography.labelSmall, color = MediumGray)
+            }
+
+            // 제안 — 사진은 실제 코디 검색 결과, 누르면 쇼핑몰 검색
+            Text("이렇게 입어 보세요", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            guide.tips.forEach { tip ->
+                val query = outfitQuery(gender, tip.query)
+                val photo = rememberOutfitPhoto(null, query)
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { shopKeyword = query },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = White), elevation = CardDefaults.cardElevation(1.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("이번 사진의 추정 분류", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.8f))
-                        Text(analysis?.bodyTypeKo ?: "분석 결과 없음", style = MaterialTheme.typography.headlineSmall, color = White, fontWeight = FontWeight.Bold)
-                        Text(analysis?.characteristics?.firstOrNull() ?: "유효한 분석 뒤 추정 분류를 표시해요", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
-                    }
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(White.copy(alpha = 0.2f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(modifier = Modifier.size(24.dp, 10.dp).clip(RoundedCornerShape(2.dp)).background(White.copy(alpha = 0.7f)))
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Box(modifier = Modifier.size(14.dp, 8.dp).clip(RoundedCornerShape(2.dp)).background(White.copy(alpha = 0.5f)))
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Box(modifier = Modifier.size(22.dp, 10.dp).clip(RoundedCornerShape(2.dp)).background(White.copy(alpha = 0.7f)))
+                    Row {
+                        Box(Modifier.size(96.dp).clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp)).background(CamelLight)) {
+                            if (photo.primary != null) OutfitPhotoImage(photo, tip.title, Modifier.fillMaxSize(), ContentScale.Crop)
                         }
-                    }
-                }
-            }
-
-            // 추천 스타일
-            Text("스타일 예시", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                recommendedStyles.forEach { style ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = White),
-                        elevation = CardDefaults.cardElevation(1.dp)
-                    ) {
-                        Row(modifier = Modifier.padding(0.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .width(90.dp)
-                                    .height(90.dp)
-                                    .clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
-                                    .background(style.color)
-                            )
-                            Column(
-                                modifier = Modifier.padding(14.dp).weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Camel, modifier = Modifier.size(16.dp))
-                                    Text(style.title, style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                                }
-                                Text(style.desc, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                        Column(Modifier.padding(14.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Camel, modifier = Modifier.size(16.dp))
+                                Text(tip.title, style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
                             }
+                            Text(tip.desc, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                            Text("눌러서 쇼핑몰에서 찾아보기 ›", style = MaterialTheme.typography.labelSmall, color = Camel)
                         }
                     }
                 }
             }
 
-            // 피해야 할 스타일
+            // 내 옷장에서
+            Text("내 옷장에서 잘 맞는 옷", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            if (good.isEmpty()) {
+                Text("옷장에 이 체형 제안에 맞는 옷이 아직 없어요. 위 제안을 눌러 찾아보세요.",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            } else {
+                ItemRow(good)
+            }
+
+            // 피하면 좋은 스타일 + 내 옷장 중 해당 옷
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = White),
-                elevation = CardDefaults.cardElevation(1.dp)
+                modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = White), elevation = CardDefaults.cardElevation(1.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("피하면 좋은 스타일", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                    avoidStyles.forEach { style ->
+                    guide.avoid.forEach { style ->
                         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Filled.Close, contentDescription = null, tint = Color(0xFFD4756A), modifier = Modifier.size(16.dp).padding(top = 2.dp))
                             Text(style, style = MaterialTheme.typography.bodySmall, color = MediumGray)
                         }
                     }
-                }
-            }
-
-            // 추천 아이템
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("지금 바로 담아보세요", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(horizontal = 0.dp)
-                ) {
-                    items(recommendItems) { item ->
-                        Column(
-                            modifier = Modifier
-                                .width(130.dp)
-                                .clickable(onClick = onProductClick),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(140.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(item.color)
-                            )
-                            Text(item.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium)
-                            Text(item.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.SemiBold)
-                        }
+                    if (avoid.isNotEmpty()) {
+                        Text("내 옷장 중 다른 옷과 함께 입을 때 신경 쓰면 좋은 옷 ${avoid.size}벌",
+                            style = MaterialTheme.typography.labelMedium, color = Brown)
+                        ItemRow(avoid)
                     }
                 }
             }
-
+            Text("체형 분류 · 제안은 사진 속 어깨 · 허리 · 힙 비율로 추정한 일반적인 코디 원칙이며, 실제 착용 핏을 보장하지 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MediumGray)
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+
+    shopKeyword?.let { ShopSearchSheet(keyword = it, onDismiss = { shopKeyword = null }) }
+}
+
+@Composable
+private fun ItemRow(items: List<WardrobeItem>) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(items.take(12), key = { it.id }) { item ->
+            Column(Modifier.width(92.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                ClothingThumb(item, Modifier.size(92.dp).clip(RoundedCornerShape(12.dp)), cutoutPadding = 6.dp)
+                Text(item.name, style = MaterialTheme.typography.labelSmall, color = CharcoalBlack, maxLines = 1)
+            }
         }
     }
 }

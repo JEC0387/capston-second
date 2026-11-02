@@ -210,8 +210,10 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 로그인한 이름으로 인사 (게스트면 그냥 "안녕하세요")
+            val accountName = com.jeiu.fashionproject.data.AuthStore.account.collectAsState().value?.name?.takeIf { it.isNotBlank() }
             Column {
-                Text("안녕하세요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+                Text(accountName?.let { "${it}님, 안녕하세요" } ?: "안녕하세요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
                 Text(
                     "오늘의 스타일 찾기",
                     style = MaterialTheme.typography.headlineSmall,
@@ -238,7 +240,7 @@ fun HomeScreen(
                         .background(CamelLight),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("나", style = MaterialTheme.typography.labelLarge, color = Brown)
+                    Text(accountName?.take(1) ?: "나", style = MaterialTheme.typography.labelLarge, color = Brown)
                 }
             }
         }
