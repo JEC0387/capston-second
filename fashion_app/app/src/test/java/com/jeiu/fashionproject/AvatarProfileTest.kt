@@ -62,4 +62,16 @@ class AvatarProfileTest {
         assertTrue(AvatarProfileStore.clear(app))
         assertNull(prefs.getString("profile", null))
     }
+
+    @Test fun avatarResetDoesNotTouchExistingManualBodyData() {
+        val manual = app.getSharedPreferences("manual_body_measurements", 0)
+        manual.edit().putString("preservation_marker", "existing-user-data").commit()
+        try {
+            assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f)))
+            assertTrue(AvatarProfileStore.clear(app))
+            assertEquals("existing-user-data", manual.getString("preservation_marker", null))
+        } finally {
+            manual.edit().remove("preservation_marker").commit()
+        }
+    }
 }

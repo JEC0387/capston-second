@@ -25,5 +25,6 @@
 
     <exclude domain="sharedpref" path="privacy_consent.xml" />
     <exclude domain="sharedpref" path="manual_body_measurements.xml" />
+    <exclude domain="sharedpref" path="avatar_visual_profile_v1.xml" />
         <exclude domain="sharedpref" path="size_feedback.xml" />
 </full-backup-content>

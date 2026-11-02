@@ -144,6 +144,7 @@ jobs:
             --tests '*SampleWardrobePreviewTest' --tests '*WardrobeSampleRestoreUiTest' \
             --tests '*BackupAndRecommendationLogTest' --tests '*BodyMethodSelectionUiTest' \
             --tests '*BodyPhotoEntryUiTest' --tests '*BodyAvatarTest' \
+            --tests '*AvatarProfileTest' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Record distribution readiness
