@@ -83,13 +83,14 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
 
 /** Reuses the same real GLES mesh inside the fitting canvas. Touch rotates; pinch zooms. */
 @Composable
-fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier) {
+fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier,resetKey:Int=0) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var yaw by remember { mutableFloatStateOf(0f) }
     var zoom by remember { mutableFloatStateOf(1f) }
     var failed by remember { mutableStateOf(false) }
     var surface by remember { mutableStateOf<AvatarSurface?>(null) }
+    LaunchedEffect(resetKey) {yaw=0f;zoom=1f}
     val supported = remember { (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
         ?.deviceConfigurationInfo?.reqGlEsVersion?.let { it >= 0x20000 } == true }
     DisposableEffect(lifecycle, surface) {

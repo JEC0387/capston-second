@@ -192,18 +192,19 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
             (topY + safeWidth * aspect / 2f).coerceIn(-canvas.height, canvas.height * 2f)), safeWidth, 0f)
     }
     val shoulderWidth = p.shoulderCm / 100f * pixelsPerMeter
-    val hipWidth = p.hipWidthCm / 100f * pixelsPerMeter
+    val torsoWidth=maxOf(p.shoulderCm,p.chestWidthCm,p.waistWidthCm)/100f*pixelsPerMeter
+    val hipWidth = maxOf(p.hipWidthCm,p.waistWidthCm) / 100f * pixelsPerMeter
     return when (slot) {
         FitSlot.TOP -> {
             val isDress = item.category == "원피스"
             val topY = screenY(shoulderY) - shoulderWidth * .32f
-            val dressWidth = if (isDress) maxOf(shoulderWidth * 1.85f,
+            val dressWidth = if (isDress) maxOf(torsoWidth * 1.85f,
                 hipWidth * 2f,
                 (screenY(hipY * .52f) - topY) / aspect.coerceAtLeast(.4f))
-                else shoulderWidth * 2f
+                else torsoWidth * 2f
             place(topY, dressWidth)
         }
-        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, shoulderWidth * 2.2f)
+        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, torsoWidth * 2.2f)
         FitSlot.BOTTOM -> place(screenY(hipY) - hipWidth * .35f,
             hipWidth * if (item.subCategory == "치마") 2.8f else 2.6f)
         FitSlot.SHOES -> place(screenY(h * .05f), hipWidth * 1.6f)
@@ -260,6 +261,13 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
     var activeSlot by manual::activeSlot
     var overlayAlpha by manual::overlayAlpha
     var inputNotice by remember { mutableStateOf<String?>(null) }
+    var avatarCameraReset by remember { mutableIntStateOf(0) }
+    var lastProfile by remember {mutableStateOf(avatarProfile)}
+    LaunchedEffect(avatarProfile) {
+        if(lastProfile!=null && lastProfile!=avatarProfile && manual.avatarWorn.isNotEmpty())
+            inputNotice="3D 체형이 바뀌었어요. 기존 의류 배치는 보존했어요. 마법봉을 누르면 정면·기본 줌에서 새 체형으로 다시 맞춰요."
+        lastProfile=avatarProfile
+    }
     if (askClearOverlay) AlertDialog(onDismissRequest = { askClearOverlay = false },
         title = { Text("아바타 옷 배치 초기화") },
         text = { Text("저장된 아바타 옷 위치만 지워요. 옷장, 사진, 체형 프로필은 유지해요.") },
@@ -397,7 +405,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
         if (avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { worn.keys.toList().forEach { refit(it) } },
+                TextButton(onClick = { avatarCameraReset++;worn.keys.toList().forEach { refit(it) } },
                     enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
                     Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
                     Text("마법봉 · 자동핏", color = Camel)
@@ -518,7 +526,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
                 if (avatarMode) {
                     avatarProfile?.let { profile ->
                         BodyAvatarViewport(profile.parameters(), profile.thigh,
-                            Modifier.fillMaxSize().testTag("fittingAvatarViewport"))
+                            Modifier.fillMaxSize().testTag("fittingAvatarViewport"),resetKey=avatarCameraReset)
                     }
                 } else {
                     AsyncImage(model = bodyPhoto, contentDescription = "전신 사진",

@@ -23,6 +23,17 @@ class MeasuredSizeUiTest {
     @get:Rule val compose=createComposeRule()
     private val context get()=ApplicationProvider.getApplicationContext<Application>()
     @Before @After fun clear(){context.getSharedPreferences("size_feedback",0).edit().clear().commit()}
+    @Test fun productSelectionDoesNotMixTablesFromDifferentProducts() {
+        val profile=BodyDimensions.resolve(ManualBodyMeasurements(170f,40f,90f,75f,95f,88f,52f,1),null)
+        val a=GarmentSizeRow("SYNTHETIC","상의","M",43f,"단면","https://example.test/a",chestCm=49f,productKey="a")
+        compose.setContent {Column(Modifier.verticalScroll(rememberScrollState())) {
+            MeasuredSizeComparison(profile,listOf(a,a.copy(productKey="b",sourceUrl="https://example.test/b")))
+        }}
+        compose.onNodeWithTag("sizeProductChooser").performScrollTo().performClick()
+        compose.onNodeWithTag("sizeProduct-b").performClick()
+        compose.onNodeWithText("상품표 식별값: b").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("상품표 식별값: a").assertDoesNotExist()
+    }
     @Test fun feedbackRequiresExplicitOptInBeforeDevicePersistence() {
         val profile=BodyDimensions.resolve(ManualBodyMeasurements(170f,40f,90f,75f,95f,88f,52f,1),null)
         val row=GarmentSizeRow("TEST","상의","M",43f,"단면","https://example.test/chart",chestCm=49f)

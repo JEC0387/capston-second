@@ -132,6 +132,29 @@ class PresentationFittingUiTest {
         } finally { AvatarProfileStore.clear(app) }
     }
 
+    @Test fun profileChangePreservesManualPlacementUntilExplicitAutoFit() {
+        val app=androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app);AvatarFittingStore.clear(app);WardrobeStore.load(app)
+        val item=WardrobeStore.items.value.first();val prior=AvatarProfile(170f,65f)
+        Assert.assertTrue(AvatarProfileStore.save(app,prior))
+        Assert.assertTrue(AvatarFittingStore.save(app,listOf(AvatarOverlay(item.id,.5f,.4f,.3f,1.1f,8f))))
+        try {
+            compose.setContent { VirtualFittingScreen(onBack={}) }
+            compose.onNodeWithTag("fittingAvatarMode").performClick()
+            compose.waitUntil(5000) { runCatching {compose.onNodeWithTag("avatarAutoFit").assertIsEnabled()}.isSuccess }
+            compose.runOnIdle { Assert.assertTrue(AvatarProfileStore.save(app,prior.copy(chest=1.2f,shoulder=1.1f))) }
+            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.runOnIdle {
+                val retained=AvatarFittingStore.load(app).single()
+                Assert.assertEquals(.3f,retained.width,.001f);Assert.assertEquals(1.1f,retained.scale,.001f)
+                Assert.assertEquals(8f,retained.rotation,.001f)
+            }
+            compose.onNodeWithTag("avatarAutoFit").performClick()
+            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.runOnIdle {Assert.assertEquals(1f,AvatarFittingStore.load(app).single().scale,.001f)}
+        } finally {AvatarFittingStore.clear(app);AvatarProfileStore.clear(app)}
+    }
+
     @Test fun savedWardrobePlacementReturnsInAvatarMode() {
         val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
         AvatarProfileStore.clear(app)

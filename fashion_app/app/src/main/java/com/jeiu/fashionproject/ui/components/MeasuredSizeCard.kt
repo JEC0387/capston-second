@@ -39,19 +39,35 @@ fun MeasuredSizeCard(profile:BodyDimensionProfile) {
 internal fun MeasuredSizeComparison(profile:BodyDimensionProfile,rows:List<GarmentSizeRow>) {
     val context=LocalContext.current
     var preference by remember { mutableStateOf(FitPreference.REGULAR) }
+    val products=remember(rows) {rows.groupBy { listOf(it.brand,it.category,it.productKey.orEmpty(),it.sourceUrl) }}
+    var product by remember(rows) { mutableStateOf<List<String>?>(null) }
+    var chooseProduct by remember { mutableStateOf(false) }
+    val selectedRows=if(product==null)rows else products[product].orEmpty()
     var saveFeedback by remember { mutableStateOf(false) }
-    var feedbackMessage by remember(profile,rows,preference) { mutableStateOf<String?>(null) }
-    val result=remember(profile,rows,preference){MeasuredSizeRecommendation.suggest(profile,rows,preference)}
+    var feedbackMessage by remember(profile,rows,preference,product) { mutableStateOf<String?>(null) }
+    val result=remember(profile,selectedRows,preference){MeasuredSizeRecommendation.suggest(profile,selectedRows,preference)}
     Column(Modifier.fillMaxWidth().testTag("measuredSizeComparison"),verticalArrangement=Arrangement.spacedBy(8.dp)) {
         Text("실측표와 몸 치수 비교",style=MaterialTheme.typography.titleMedium)
+        Box {
+            OutlinedButton(onClick={chooseProduct=true},modifier=Modifier.testTag("sizeProductChooser")) {
+                Text(product?.let { "${it[0]} · ${it[1]} · ${it[2].ifBlank {"브랜드 공통표"}}" } ?: "상품별 실측표 선택 · 전체")
+            }
+            DropdownMenu(chooseProduct,{chooseProduct=false}) {
+                DropdownMenuItem(text={Text("전체 실측표")},onClick={product=null;chooseProduct=false})
+                products.keys.forEach { key -> DropdownMenuItem(text={Text("${key[0]} · ${key[1]} · ${key[2].ifBlank {"브랜드 공통표"}} · ${key[3]}")},
+                    onClick={product=key;chooseProduct=false},modifier=Modifier.testTag("sizeProduct-${key[2]}")) }
+            }
+        }
         Row(horizontalArrangement=Arrangement.spacedBy(3.dp)) {
             FitPreference.entries.forEach { fit ->
                 FilterChip(preference==fit,{preference=fit},label={Text(fit.label.removeSuffix(" 참고"))},modifier=Modifier.weight(1f))
             }
         }
         Text("선호 핏은 시범 여유량 규칙이에요. 소재·신축성·패턴을 몰라 실제 착용감이나 구매 사이즈를 보장하지 않아요.")
+        Text("타이트핏은 슬림, 정핏은 기본, 여유핏은 루즈 선호의 참고 규칙이에요. 3D 표시 비율·BMI 추정은 이 비교의 신체 치수로 사용하지 않아요.")
         if(rows.isEmpty())Text("사용 가능한 실제 실측표가 없어요. 브랜드/상품 치수를 임의로 만들지 않아요.")
         if(result.missing.isNotEmpty())Text("추가 입력 필요: ${result.missing.joinToString { it.label }}. 사진 정면 너비를 둘레로 대신하지 않아요.")
+        if(result.missingGarmentDimensions.isNotEmpty())Text("상품표에 필요한 실측이 없어요: ${result.missingGarmentDimensions.joinToString {it.label}}. 신체 입력값과 구분해 원본 상품표를 확인해주세요.")
         if(rows.isNotEmpty()&&result.suggestions.isEmpty())Text("출처·단위·필수 치수 또는 여유량 조건을 만족하는 표가 없어요. 원본 상품표와 추가 치수를 확인해주세요.")
         result.suggestions.forEach { suggestion ->
             val row=suggestion.row

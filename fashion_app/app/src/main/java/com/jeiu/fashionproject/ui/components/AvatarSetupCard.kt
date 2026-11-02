@@ -20,6 +20,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
     val issue by AvatarProfileStore.issue.collectAsState()
     val sessionPhoto by BodyAnalysisSessionStore.measurements.collectAsState()
     val manual by ManualBodyStore.current.collectAsState()
+    val manualIssue by ManualBodyStore.issue.collectAsState()
     var imported by remember { mutableStateOf<AvatarProfile?>(null) }
     var proposal by remember { mutableStateOf<AvatarProfile?>(null) }
     var height by remember { mutableStateOf("170") }
@@ -50,7 +51,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
     if (showAvatar && draft.valid()) BodyAvatarDialog(BodyDimensions.resolve(null,null),
         onDismiss={showAvatar=false}, configured=draft.parameters(), thighScale=thigh)
     if (askClear) AlertDialog(onDismissRequest={askClear=false},title={Text("3D 설정 초기화")},
-        text={Text("저장된 3D 표시 프로필만 지워요. 직접 입력한 치수와 사진 분석 기록은 유지해요.")},
+        text={Text("저장된 3D 표시 프로필과 보존해 둔 구버전 3D 복사본만 지워요. 직접 입력한 원본 치수와 사진 분석 기록은 유지해요.")},
         confirmButton={TextButton(onClick={
             if (AvatarProfileStore.clear(context)) {
                 height="170";weight="65";shoulder=1f;waist=1f;hip=1f;thigh=1f;leg=1f;chest=1f;torso=1f;imported=null
@@ -61,9 +62,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
         dismissButton={TextButton(onClick={askClear=false}) { Text("취소") }})
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("키·몸무게로 3D 형상 만들기",style=MaterialTheme.typography.titleMedium)
+            Text("3D 형상 만들기 · 출처 선택",style=MaterialTheme.typography.titleMedium)
             Text("3D 형상 출처 선택 · 현재 ${draft.source.label}",modifier=Modifier.testTag("avatarSource"))
-            TextButton(onClick={proposal=AvatarProfile(height.toFloatOrNull() ?: 170f,weight.toFloatOrNull() ?: 65f).takeIf {it.valid()}}) {
+            TextButton(onClick={proposal=AvatarProfile(height.toFloatOrNull() ?: Float.NaN,weight.toFloatOrNull() ?: Float.NaN).takeIf {it.valid()}}) {
                 Text("A · 키·몸무게 추정 사용")
             }
             OutlinedButton(onClick={proposal=AvatarMeasurementImport.photo(photo ?: sessionPhoto,saved)},
@@ -74,8 +75,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
                 enabled=AvatarMeasurementImport.manual(manual,saved)!=null,modifier=Modifier.testTag("avatarImportManual")) {
                 Text("C · 직접 입력한 치수 사용")
             }
-            if(photo==null && sessionPhoto==null) Text("현재 세션의 유효한 사진 측정값이 없어요. 사진 분석 후 다시 선택해주세요.")
+            if(AvatarMeasurementImport.photo(photo ?: sessionPhoto,saved)==null) Text("현재 세션의 유효한 사진 측정값이 없어요. 사진 분석 후 다시 선택해주세요.")
             if(manual==null) Text("직접 입력한 신체 치수가 없어요. 숫자 입력에서 필요한 항목을 추가해주세요.")
+            manualIssue?.let {Text(it,color=MaterialTheme.colorScheme.error)}
             Text("키·몸무게는 시각적 초기 비율에만 사용해요. 실제 신체 치수·체지방·의류 핏을 측정하지 않아요.",
                 style=MaterialTheme.typography.bodySmall)
             issue?.let { Text(it,color=MaterialTheme.colorScheme.error) }
@@ -101,6 +103,8 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
             imported?.applied?.forEach { (key,value) -> Text("${key.label}: ${value.cm} cm · ${value.origin.label}") }
             if(draft.source!=AvatarSource.BMI) Text("빠진 가슴/부위 치수와 앞뒤 깊이는 기본 비율 추정이에요. 둘레→타원 형상은 시각화 가정이며 실제 깊이 측정이 아니에요.")
             Text("조절값은 3D 메시 너비·관절 높이에 반영돼요. 사진 분석·직접 잰 치수에는 쓰지 않아요.",
+                style=MaterialTheme.typography.bodySmall)
+            Text("저장하면 선택한 치수의 숫자·출처 복사본도 이 기기에 남아요. 원본 분석 기록과 별도이며 서버로 전송하지 않아요.",
                 style=MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 Button(onClick={showAvatar=true},enabled=draft.valid(),modifier=Modifier.testTag("avatarShow")) { Text("3D 모델 보기") }

@@ -56,6 +56,8 @@ class P7AvatarTest {
         assertTrue(AvatarProfileStore.save(app,AvatarMeasurementImport.manual(manual,previous)!!))
         assertEquals(raw,prefs.getString("profile_v1_preserved",null))
         assertEquals(2,JSONObject(prefs.getString("profile",null)!!).getInt("schema"))
+        assertTrue(AvatarProfileStore.clear(app)) // Only the user's separately confirmed reset removes both 3D copies.
+        assertNull(prefs.getString("profile_v1_preserved",null))
     }
     @Test fun corruptedOrFutureSchemaCannotBeOverwrittenEvenWithoutExplicitLoad() {
         val raw="""{"schema":99}""";prefs.edit().putString("profile",raw).commit()

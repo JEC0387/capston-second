@@ -36,7 +36,9 @@ data class AvatarParameters(
                     sources += "${circumference!!.label}: ${circumferenceValue.origin.label} · 타원 가정"
                     val ratio = .68
                     (2 * circumferenceValue.cm / (PI * (3*(1+ratio)-sqrt((3+ratio)*(1+3*ratio))))).toFloat()
-                } else if (front != null) value(front,fallback) else fallback
+                } else if (front != null) value(front,fallback) else {
+                    sources+="${circumference?.label ?: "부위 치수"}: 값 없음 · 기본 비율 추정";fallback
+                }
                 val limited = raw.coerceIn(height*.10f,height*.45f)
                 if (raw != limited) notes += "일부 너비는 화면 표시 범위로 제한했어요. 원본 치수는 바꾸지 않았어요."
                 return limited
@@ -109,8 +111,8 @@ object BodyAvatarMesh {
             Triple(shoulderY-h*.06f,chest,chest*.68f),Triple(shoulderY,shoulder,shoulder*.50f),
             Triple(shoulderY+h*.02f,h*.035f,h*.03f),Triple(h*.865f,h*.035f,h*.03f)),bodyColor)
         for (side in listOf(-1f,1f)) {
-            tube(side*hip*.48f,listOf(Triple(0f,h*.03f,h*.05f),Triple(h*.055f,h*.025f,h*.03f),
-                Triple(h*.055f+(hipY-h*.055f)*.52f,h*.038f*thighScale,h*.04f*thighScale),
+            tube(side*hip*.48f,listOf(Triple(0f,h*.03f,h*.05f),Triple(h*.04f,h*.025f,h*.03f),
+                Triple(h*.04f+(hipY-h*.04f)*.52f,h*.038f*thighScale,h*.04f*thighScale),
                 Triple(hipY,h*.055f*thighScale,h*.055f*thighScale)),limbColor)
             tube(0f,listOf(Triple(shoulderY-h*.40f,h*.018f,h*.025f),
                 Triple(shoulderY-h*.36f,h*.019f,h*.022f),Triple(shoulderY-h*.18f,h*.025f,h*.028f),

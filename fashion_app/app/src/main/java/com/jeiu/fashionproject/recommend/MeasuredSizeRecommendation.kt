@@ -9,12 +9,14 @@ enum class FitPreference(val label:String,val chestEase:Float,val waistEase:Floa
 }
 data class SizeDimensionEvidence(val dimension:BodyDimension,val bodyCm:Float,val garmentCm:Float,val easeCm:Float,val origin:MeasurementOrigin)
 data class MeasuredSizeSuggestion(val row:GarmentSizeRow,val preference:FitPreference,val evidence:List<SizeDimensionEvidence>,val score:Float)
-data class MeasuredSizeResult(val suggestions:List<MeasuredSizeSuggestion>,val missing:Set<BodyDimension>,val unusableRows:Int)
+data class MeasuredSizeResult(val suggestions:List<MeasuredSizeSuggestion>,val missing:Set<BodyDimension>,val unusableRows:Int,
+    val missingGarmentDimensions:Set<BodyDimension> = emptySet())
 
 /** Explainable ease heuristic. It cannot infer stretch, pattern, comfort or actual product fit. */
 object MeasuredSizeRecommendation {
     fun suggest(profile:BodyDimensionProfile,rows:List<GarmentSizeRow>,preference:FitPreference):MeasuredSizeResult {
         val missing=linkedSetOf<BodyDimension>();var unusable=0
+        val missingGarment=linkedSetOf<BodyDimension>()
         val candidates=rows.mapNotNull candidate@ { row ->
             val dimensions=when(row.category) {
                 "상의","아우터" -> listOf(BodyDimension.SHOULDER_WIDTH,BodyDimension.CHEST_CIRCUMFERENCE)
@@ -39,7 +41,7 @@ object MeasuredSizeRecommendation {
                     BodyDimension.HIP_CIRCUMFERENCE -> row.hipCm
                     else -> null
                 }
-                if(raw==null||!raw.isFinite()||raw<=0f) { invalid=true;return@dimension null }
+                if(raw==null||!raw.isFinite()||raw<=0f) { missingGarment+=dimension;invalid=true;return@dimension null }
                 val garment=raw*(if(!isShoulder&&row.measureType=="단면")2f else 1f)
                 if(garment !in (if(isShoulder) 15f..100f else 40f..300f)) { invalid=true;return@dimension null }
                 SizeDimensionEvidence(dimension,body.cm,garment,garment-body.cm,body.origin)
@@ -58,6 +60,6 @@ object MeasuredSizeRecommendation {
         }
         val best=candidates.groupBy { listOf(it.row.brand,it.row.category,it.row.productKey.orEmpty(),it.row.sourceUrl) }
             .values.map { group -> group.minWith(compareBy<MeasuredSizeSuggestion>({it.score},{it.row.sizeLabel})) }
-        return MeasuredSizeResult(best.sortedWith(compareBy({it.row.brand},{it.row.category},{it.row.sourceUrl})),missing,unusable)
+        return MeasuredSizeResult(best.sortedWith(compareBy({it.row.brand},{it.row.category},{it.row.sourceUrl})),missing,unusable,missingGarment)
     }
 }

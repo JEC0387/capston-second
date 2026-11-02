@@ -42,7 +42,9 @@ data class AvatarProfile(
             width(BodyDimension.WAIST_FRONT_WIDTH,12f..80f,.09f.. .45f) &&
             width(BodyDimension.HIP_FRONT_WIDTH,15f..85f,.12f.. .45f) &&
             (cm(BodyDimension.LEG_LENGTH)?.div(heightCm)?.let { it in .25f.. .65f } ?: true) &&
-            (cm(BodyDimension.TORSO_LENGTH)?.div(heightCm)?.let { it in .15f.. .40f } ?: true)
+            (cm(BodyDimension.TORSO_LENGTH)?.div(heightCm)?.let { it in .15f.. .40f } ?: true) &&
+            (cm(BodyDimension.LEG_LENGTH)==null || cm(BodyDimension.TORSO_LENGTH)==null ||
+                cm(BodyDimension.LEG_LENGTH)!!+cm(BodyDimension.TORSO_LENGTH)!!<=heightCm*.95f)
     }
 
     fun parameters(): AvatarParameters {
@@ -142,7 +144,7 @@ object AvatarProfileStore {
     }
 
     fun clear(context: Context): Boolean {
-        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).commit()
+        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove("profile_v1_preserved").commit()
         if (ok) { _current.value = null; _issue.value = null }
         return ok
     }

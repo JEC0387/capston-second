@@ -42,6 +42,7 @@ object ManualBodyStore {
     val issue: StateFlow<String?> = _issue
 
     fun load(context: Context) {
+        try {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean("save", false)) return
         val value = ManualBodyMeasurements(
@@ -58,6 +59,10 @@ object ManualBodyStore {
             _current.value = null
             _saved.value = false
             _issue.value = "저장된 직접 입력값의 범위를 확인해주세요. 기록을 자동으로 삭제하지 않았어요."
+        }
+        } catch (_: Exception) {
+            _current.value=null;_saved.value=false
+            _issue.value="저장된 직접 입력값의 형식을 읽지 못했어요. 원본을 보존했어요."
         }
     }
 
