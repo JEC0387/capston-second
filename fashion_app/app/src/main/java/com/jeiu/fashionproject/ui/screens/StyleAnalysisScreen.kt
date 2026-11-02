@@ -32,11 +32,14 @@ import com.jeiu.fashionproject.recommend.StyleProfile
 import com.jeiu.fashionproject.ui.theme.*
 
 private val styleColors = mapOf(
-    "미니멀" to StyleMinimal,
-    "캐주얼" to StyleCasual,
-    "클래식" to StyleClassic,
-    "스트릿" to StyleStreet,
-    "빈티지" to StyleVintage,
+    "캐주얼" to Color(0xFF8BA888),
+    "스트릿" to Color(0xFFC88FA8),
+    "미니멀" to Color(0xFFB59B80),
+    "댄디" to Color(0xFF6F86A6),
+    "아메카지" to Color(0xFFA9824F),
+    "유니크" to Color(0xFFD58A5E),
+    "스포티" to Color(0xFF5FA3A3),
+    "포멀" to Color(0xFF4F5A6E),
 )
 
 private fun colorOf(style: String): Color = styleColors[style] ?: MediumGray
@@ -55,6 +58,9 @@ fun StyleAnalysisScreen(onBack: () -> Unit) {
     val items by WardrobeStore.items.collectAsState()
     val logs by WearLogStore.logs.collectAsState()
     val result = remember(items, logs) { StyleProfile.analyze(items, logs) }
+    // 온보딩 · 마이페이지에서 고른 선호 스타일 — 실제 옷장 · 착용과 비교
+    com.jeiu.fashionproject.data.ProfileStore.load(context)
+    val preferred by com.jeiu.fashionproject.data.ProfileStore.styles.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         Row(
@@ -199,6 +205,36 @@ fun StyleAnalysisScreen(onBack: () -> Unit) {
                                 Text("# $it", style = MaterialTheme.typography.bodySmall, color = Brown, fontWeight = FontWeight.Medium)
                             }
                         }
+                    }
+                }
+            }
+
+            // 고른 선호 스타일 vs 실제 옷장 · 착용
+            if (preferred.isNotEmpty()) {
+                val prefShare = result.shares.filter { it.style in preferred }.sumOf { it.percent }
+                val prefOwned = result.shares.filter { it.style in preferred }.sumOf { it.owned }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = White),
+                    elevation = CardDefaults.cardElevation(1.dp)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("고른 스타일과 실제 옷장", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
+                        Text("선호 스타일: ${preferred.joinToString(" · ")}", style = MaterialTheme.typography.bodySmall, color = Brown)
+                        LinearProgressIndicator(
+                            progress = { prefShare / 100f },
+                            modifier = Modifier.fillMaxWidth().height(10.dp).clip(RoundedCornerShape(5.dp)),
+                            color = Camel, trackColor = CreamDark
+                        )
+                        Text(
+                            when {
+                                prefShare >= 50 -> "옷장 · 착용의 ${prefShare}%가 고른 스타일이에요 (옷 ${prefOwned}벌). 취향대로 옷장을 잘 꾸리고 있어요."
+                                prefShare >= 20 -> "옷장 · 착용의 ${prefShare}%가 고른 스타일이에요 (옷 ${prefOwned}벌). 코디 추천은 이 스타일을 먼저 보여 드려요."
+                                else -> "고른 스타일 옷이 ${prefShare}%로 적어요 (옷 ${prefOwned}벌). 옷장의 '이것만 사면'에서 채울 옷을 찾아보세요."
+                            },
+                            style = MaterialTheme.typography.bodySmall, color = MediumGray
+                        )
                     }
                 }
             }

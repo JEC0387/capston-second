@@ -2,12 +2,14 @@
 import base64
 import binascii
 import auth_google
+import auth_social
 import hashlib
 import re
 import uuid
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, undefer
@@ -23,7 +25,8 @@ from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, Wardrob
     ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary,
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
     TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
-    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats, GoogleLoginRequest, LoginResponse)
+    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats, GoogleLoginRequest, LoginResponse,
+    StartLoginRequest, StartLoginResponse, ExchangeLoginRequest, LoginProvidersResponse)
 
 app = APIRouter()
 
@@ -535,8 +538,16 @@ def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db),
     except auth_google.GoogleUnavailable:
         raise HTTPException(502, "구글 로그인 확인 서버에 연결하지 못했어요")
 
+    return _link_login(db, "google", claims, x_device_id)
+
+
+def _link_login(db: Session, provider: str, claims: dict, x_device_id: Optional[str]) -> dict:
+    """
+    로그인한 계정(provider + 고유 번호 sub) → users 한 명. 구글 · 카카오 · 페이스북 · Apple 이 같은 규칙을 쓴다.
+    처음 로그인하는 계정이면 시작한 폰의 기록(기기 번호 사용자)을 이어 받고, 이미 있는 계정이면 그 계정 번호를 돌려준다.
+    """
     now = datetime.now(timezone.utc)
-    login = db.scalar(select(UserLogin).where(UserLogin.provider == "google", UserLogin.subject == claims["sub"]))
+    login = db.scalar(select(UserLogin).where(UserLogin.provider == provider, UserLogin.subject == claims["sub"]))
     is_new = login is None
     if login is not None:
         user = db.get(User, login.user_id)
@@ -557,13 +568,13 @@ def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db),
             user = User(device_id=str(uuid.uuid4()), nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
             db.add(user)
         db.flush()
-        db.add(UserLogin(user_id=user.id, provider="google", subject=claims["sub"],
+        db.add(UserLogin(user_id=user.id, provider=provider, subject=claims["sub"],
                          email=cut(claims["email"], 255), name=cut(claims["name"], 100), last_login_at=now))
     if user is None:
         raise HTTPException(404, "연결된 사용자를 찾지 못했어요")
     if not user.device_id:
         user.device_id = str(uuid.uuid4())
-    # 프로필 이름 · 이메일을 구글 계정으로 (다른 사용자가 같은 이메일을 쓰고 있으면 이메일은 그대로)
+    # 프로필 이름 · 이메일을 로그인 계정으로 (다른 사용자가 같은 이메일을 쓰고 있으면 이메일은 그대로)
     if claims["email"] and user.email != claims["email"]:
         taken = db.scalar(select(User.id).where(User.email == claims["email"], User.id != user.id))
         if taken is None:
@@ -577,7 +588,74 @@ def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db),
         "name": user.nickname,
         "isNewAccount": is_new,
         "switched": user.device_id != x_device_id,
+        "provider": provider,
     }
+
+
+@app.get("/api/auth/providers", response_model=LoginProvidersResponse, tags=["로그인"])
+def login_providers():
+    """서버에 설정된 로그인 방법 — 앱 로그인 화면이 버튼을 켜고 끈다"""
+    return {"google": auth_google.is_configured(), **{p: auth_social.is_configured(p) for p in auth_social.PROVIDERS}}
+
+
+def _base_url(request: Request) -> str:
+    """Redirect URI 앞부분 — PUBLIC_BASE_URL 이 없으면 요청 주소 (Railway 프록시 뒤면 https)"""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return f"{proto}://{request.headers.get('host', request.url.netloc)}"
+
+
+@app.post("/api/auth/start", response_model=StartLoginResponse, tags=["로그인"])
+def start_social_login(req: StartLoginRequest, request: Request, db: Session = Depends(get_db),
+                       x_device_id: Optional[str] = Header(None)):
+    """카카오 · 페이스북 · Apple 로그인 시작 — 앱은 돌려받은 주소를 브라우저로 연다"""
+    if not schema_has(db, "user_logins"):
+        raise HTTPException(503, "DB 에 로그인 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+    device = x_device_id if x_device_id and _DEVICE_RE.fullmatch(x_device_id) else None
+    try:
+        return {"url": auth_social.start(req.provider, device, _base_url(request))}
+    except auth_social.ProviderNotConfigured:
+        raise HTTPException(503, f"서버에 {auth_social.LABELS[req.provider]} 로그인 설정이 없어요 (Railway Variables 확인)")
+
+
+def _social_callback(provider: str, request: Request, code: Optional[str], state: Optional[str],
+                     error: Optional[str], user_json: Optional[str] = None) -> HTMLResponse:
+    """각 회사 로그인 뒤 돌아오는 곳 — 사용자를 확인하고 1회용 코드를 붙여 앱으로 돌려보낸다"""
+    try:
+        device = auth_social.take_state(provider, state)
+        if error or not code:
+            raise auth_social.ProviderFailed(error or "no code")
+        user = auth_social.fetch_user(provider, code, auth_social.redirect_uri(provider, _base_url(request)), user_json)
+        query = {"code": auth_social.issue_code(provider, user, device), "provider": provider}
+    except auth_social.ProviderFailed:
+        query = {"error": "cancelled" if error else "failed", "provider": provider}
+    return HTMLResponse(auth_social.back_to_app_html(query))
+
+
+@app.get("/api/auth/{provider}/callback", response_class=HTMLResponse, tags=["로그인"])
+def social_callback(provider: str, request: Request, code: Optional[str] = None, state: Optional[str] = None,
+                    error: Optional[str] = None):
+    """카카오 · 페이스북 Redirect URI"""
+    if provider not in ("kakao", "facebook"):
+        raise HTTPException(404, "알 수 없는 로그인 방법")
+    return _social_callback(provider, request, code, state, error)
+
+
+@app.post("/api/auth/apple/callback", response_class=HTMLResponse, tags=["로그인"])
+def apple_callback(request: Request, code: Optional[str] = Form(None), state: Optional[str] = Form(None),
+                   error: Optional[str] = Form(None), user: Optional[str] = Form(None)):
+    """Apple Redirect URI (Apple 은 이름 · 이메일을 받을 때 POST 로 돌려준다)"""
+    return _social_callback("apple", request, code, state, error, user)
+
+
+@app.post("/api/auth/exchange", response_model=LoginResponse, tags=["로그인"])
+def exchange_social_login(req: ExchangeLoginRequest, db: Session = Depends(get_db),
+                          x_device_id: Optional[str] = Header(None)):
+    """앱으로 돌아온 1회용 코드 → 계정 번호 (구글 로그인과 같은 응답). 코드는 5분 안에 한 번만 쓸 수 있다"""
+    entry = auth_social.take_code(req.code)
+    if entry is None:
+        raise HTTPException(401, "로그인 시간이 지났어요. 다시 로그인해 주세요")
+    provider, sub, email, name, device = entry[:5]
+    return _link_login(db, provider, {"sub": sub, "email": email, "name": name}, device or x_device_id)
 
 
 # ──────────────────────────────────────────────

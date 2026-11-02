@@ -32,6 +32,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.FashionQuery
 import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.recommend.ProductRecommender
+import com.jeiu.fashionproject.data.ShopProduct
+import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.data.TastePreferenceStore
+import com.jeiu.fashionproject.data.StylePreferenceStore
+import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.recommend.GenderFit
 import com.jeiu.fashionproject.data.ProductInterestStore
 import com.jeiu.fashionproject.data.ShopCatalog
@@ -49,7 +55,7 @@ private enum class ShopTab(val label: String) { PRODUCTS("추천 상품"), STYLE
 
 @Composable
 fun ShopScreen(
-    onProductClick: () -> Unit,
+    onProductClick: (productId: String) -> Unit,
     viewModel: ShopViewModel,
     gender: Gender? = null
 ) {
@@ -116,7 +122,7 @@ fun ShopScreen(
         ) {
             Text(
                 when {
-                    tab == ShopTab.PRODUCTS -> "AI가 내 체형·취향을 분석해 추천한 상품이에요. 하트를 누르면 옷장 '관심 옷'에 담겨요"
+                    tab == ShopTab.PRODUCTS -> "내 옷장 옷과 만들 수 있는 코디 수 · 선호 스타일 · 취향으로 순서를 정했어요. 하트를 누르면 옷장 '관심 옷'에 담겨요"
                     gender != null -> "네이버 이미지 검색에서 ${gender.label} 맞춤 스타일을 가져왔어요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                     else -> "네이버 이미지 검색 결과예요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                 },
@@ -134,10 +140,7 @@ fun ShopScreen(
                 onOnlineClick = { keyword -> searchKeyword = keyword },
                 likedSet = likedSet,
                 onToggleLike = { ProductInterestStore.toggle(context, it) },
-                onOpen = { url ->
-                    if (url.isNotEmpty()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    else onProductClick()
-                }
+                onOpen = { id -> onProductClick(id) }
             )
             ShopTab.STYLES -> {
                 val state by viewModel.state.collectAsState()
@@ -166,8 +169,17 @@ private fun ProductGrid(
     onOnlineClick: (keyword: String) -> Unit,
     likedSet: List<String>,
     onToggleLike: (String) -> Unit,
-    onOpen: (purchaseUrl: String) -> Unit
+    onOpen: (productId: String) -> Unit
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        WardrobeStore.load(context); StylePreferenceStore.load(context); TastePreferenceStore.load(context)
+    }
+    ProfileStore.load(context)
+    val wardrobe by WardrobeStore.items.collectAsState()
+    val preferred by ProfileStore.styles.collectAsState()
+    val learned by StylePreferenceStore.scores.collectAsState()
+    val taste by TastePreferenceStore.scores.collectAsState()
     // 옷과 관련 없는 검색어 → 상품 대신 안내
     if (online is ShopUiState.NotFashion) {
         SearchHint(online.message)
@@ -180,10 +192,14 @@ private fun ProductGrid(
             .filter { GenderFit.allows(it.category, it.subCategory, it.detailType, it.name, gender) }
             .filter { FashionQuery.matchesProduct(it, query) }
     }
-    val displayProducts = filteredProducts.sortedBy { product ->
-        val favIndex = likedSet.indexOf(product.id)
-        if (favIndex >= 0) favIndex else Int.MAX_VALUE
+    // 내 옷장 · 선호 스타일 · 취향으로 점수를 매겨 정렬 (하트 누른 상품은 맨 위)
+    val picks = remember(filteredProducts, wardrobe, gender, preferred, learned, taste) {
+        ProductRecommender.rank(filteredProducts, wardrobe, gender, preferred, learned, taste).associateBy { it.product.id }
     }
+    val displayProducts = filteredProducts.sortedWith(
+        compareBy<ShopProduct> { likedSet.indexOf(it.id).let { i -> if (i >= 0) i else Int.MAX_VALUE } }
+            .thenByDescending { picks[it.id]?.score ?: 0.0 }
+    )
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -197,7 +213,7 @@ private fun ProductGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateItem()
-                    .clickable { onOpen(product.purchaseUrl) },
+                    .clickable { onOpen(product.id) },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = White),
                 elevation = CardDefaults.cardElevation(1.dp)
@@ -215,7 +231,7 @@ private fun ProductGrid(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                        product.tag?.let {
+                        picks[product.id]?.reasons?.firstOrNull()?.let {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
@@ -246,10 +262,9 @@ private fun ProductGrid(
                             Text(product.originalPrice, style = MaterialTheme.typography.labelSmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
                         }
                         Text(product.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC107), modifier = Modifier.size(12.dp))
-                            Text("${product.rating}", style = MaterialTheme.typography.labelSmall, color = CharcoalBlack)
-                            Text("(${product.reviewCount})", style = MaterialTheme.typography.labelSmall, color = MediumGray)
+                        // 추천 이유 두 번째 줄 (첫 번째는 사진 위 딱지)
+                        picks[product.id]?.reasons?.getOrNull(1)?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = Brown, maxLines = 1)
                         }
                     }
                 }

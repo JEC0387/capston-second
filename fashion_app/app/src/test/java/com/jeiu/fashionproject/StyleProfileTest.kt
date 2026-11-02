@@ -23,7 +23,7 @@ class StyleProfileTest {
 
     @Test fun withoutWearLogsUsesOwnershipOnly() {
         val r = StyleProfile.analyze(closet, emptyList(), today = "2026-10-12")!!
-        assertEquals("클래식", r.top.style)
+        assertEquals("포멀", r.top.style)   // 옷 태그 클래식 → 8가지 스타일의 포멀
         assertEquals(60, r.top.percent)
         assertEquals(100, r.shares.sumOf { it.percent })
         assertEquals(0, r.totalWears)
@@ -41,7 +41,7 @@ class StyleProfileTest {
         assertEquals(60, r.top.percent)
         assertEquals(100, r.shares.sumOf { it.percent })
         assertEquals(4, r.totalWears)
-        assertTrue(r.comment.contains("옷장에는 클래식 옷이 가장 많지만"))
+        assertTrue(r.comment.contains("옷장에는 포멀 옷이 가장 많지만"))
     }
 
     @Test fun oldLogsAndDeletedItemsAreIgnored() {
@@ -51,7 +51,7 @@ class StyleProfileTest {
         )
         val r = StyleProfile.analyze(closet, logs, today = "2026-10-12")!!
         assertEquals(0, r.totalWears)
-        assertEquals("클래식", r.top.style)
+        assertEquals("포멀", r.top.style)   // 옷 태그 클래식 → 8가지 스타일의 포멀
     }
 
     @Test fun percentsAlwaysSumTo100() {
@@ -62,7 +62,7 @@ class StyleProfileTest {
 
     @Test fun keywordsComeFromTopStylesAndColor() {
         val r = StyleProfile.analyze(closet, emptyList(), today = "2026-10-12")!!
-        assertTrue(r.keywords.contains("단정한"))     // 클래식
+        assertTrue(r.keywords.contains("단정한"))     // 포멀
         assertTrue(r.keywords.contains("블랙 컬러"))  // 가장 많은 색
     }
 }

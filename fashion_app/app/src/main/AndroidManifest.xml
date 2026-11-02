@@ -29,11 +29,19 @@
         <activity
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize"
+            android:launchMode="singleTask"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 카카오 · 페이스북 · Apple 로그인 뒤 브라우저에서 앱으로 돌아오는 주소 (fashionai://login?code=…) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="fashionai" android:host="login" />
             </intent-filter>
         </activity>
     </application>

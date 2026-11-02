@@ -2,23 +2,19 @@ package com.jeiu.fashionproject.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import com.jeiu.fashionproject.ui.components.ShopSearchSheet
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,244 +27,180 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.jeiu.fashionproject.R
-import com.jeiu.fashionproject.data.ProductInterestStore
-import com.jeiu.fashionproject.data.ShopCatalog
+import com.jeiu.fashionproject.data.*
+import com.jeiu.fashionproject.recommend.GenderFit
+import com.jeiu.fashionproject.recommend.OutfitEngine
+import com.jeiu.fashionproject.recommend.OutfitSources
+import com.jeiu.fashionproject.recommend.ProductRecommender
+import com.jeiu.fashionproject.ui.components.ClothingThumb
+import com.jeiu.fashionproject.ui.components.ShopSearchSheet
 import com.jeiu.fashionproject.ui.theme.*
 
-private val colorOptions = listOf(
-    Pair("베이지", Color(0xFFEDE3D5)),
-    Pair("화이트", Color(0xFFF5F2EE)),
-    Pair("그레이", Color(0xFFCDC9C3)),
-    Pair("블랙", Color(0xFF3A3A3A)),
-)
-private val sizeOptions = listOf("XS", "S", "M", "L", "XL")
-
-private data class SimilarProduct(val name: String, val price: String, val bgColor: Color, val image: Any)
-
-private val similarProducts = listOf(
-    SimilarProduct("케이블 반팔 니트", "43,000원", Color(0xFFE8DDD0), R.drawable.popular_knit_cable),
-    SimilarProduct("V넥 니트", "48,000원", Color(0xFFD5CABD), R.drawable.summer_knit),
-    SimilarProduct("크롭 반팔 티", "22,000원", Color(0xFFEDE3D5), R.drawable.popular_crop_tshirt),
-    SimilarProduct("린넨 팬츠", "39,000원", Color(0xFFCDC5BC), R.drawable.popular_linen_pants),
-)
-
+/**
+ * 상품 상세 — 쇼핑 탭에서 누른 상품을 그대로 보여 준다 (예전에는 어떤 상품이든 같은 니트 · 고정 평점이었음).
+ *  - 추천 이유: ProductRecommender (내 옷장 코디 수 · 선호 스타일 · 취향)
+ *  - 내 옷장 옷과 입는 코디: 이 상품을 옷장에 더했다고 치고 코디 엔진으로 만든 실제 조합
+ *  - 비슷한 상품: 같은 분류의 앱 추천 상품
+ * 평점 · 리뷰 · 사이즈 재고처럼 앱이 모르는 정보는 보여 주지 않고, 구매는 쇼핑몰 페이지에서 한다.
+ */
 @Composable
-fun ProductDetailScreen(onBack: () -> Unit) {
+fun ProductDetailScreen(
+    onBack: () -> Unit,
+    productId: String? = null,
+    gender: Gender? = null,
+    onProduct: (String) -> Unit = {}
+) {
     val context = LocalContext.current
-    var selectedColor by remember { mutableStateOf("베이지") }
-    var selectedSize by remember { mutableStateOf("M") }
-    var showShopSheet by remember { mutableStateOf(false) }
+    val product = remember(productId) { ShopCatalog.allProducts.firstOrNull { it.id == productId } ?: ShopCatalog.detailProduct }
+    LaunchedEffect(Unit) {
+        ProductInterestStore.load(context); WardrobeStore.load(context)
+        StylePreferenceStore.load(context); TastePreferenceStore.load(context)
+    }
+    ProfileStore.load(context)
     val likedIds by ProductInterestStore.ids.collectAsState()
-    LaunchedEffect(Unit) { ProductInterestStore.load(context) }
-    val isFavorited = ShopCatalog.detailProduct.id in likedIds
+    val wardrobe by WardrobeStore.items.collectAsState()
+    val preferred by ProfileStore.styles.collectAsState()
+    val learned by StylePreferenceStore.scores.collectAsState()
+    val taste by TastePreferenceStore.scores.collectAsState()
+    val isFavorited = product.id in likedIds
+    var shopKeyword by remember { mutableStateOf<String?>(null) }
+
+    val pick = remember(product, wardrobe, gender, preferred, learned, taste) {
+        ProductRecommender.rank(listOf(product), wardrobe, null, preferred, learned, taste).firstOrNull()
+    }
+    // 이 상품을 옷장에 더했을 때 만들 수 있는 코디 (색 정보가 있는 상품만)
+    val outfits = remember(product, wardrobe, gender) {
+        val candidate = OutfitSources.candidate(product, 1L) ?: return@remember emptyList()
+        val owned = GenderFit.filter(wardrobe.filter { it.isOwned }, gender)
+        (OutfitEngine.recommend(owned + candidate, null, emptyList(), emptyMap(), count = 6, gender = gender)
+            as? OutfitEngine.Result.Ok)?.outfits.orEmpty().filter { o -> o.items.any { it.id == candidate.id } }.take(3)
+    }
+    val similar = remember(product, gender) {
+        ShopCatalog.products.filter { it.id != product.id && it.category == product.category &&
+            GenderFit.allows(it.category, it.subCategory, it.detailType, it.name, gender) }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
-        // 상단 바
         Row(
             modifier = Modifier.fillMaxWidth().background(White).padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack)
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로", tint = CharcoalBlack) }
+            Text("상품 상세", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f))
+            IconButton(onClick = { ProductInterestStore.toggle(context, product.id) }) {
+                Icon(if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = if (isFavorited) "관심 해제" else "관심 표시", tint = HeartPink)
             }
-            Text("상품 상세", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-            Row {
-                IconButton(onClick = { ProductInterestStore.toggle(context, ShopCatalog.detailProduct.id) }) {
-                    Icon(
-                        if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = "찜",
-                        tint = if (isFavorited) Camel else CharcoalBlack
-                    )
+            if (product.purchaseUrl.isNotBlank()) IconButton(onClick = {
+                val share = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${product.name}\n${product.purchaseUrl}")
                 }
-                IconButton(onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, "아이보리 라이트 베이지 브이넥 니트 J19\nhttps://zigzag.kr/catalog/products/170263336")
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "공유하기"))
-                }) { Icon(Icons.Filled.Share, contentDescription = "공유", tint = CharcoalBlack) }
-            }
+                context.startActivity(Intent.createChooser(share, "상품 공유"))
+            }) { Icon(Icons.Filled.Share, contentDescription = "공유", tint = CharcoalBlack) }
         }
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-        ) {
-            // 상품 메인 이미지
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(320.dp)
-                    .background(Color(0xFFEDE3D5))
-            ) {
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            Box(Modifier.fillMaxWidth().height(360.dp).background(Color(product.color))) {
                 AsyncImage(
-                    model = R.drawable.casual_daily_look,
-                    contentDescription = "상품 이미지",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
+                    contentDescription = product.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
                 )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Camel)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text("AI 추천", style = MaterialTheme.typography.labelSmall, color = White)
+            }
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(product.brand, style = MaterialTheme.typography.bodySmall, color = MediumGray, fontWeight = FontWeight.Medium)
+                Text(product.name, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(product.price, style = MaterialTheme.typography.headlineMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                    if (product.originalPrice != product.price) {
+                        Text(product.originalPrice, style = MaterialTheme.typography.bodyMedium, color = MediumGray,
+                            textDecoration = TextDecoration.LineThrough)
+                    }
                 }
+                val info = listOfNotNull(product.category, product.detailType ?: product.subCategory, product.clothingColorName)
+                if (info.isNotEmpty()) Text(info.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = Brown)
+                Text("가격은 등록 시점 기준이에요. 사이즈 · 재고 · 후기는 쇼핑몰 페이지에서 확인해 주세요.",
+                    style = MaterialTheme.typography.labelSmall, color = MediumGray)
             }
 
+            // 추천 이유
             Column(
-                modifier = Modifier
-                    .background(White)
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                Modifier.padding(horizontal = 20.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(CamelLight).padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                // 브랜드 & 상품명
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("저스트메리드", style = MaterialTheme.typography.bodySmall, color = MediumGray, fontWeight = FontWeight.Medium)
-                    Text("아이보리 라이트 베이지 브이넥 니트 J19", style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        repeat(5) { i ->
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = if (i < 4) Color(0xFFFFC107) else LightGray, modifier = Modifier.size(14.dp))
-                        }
-                        Text("4.8", style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                        Text("(284개 리뷰)", style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                    }
-                }
-
-                HorizontalDivider(color = LightGray)
-
-                // 가격
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("43,800원", style = MaterialTheme.typography.headlineMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                }
-
-                HorizontalDivider(color = LightGray)
-
-                // 색상 선택
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("색상: $selectedColor", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        colorOptions.forEach { (name, color) ->
-                            val isSelected = name == selectedColor
-                            Box(
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape)
-                                    .background(color)
-                                    .then(if (isSelected) Modifier.border(2.dp, Camel, CircleShape) else Modifier)
-                                    .clickable { selectedColor = name }
-                            )
-                        }
-                    }
-                }
-
-                // 사이즈 선택
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("사이즈: $selectedSize", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        sizeOptions.forEach { size ->
-                            val isSelected = size == selectedSize
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (isSelected) Camel else CreamDark)
-                                    .border(1.dp, if (isSelected) Camel else LightGray, RoundedCornerShape(8.dp))
-                                    .clickable { selectedSize = size }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                            ) {
-                                Text(size, style = MaterialTheme.typography.bodySmall, color = if (isSelected) White else CharcoalBlack, fontWeight = FontWeight.Medium)
-                            }
-                        }
-                    }
-                }
+                Text("나에게 맞는 이유", style = MaterialTheme.typography.titleSmall, color = BrownDark, fontWeight = FontWeight.Bold)
+                val reasons = pick?.reasons.orEmpty()
+                if (reasons.isEmpty()) Text("아직 취향 · 옷장 정보가 적어 이유를 찾지 못했어요. 옷을 등록하고 취향 학습을 해 보세요.",
+                    style = MaterialTheme.typography.bodySmall, color = Brown)
+                reasons.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall, color = Brown) }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // 내 옷장 옷과 코디
+            Text("내 옷장 옷과 이렇게 입어요", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
+            if (outfits.isEmpty()) {
+                Text(
+                    if (OutfitSources.candidate(product, 1L) == null) "이 상품은 색 정보가 없어 코디를 계산하지 못했어요."
+                    else "지금 옷장으로는 이 상품과 어울리는 조합을 찾지 못했어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.padding(horizontal = 20.dp)
+                )
+            } else outfits.forEach { o ->
+                Row(Modifier.padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    o.items.forEach { item ->
+                        Box(Modifier.size(64.dp).clip(RoundedCornerShape(10.dp)).background(CreamDark)) {
+                            if (item.isOwned) ClothingThumb(item, Modifier.fillMaxSize(), cutoutPadding = 4.dp)
+                            else AsyncImage(model = if (product.imageRes != 0) product.imageRes else product.imageUrl,
+                                contentDescription = item.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                }
+                o.reasons.firstOrNull()?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = MediumGray, modifier = Modifier.padding(horizontal = 20.dp))
+                }
+            }
 
             // 비슷한 상품
-            Column(
-                modifier = Modifier.background(White).padding(vertical = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("비슷한 상품", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp))
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(similarProducts) { item ->
-                        Column(modifier = Modifier.width(120.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(120.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(item.bgColor)
-                            ) {
-                                AsyncImage(
-                                    model = item.image,
-                                    contentDescription = item.name,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+            if (similar.isNotEmpty()) {
+                Text("비슷한 상품", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 8.dp))
+                LazyRow(contentPadding = PaddingValues(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(similar, key = { it.id }) { item ->
+                        Column(Modifier.width(120.dp).clickable { onProduct(item.id) }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(12.dp)).background(Color(item.color))) {
+                                AsyncImage(model = if (item.imageRes != 0) item.imageRes else item.imageUrl, contentDescription = item.name,
+                                    contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                             }
-                            Text(item.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium)
+                            Text(item.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, maxLines = 2)
                             Text(item.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
         }
 
-        // 하단 구매 버튼
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(White)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                "zigzag.kr · 저스트메리드 공식",
-                style = MaterialTheme.typography.bodySmall,
-                color = MediumGray
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = { ProductInterestStore.toggle(context, ShopCatalog.detailProduct.id) },
-                    modifier = Modifier.height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = if (isFavorited) Camel else CharcoalBlack)
-                ) {
-                    Icon(
-                        if (isFavorited) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Button(
-                    onClick = { showShopSheet = true },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
-                ) {
-                    Text("쇼핑에서 찾기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                }
-            }
+        // 하단 버튼 — 구매는 쇼핑몰에서
+        Row(Modifier.fillMaxWidth().background(White).padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = { shopKeyword = outfitKeyword(product, gender) },
+                modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(12.dp)
+            ) { Text("다른 쇼핑몰 비교", color = Brown) }
+            Button(
+                onClick = {
+                    if (product.purchaseUrl.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
+                    else shopKeyword = outfitKeyword(product, gender)
+                },
+                modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Camel)
+            ) { Text(if (product.purchaseUrl.isNotBlank()) "구매하러 가기" else "쇼핑몰에서 찾기", fontWeight = FontWeight.Bold) }
         }
     }
 
-    if (showShopSheet) {
-        ShopSearchSheet(
-            keyword = "아이보리 라이트 베이지 브이넥 니트",
-            onDismiss = { showShopSheet = false }
-        )
-    }
+    shopKeyword?.let { ShopSearchSheet(keyword = it, onDismiss = { shopKeyword = null }) }
 }
+
+/** 쇼핑몰 검색어 — 성별 + 색 + 종류 (상품명 전체는 몰마다 달라 검색이 잘 안 됨) */
+private fun outfitKeyword(p: ShopProduct, gender: Gender?): String =
+    listOfNotNull(gender?.label, p.clothingColorName, p.detailType ?: p.subCategory ?: p.category).joinToString(" ")
+        .ifBlank { p.name }

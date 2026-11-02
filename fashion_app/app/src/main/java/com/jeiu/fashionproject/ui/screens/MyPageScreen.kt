@@ -92,7 +92,7 @@ fun MyPageScreen(
     AuthStore.load(context)
     val authMode by AuthStore.mode.collectAsState()
     val account by AuthStore.account.collectAsState()
-    val signedIn = authMode == AuthStore.Mode.GOOGLE
+    val signedIn = authMode == AuthStore.Mode.SIGNED_IN
     // 선호 스타일 — 저장하면 홈 · 코디 추천이 바로 다시 계산된다
     ProfileStore.load(context)
     val savedStyles by ProfileStore.styles.collectAsState()
@@ -175,14 +175,14 @@ fun MyPageScreen(
                 if (signedIn) {
                     Box(
                         Modifier.clip(RoundedCornerShape(12.dp)).background(CamelLight).padding(horizontal = 10.dp, vertical = 3.dp)
-                    ) { Text("Google 계정으로 로그인됨", style = MaterialTheme.typography.labelSmall, color = Brown) }
+                    ) { Text("${account?.provider?.label ?: "Google"} 계정으로 로그인됨", style = MaterialTheme.typography.labelSmall, color = Brown) }
                 } else {
                     Button(
                         onClick = onLogin,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                    ) { Text("구글로 로그인하고 기록 지키기", style = MaterialTheme.typography.labelLarge) }
+                    ) { Text("로그인하고 기록 지키기", style = MaterialTheme.typography.labelLarge) }
                 }
                 ServerStatusBadge()
             }
@@ -423,7 +423,7 @@ fun MyPageScreen(
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
             if (signedIn) MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
-            else MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 계정으로 로그인", onClick = onLogin)
+            else MyMenuItem(icon = Icons.Filled.AccountCircle, label = "로그인 (구글 · 카카오 · 페이스북 · Apple)", onClick = onLogin)
         }
 
         Spacer(modifier = Modifier.height(16.dp))

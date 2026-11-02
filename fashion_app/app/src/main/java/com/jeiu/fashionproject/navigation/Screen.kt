@@ -13,7 +13,10 @@ sealed class Screen(val route: String) {
     object WeatherOutfit : Screen("weather_outfit")
     object BodyAnalysis : Screen("body_analysis")
     object Shop : Screen("shop")
-    object ProductDetail : Screen("product_detail")
+    /** 상품 상세 — id(상품 id)를 주면 그 상품, 없으면 기본 상품 */
+    object ProductDetail : Screen("product_detail?id={id}") {
+        fun route(id: String? = null) = if (id.isNullOrBlank()) "product_detail" else "product_detail?id=${android.net.Uri.encode(id)}"
+    }
     object MyPage : Screen("my_page")
     object StyleAnalysis : Screen("style_analysis")
     object StyleSuggestion : Screen("style_suggestion")

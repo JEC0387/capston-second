@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import auth_google
+import auth_social
 import main
 from database import Base, get_db, reset_schema_cache
 
@@ -108,6 +109,104 @@ class GoogleLoginTest(unittest.TestCase):
         self.assertEqual(200, self.client.delete('/api/me', headers={'X-Device-Id': 'phone-1'}).status_code)
         r = self.login('token-a', 'phone-3').json()
         self.assertTrue(r['isNewAccount'])
+
+
+class SocialLoginTest(GoogleLoginTest):
+    """카카오 · 페이스북 · Apple — 각 회사 서버 호출만 가짜로 바꾸고 시작 → 콜백 → 교환 흐름 전체를 확인"""
+    ENV = {'KAKAO_REST_API_KEY': 'kakao-key', 'FACEBOOK_APP_ID': 'fb-id', 'FACEBOOK_APP_SECRET': 'fb-secret',
+           'APPLE_SERVICE_ID': 'com.example.signin', 'APPLE_TEAM_ID': 'TEAM', 'APPLE_KEY_ID': 'KEY',
+           'APPLE_PRIVATE_KEY': 'x', 'PUBLIC_BASE_URL': 'https://server.example'}
+
+    def setUp(self):
+        super().setUp()
+        self.env = mock.patch.dict(os.environ, self.ENV)
+        self.env.start()
+        users = {'kakao-code': {'sub': '1001', 'email': 'k@example.com', 'name': '카카오유저'},
+                 'fb-code': {'sub': '2002', 'email': '', 'name': '페북유저'},
+                 'apple-code': {'sub': 'apple.3003', 'email': 'relay@privaterelay.appleid.com', 'name': ''}}
+
+        def fake_fetch(provider, code, uri, user_json=None):
+            self.assertEqual(f'https://server.example/api/auth/{provider}/callback', uri)
+            if code not in users:
+                raise auth_social.ProviderFailed('bad')
+            return users[code]
+        self.fetch = mock.patch.object(auth_social, 'fetch_user', side_effect=fake_fetch)
+        self.fetch.start()
+
+    def tearDown(self):
+        self.fetch.stop()
+        self.env.stop()
+        super().tearDown()
+
+    def start_login(self, provider, device):
+        r = self.client.post('/api/auth/start', json={'provider': provider}, headers={'X-Device-Id': device})
+        self.assertEqual(200, r.status_code, r.text)
+        url = r.json()['url']
+        from urllib.parse import urlparse, parse_qs
+        return url, parse_qs(urlparse(url).query)['state'][0]
+
+    def code_from(self, html):
+        import re
+        m = re.search(r'fashionai://login\?code=([A-Za-z0-9_-]+)', html)
+        return m.group(1) if m else None
+
+    def test_providers_reflect_server_config(self):
+        got = self.client.get('/api/auth/providers').json()
+        self.assertEqual({'google': False, 'kakao': True, 'facebook': True, 'apple': True}, got)
+
+    def test_kakao_flow_links_this_phone(self):
+        self.add_clothes('phone-k', ['shirt'])
+        url, state = self.start_login('kakao', 'phone-k')
+        self.assertTrue(url.startswith('https://kauth.kakao.com/oauth/authorize?'))
+        html = self.client.get('/api/auth/kakao/callback', params={'code': 'kakao-code', 'state': state}).text
+        code = self.code_from(html)
+        self.assertIsNotNone(code)
+        r = self.client.post('/api/auth/exchange', json={'code': code}).json()
+        self.assertEqual('kakao', r['provider'])
+        self.assertEqual('phone-k', r['accountKey'])
+        self.assertTrue(r['isNewAccount']); self.assertFalse(r['switched'])
+        self.assertEqual('카카오유저', r['name'])
+        # 같은 코드는 한 번만
+        self.assertEqual(401, self.client.post('/api/auth/exchange', json={'code': code}).status_code)
+
+    def test_facebook_same_account_on_other_phone(self):
+        _, s1 = self.start_login('facebook', 'phone-f1')
+        c1 = self.code_from(self.client.get('/api/auth/facebook/callback', params={'code': 'fb-code', 'state': s1}).text)
+        first = self.client.post('/api/auth/exchange', json={'code': c1}).json()
+        _, s2 = self.start_login('facebook', 'phone-f2')
+        c2 = self.code_from(self.client.get('/api/auth/facebook/callback', params={'code': 'fb-code', 'state': s2}).text)
+        second = self.client.post('/api/auth/exchange', json={'code': c2}).json()
+        self.assertEqual(first['accountKey'], second['accountKey'])
+        self.assertTrue(second['switched']); self.assertFalse(second['isNewAccount'])
+
+    def test_apple_posts_back(self):
+        url, state = self.start_login('apple', 'phone-a')
+        self.assertIn('response_mode=form_post', url)
+        html = self.client.post('/api/auth/apple/callback', data={'code': 'apple-code', 'state': state}).text
+        r = self.client.post('/api/auth/exchange', json={'code': self.code_from(html)}).json()
+        self.assertEqual('apple', r['provider'])
+
+    def test_forged_state_cancel_and_unknown_provider(self):
+        html = self.client.get('/api/auth/kakao/callback', params={'code': 'kakao-code', 'state': 'forged'}).text
+        self.assertIsNone(self.code_from(html))
+        self.assertIn('error=failed', html)
+        _, state = self.start_login('kakao', 'phone-k')
+        html = self.client.get('/api/auth/kakao/callback', params={'error': 'access_denied', 'state': state}).text
+        self.assertIn('error=cancelled', html)
+        self.assertEqual(404, self.client.get('/api/auth/naver/callback').status_code)
+        self.assertEqual(422, self.client.post('/api/auth/start', json={'provider': 'naver'}).status_code)
+
+    def test_kakao_and_google_accounts_are_separate(self):
+        g = self.login('token-a', 'phone-x').json()
+        _, state = self.start_login('kakao', 'phone-y')
+        code = self.code_from(self.client.get('/api/auth/kakao/callback', params={'code': 'kakao-code', 'state': state}).text)
+        k = self.client.post('/api/auth/exchange', json={'code': code}).json()
+        self.assertNotEqual(g['accountKey'], k['accountKey'])
+
+    def test_not_configured(self):
+        with mock.patch.dict(os.environ, {'KAKAO_REST_API_KEY': ''}):
+            self.assertEqual(503, self.client.post('/api/auth/start', json={'provider': 'kakao'},
+                                                   headers={'X-Device-Id': 'p'}).status_code)
 
 
 class VerifyTest(unittest.TestCase):

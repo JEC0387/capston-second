@@ -7,13 +7,19 @@ import com.jeiu.fashionproject.data.WearLog
 /**
  * 스타일 분석 (마이페이지 > 스타일 분석 결과).
  *
- * 새 AI 없이, 이미 있는 데이터로 계산한다.
- * - 보유: 옷장 옷마다 붙은 스타일(StyleTagger — 사용자가 고른 스타일이 있으면 그 값)
+ * 새 AI 없이, 이미 있는 데이터로 계산한다. 스타일은 선호 스타일 · 취향 학습과 같은 8가지.
+ * - 옷 하나의 스타일: 종류 · 이름 · 색으로 맞는 8가지 스타일 중 가장 뚜렷한 것 (PreferredStyles.dominant),
+ *   맞는 게 없으면 옷 스타일 태그(클래식 → 포멀, 빈티지 → 아메카지)
+ * - 보유: 옷장 옷마다의 스타일
  * - 착용: 최근 90일 착용 기록에서 입은 옷의 스타일 (입은 횟수만큼)
  * 착용 기록이 있으면 보유 50% + 착용 50%로 섞고, 없으면 보유만 쓴다.
  */
 object StyleProfile {
-    val STYLES = listOf("미니멀", "캐주얼", "클래식", "스트릿", "빈티지")
+    val STYLES = PreferredStyles.OPTIONS
+
+    /** 옷 하나의 스타일 (8가지 중 하나, 정할 수 없으면 null) */
+    fun styleOf(item: WardrobeItem): String? =
+        PreferredStyles.dominant(listOf(item)) ?: PreferredStyles.fromTag(StyleTagger.styleOf(item))
     const val WINDOW_DAYS = 90
 
     data class StyleShare(
@@ -35,19 +41,25 @@ object StyleProfile {
     }
 
     private val KEYWORDS = mapOf(
-        "미니멀" to listOf("깔끔한", "심플한", "모던한"),
         "캐주얼" to listOf("편안한", "자연스러운", "활동적인"),
-        "클래식" to listOf("단정한", "세련된", "격식 있는"),
         "스트릿" to listOf("개성 있는", "힙한", "자유로운"),
-        "빈티지" to listOf("레트로한", "따뜻한", "감성적인"),
+        "미니멀" to listOf("깔끔한", "심플한", "모던한"),
+        "댄디" to listOf("깔끔한", "부드러운", "센스 있는"),
+        "아메카지" to listOf("빈티지한", "따뜻한", "멋스러운"),
+        "유니크" to listOf("개성 있는", "과감한", "컬러풀한"),
+        "스포티" to listOf("활동적인", "편안한", "건강한"),
+        "포멀" to listOf("단정한", "세련된", "격식 있는"),
     )
 
     private val DESCRIPTION = mapOf(
-        "미니멀" to "군더더기 없는 깔끔한 미니멀 스타일이 중심이에요. 무채색 · 뉴트럴 기본템이 많아 어떤 옷과도 조합하기 쉬워요.",
         "캐주얼" to "편안하고 자연스러운 캐주얼 스타일이 중심이에요. 데일리로 활용하기 좋은 옷이 많아요.",
-        "클래식" to "단정하고 세련된 클래식 스타일이 중심이에요. 셔츠 · 슬랙스 · 구두처럼 격식 있는 자리에도 어울리는 옷이 많아요.",
         "스트릿" to "개성 있는 스트릿 스타일이 중심이에요. 카고 · 후드처럼 편하면서 힙한 옷을 즐겨요.",
-        "빈티지" to "따뜻한 감성의 빈티지 스타일이 중심이에요. 체크 · 가디건 같은 레트로한 옷이 포인트예요.",
+        "미니멀" to "군더더기 없는 깔끔한 미니멀 스타일이 중심이에요. 무채색 · 뉴트럴 기본템이 많아 어떤 옷과도 조합하기 쉬워요.",
+        "댄디" to "차분한 색의 셔츠 · 니트 · 슬랙스로 깔끔하게 입는 댄디 스타일이 중심이에요.",
+        "아메카지" to "데님 · 워크 자켓 · 어스 톤으로 멋스럽게 입는 아메카지 스타일이 중심이에요.",
+        "유니크" to "포인트 컬러와 패턴으로 개성을 드러내는 유니크 스타일이 중심이에요.",
+        "스포티" to "후드 · 트레이닝 · 스니커즈처럼 활동적인 스포티 스타일이 중심이에요.",
+        "포멀" to "단정하고 세련된 포멀 스타일이 중심이에요. 셔츠 · 슬랙스 · 구두처럼 격식 있는 자리에도 어울리는 옷이 많아요.",
     )
 
     /** 옷장이 비어 있으면 null */
@@ -58,7 +70,7 @@ object StyleProfile {
         windowDays: Int = WINDOW_DAYS
     ): Result? {
         if (items.isEmpty()) return null
-        val styleById = items.associate { it.id to StyleTagger.styleOf(it) }
+        val styleById = items.mapNotNull { item -> styleOf(item)?.let { item.id to it } }.toMap()
 
         val owned = STYLES.associateWith { s -> styleById.values.count { it == s } }
         val ownedTotal = owned.values.sum()
