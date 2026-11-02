@@ -247,6 +247,29 @@ class LoginResponse(BaseModel):
     name: str
     isNewAccount: bool
     switched: bool
+    provider: str = "google"         # google / kakao / facebook / apple
+
+
+class StartLoginRequest(BaseModel):
+    """카카오 · 페이스북 · Apple 로그인 시작"""
+    provider: Literal["kakao", "facebook", "apple"]
+
+
+class StartLoginResponse(BaseModel):
+    url: str                          # 브라우저로 열 각 회사 로그인 화면 주소
+
+
+class ExchangeLoginRequest(BaseModel):
+    """로그인 뒤 앱으로 돌아올 때 받은 1회용 코드"""
+    code: str
+
+
+class LoginProvidersResponse(BaseModel):
+    """서버에 설정된 로그인 방법 (앱이 버튼을 켜고 끄는 데 씀)"""
+    google: bool
+    kakao: bool
+    facebook: bool
+    apple: bool
 
 
 class GenderRequest(BaseModel):

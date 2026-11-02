@@ -12,3 +12,6 @@ numpy
 sqlalchemy>=2.0,<3
 psycopg2-binary
 python-dotenv
+
+# 로그인 — Apple 로그인 client_secret(ES256 JWT) 서명
+PyJWT[crypto]>=2.8,<3

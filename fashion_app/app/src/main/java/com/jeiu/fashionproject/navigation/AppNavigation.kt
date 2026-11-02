@@ -83,10 +83,17 @@ fun AppNavigation() {
     // 로그인하지 않았으면(구글 · 게스트 둘 다 아님) 로그인 화면부터
     val startRoute = androidx.compose.runtime.remember {
         com.jeiu.fashionproject.data.AuthStore.load(context)
-        if (com.jeiu.fashionproject.data.AuthStore.mode.value == com.jeiu.fashionproject.data.AuthStore.Mode.NONE)
+        if (com.jeiu.fashionproject.data.AuthStore.mode.value == com.jeiu.fashionproject.data.AuthStore.Mode.NONE ||
+            com.jeiu.fashionproject.data.AuthStore.redirect.value != null)   // 로그인 중에 앱이 다시 켜진 경우
             Screen.Login.route else Screen.Onboarding.route
     }
     val authScope = androidx.compose.runtime.rememberCoroutineScope()
+    // 브라우저 로그인에서 돌아왔는데 로그인 화면이 아니면 로그인 화면을 열어 마무리한다
+    val pendingRedirect by com.jeiu.fashionproject.data.AuthStore.redirect.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(pendingRedirect) {
+        if (pendingRedirect != null && navController.currentDestination?.route != Screen.Login.route &&
+            navController.currentDestination != null) navController.navigate(Screen.Login.route)
+    }
 
     Scaffold(
         bottomBar = {
