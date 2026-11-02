@@ -231,7 +231,7 @@ private class ManualFittingViewModel : ViewModel() {
 }
 
 @Composable
-fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
+fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=false,onBack: () -> Unit) {
     val context = LocalContext.current
     val density = LocalDensity.current
     var savedOverlays by remember { mutableStateOf<List<AvatarOverlay>?>(null) }
@@ -257,6 +257,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
     var poseStatus by manual::poseStatus
     var canvasSize by manual::canvasSize
     var avatarMode by manual::avatarMode
+    LaunchedEffect(startAvatar) {if(startAvatar)manual.avatarMode=true}
     val worn = if (avatarMode) manual.avatarWorn else manual.worn
     var activeSlot by manual::activeSlot
     var overlayAlpha by manual::overlayAlpha

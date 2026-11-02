@@ -13,7 +13,7 @@ import java.util.Locale
 
 /** Preview and approval never mutate storage; caller owns the explicit save step. */
 @Composable
-fun AvatarApplicationDialog(previous: AvatarProfile?,candidate: AvatarProfile,onDismiss:()->Unit,onApprove:()->Unit) {
+fun AvatarApplicationDialog(previous: AvatarProfile?,candidate: AvatarProfile,onDismiss:()->Unit,onApprove:()->Unit,commitOnApprove:Boolean=false) {
     var preview by remember { mutableStateOf(false) }
     var before by remember { mutableStateOf(false) }
     val initial=previous?.parameters() ?: AvatarParameters()
@@ -31,14 +31,18 @@ fun AvatarApplicationDialog(previous: AvatarProfile?,candidate: AvatarProfile,on
                 Text("$label: ${String.format(Locale.KOREA,"%.1f → %.1f cm",pair.first,pair.second)}")
             }
             candidate.applied.forEach { (key,value) -> Text("원본 ${key.label}: ${value.cm} cm (${value.origin.label})") }
+            candidate.centimeters?.let {cm->AvatarPart.entries.forEach {part->
+                Text("${part.label} ${part.unit}: ${previous?.centimeters?.get(part)?.toString() ?: "이전 cm 없음"} → ${cm[part]} cm · ${cm.values.getValue(part).origin.label}")
+            }}
             after.sources.forEach {Text(it)}
             after.notes.forEach {Text(it)}
             Row {
                 TextButton(onClick={before=true;preview=true}) {Text("이전 3D 보기")}
                 TextButton(onClick={before=false;preview=true}) {Text("반영 후 3D 보기")}
             }
-            Text("승인은 미리보기만 바꿔요. 저장 버튼을 누르기 전에는 기존 프로필을 보존해요.")
+            Text(if(commitOnApprove)"확인하면 이번 cm 프로필을 이 기기에 저장해요. 취소하면 기존 저장값을 유지해요."
+                else "승인은 미리보기만 바꿔요. 저장 버튼을 누르기 전에는 기존 프로필을 보존해요.")
         }
-    },confirmButton={TextButton(onClick=onApprove,modifier=Modifier.testTag("avatarApplyApprove")) {Text("확인하고 미리보기에 반영")}},
+    },confirmButton={TextButton(onClick=onApprove,modifier=Modifier.testTag("avatarApplyApprove")) {Text(if(commitOnApprove)"확인하고 저장" else "확인하고 미리보기에 반영")}},
         dismissButton={TextButton(onClick=onDismiss,modifier=Modifier.testTag("avatarApplyCancel")) {Text("취소 · 기존 설정 유지")}})
 }

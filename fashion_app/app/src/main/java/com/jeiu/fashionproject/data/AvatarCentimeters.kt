@@ -29,17 +29,20 @@ data class AvatarCentimeters(
         if(initial.keys!=AvatarPart.entries.toSet() || values.keys!=AvatarPart.entries.toSet())return "필요한 부위 치수가 빠져 있어요."
         if(values.any {(p,v)->!v.cm.isFinite() || v.cm !in range(p,heightCm)} ||
             initial.any {(p,v)->!v.isFinite() || v !in range(p,heightCm)})return "이 표시 모델의 부위별 cm 범위를 벗어났어요. 원본 치수는 바꾸지 않았어요."
+        if(values.values.any {abs(it.cm*2-round(it.cm*2))>.0001f} || initial.values.any {abs(it*2-round(it*2))>.0001f})
+            return "표시 치수는 0.5cm 단위로 조절해요. 원본 실측은 별도 참고값으로 유지해요."
         if(references.any {(_,v)->!v.cm.isFinite() || v.cm !in 1f..350f} ||
             photoFrontWidths.keys.any {it !in setOf("waist","hip")} || photoFrontWidths.values.any {!it.isFinite() || it !in heightCm*.08f..heightCm*.5f})
             return "원본 치수의 단위·출처를 확인해주세요."
         val length=this[AvatarPart.LEG]+this[AvatarPart.TORSO]
-        if(length !in heightCm*.64f..heightCm*.80f)return "다리와 상체 길이 합은 키의 64~80% 표시 범위가 필요해요. 실제 치수의 오류를 뜻하지 않아요."
+        if(length<heightCm*.64f-.0001f || length>heightCm*.80f+.0001f)return "다리와 상체 길이 합은 키의 64~80% 표시 범위가 필요해요. 실제 치수의 오류를 뜻하지 않아요."
         // Prevent intersecting thigh sections. This is a mannequin limitation, not an anatomical rule.
-        if(this[AvatarPart.THIGH]>this[AvatarPart.HIP]*.64f)return "이 모델에서는 허벅지 둘레가 엉덩이 둘레의 64% 이하여야 분리돼 보여요. 원본 실측은 보존해요."
+        if(this[AvatarPart.THIGH]>this[AvatarPart.HIP]*.64f+.0001f)return "이 모델에서는 허벅지 둘레가 엉덩이 둘레의 64% 이하여야 분리돼 보여요. 원본 실측은 보존해요."
         return null
     }
     fun adjusted(part:AvatarPart,value:Float):AvatarCentimeters? {
         if(!value.isFinite())return null
+        if(snap(value)==this[part])return this
         val changed=copy(values=values+(part to AvatarCm(snap(value),AvatarValueOrigin.ADJUSTED)))
         return changed.takeIf {it.issue()==null}
     }
@@ -66,7 +69,8 @@ data class AvatarCentimeters(
     companion object {
         const val ASSUMPTION="fashionai-ellipse-v1"
         fun snap(v:Float)=round(v*2f)/2f
-        fun range(part:AvatarPart,h:Float):ClosedFloatingPointRange<Float> = when(part) {
+        fun range(part:AvatarPart,h:Float):ClosedFloatingPointRange<Float> {
+            val raw=when(part) {
             AvatarPart.SHOULDER -> max(15f,h*.15f)..min(75f,h*.36f)
             AvatarPart.CHEST -> 40f..min(200f,h*1.15f)
             AvatarPart.WAIST -> 40f..min(200f,h*1.10f)
@@ -74,6 +78,9 @@ data class AvatarCentimeters(
             AvatarPart.THIGH -> 20f..min(100f,h*.55f)
             AvatarPart.LEG -> h*.25f..h*.62f
             AvatarPart.TORSO -> h*.15f..h*.40f
+            }
+            // Quantize the contract once; 0.0001cm only handles float arithmetic at exact half ticks.
+            return ceil((raw.start-.0001f)*2)/2..floor((raw.endInclusive+.0001f)*2)/2
         }
         fun depthRatio(part:AvatarPart)=when(part) {AvatarPart.CHEST->.72f;AvatarPart.WAIST->.70f;AvatarPart.HIP->.76f;else->.92f}
         fun circumference(a:Float,b:Float):Float {

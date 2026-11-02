@@ -102,10 +102,7 @@ object AvatarProfileStore {
     private val _issue = MutableStateFlow<String?>(null)
     val issue: StateFlow<String?> = _issue
 
-    fun load(context: Context) {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
-        if (raw == null) { _current.value = null; _issue.value = null; return }
-        val parsed = runCatching {
+    fun decode(raw:String):AvatarProfile? = runCatching {
             val json = JSONObject(raw)
             val schema=json.getInt("schema");require(schema in 1..3)
             AvatarProfile(json.getDouble("height").toFloat(), json.getDouble("weight").toFloat(),
@@ -121,13 +118,19 @@ object AvatarProfileStore {
                         MeasurementOrigin.valueOf(item.getString("origin")),item.getLong("at"))
                 } } else emptyMap(),if(schema==3)AvatarCentimeters.fromJson(json.getJSONObject("centimeters")) else null).takeIf { it.valid() }
         }.getOrNull()
+
+    fun load(context: Context) {
+        val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY,null)}.getOrElse {
+            _current.value=null;_issue.value="저장된 3D 형식을 읽지 못했어요. 원본을 보존했어요.";return
+        }
+        if(raw==null) {_current.value=null;_issue.value=null;return}
+        val parsed=decode(raw)
         _current.value = parsed
         _issue.value = if (parsed == null) "저장된 3D 표시값을 읽지 못했어요. 원본을 보존했어요." else null
     }
 
-    fun save(context: Context, profile: AvatarProfile): Boolean {
-        load(context) // Recheck disk corruption, even if another caller has not loaded the store yet.
-        if (!profile.valid() || _issue.value != null) return false
+    fun encode(profile:AvatarProfile):String {
+        require(profile.valid())
         val json = JSONObject().put("schema", if(profile.centimeters==null)2 else 3).put("height", profile.heightCm)
             .put("weight", profile.weightKg).put("shoulder", profile.shoulder)
             .put("waist", profile.waist).put("hip", profile.hip)
@@ -137,6 +140,12 @@ object AvatarProfileStore {
                     .put("origin",value.origin.name).put("at",value.at)) }
             })
         profile.centimeters?.let {json.put("centimeters",it.toJson())}
+        return json.toString()
+    }
+
+    fun save(context: Context, profile: AvatarProfile): Boolean {
+        load(context)
+        if (!profile.valid() || _issue.value != null) return false
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
         val original=prefs.getString(KEY,null)
         val edit=prefs.edit()
@@ -144,7 +153,7 @@ object AvatarProfileStore {
             edit.putString("profile_v1_preserved",original)
         if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains("profile_pre_cm_preserved"))
             edit.putString("profile_pre_cm_preserved",original)
-        val ok = edit.putString(KEY, json.toString()).commit()
+        val ok = edit.putString(KEY, encode(profile)).commit()
         if (ok) _current.value = profile
         return ok
     }

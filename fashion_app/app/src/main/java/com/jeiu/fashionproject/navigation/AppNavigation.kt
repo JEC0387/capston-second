@@ -216,8 +216,9 @@ fun AppNavigation() {
                     weatherViewModel = weatherViewModel,
                     gender = gender)
             }
-            composable(Screen.VirtualFitting.route) {
+            composable(Screen.VirtualFitting.route+"?avatar={avatar}",arguments=listOf(navArgument("avatar"){type=NavType.BoolType;defaultValue=false})) {entry->
                 VirtualFittingScreen(onBack = { navController.popBackStack() },
+                    startAvatar=entry.arguments?.getBoolean("avatar") ?: false,
                     onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) })
             }
             composable(
@@ -254,6 +255,7 @@ fun AppNavigation() {
             composable(Screen.BodyAnalysisAvatar.route) {
                 BodyAvatarSetupScreen(
                     onBack = { navController.popBackStack() },
+                    onFitting={navController.navigate(Screen.VirtualFitting.route+"?avatar=true")},
                     onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
                 )
             }

@@ -25,6 +25,8 @@ import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 
 /** Optional OpenGL ES 2.0 viewer; no asset download, network, body photo or persistence. */
 @Composable
@@ -68,9 +70,11 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
             }
             OutlinedButton(onClick={yaw=0f;zoom=.8f}) {Text("모델 전체 보기 · 회전/줌 초기화")}
             Text("확대: ${"%.1f".format(zoom)}배");Slider(zoom,{zoom=it},valueRange=.8f..2f)
-            Text("어깨 표시 비율");Slider(shoulder,{shoulder=it},valueRange=.8f..1.2f)
-            Text("허리 표시 비율");Slider(waist,{waist=it},valueRange=.8f..1.2f)
-            Text("엉덩이 표시 비율");Slider(hip,{hip=it},valueRange=.8f..1.2f)
+            if(parameters.centimeters==null) {
+                Text("어깨 표시 비율");Slider(shoulder,{shoulder=it},valueRange=.8f..1.2f)
+                Text("허리 표시 비율");Slider(waist,{waist=it},valueRange=.8f..1.2f)
+                Text("엉덩이 표시 비율");Slider(hip,{hip=it},valueRange=.8f..1.2f)
+            } else Text("cm 프로필의 부위 변경은 줄자 조절 화면에서 저장해요.")
             Text("표시 조절은 저장된 신체 치수나 사이즈 추천값을 변경하지 않아요. 관절 높이는 기본 인체의 표시 범위 안에서 제한해요.")
             parameters.sources.forEach { Text(it,style=MaterialTheme.typography.bodySmall) }
             parameters.notes.forEach { Text(it,style=MaterialTheme.typography.bodySmall) }
@@ -83,7 +87,8 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
 
 /** Reuses the same real GLES mesh inside the fitting canvas. Touch rotates; pinch zooms. */
 @Composable
-fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier,resetKey:Int=0) {
+fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier,resetKey:Int=0,
+    cameraYaw:Float?=null,onRotation:((Float)->Unit)?=null,fitModel:Boolean=false) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var yaw by remember { mutableFloatStateOf(0f) }
@@ -106,17 +111,34 @@ fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier
     if (!supported || failed) {
         Text("이 기기에서 3D 모델을 표시하지 못했어요. 저장된 설정은 유지돼요.", modifier = modifier)
     } else {
-        AndroidView(factory = { ctx -> AvatarSurface(ctx, { yaw = it }, { zoom = it }, { failed = true }).also { surface = it } },
-            update = { it.update(parameters, 1f, 1f, 1f, yaw, zoom, thighScale) }, modifier = modifier)
+        AndroidView(factory = { ctx -> AvatarSurface(ctx, { yaw = it;onRotation?.invoke(it) }, { zoom = it }, { failed = true }).also { surface = it } },
+            update = { it.update(parameters, 1f, 1f, 1f, cameraYaw ?: yaw, zoom, thighScale,fitModel) }, modifier = modifier)
     }
 }
 
-private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,private val onZoom:(Float)->Unit,onError:()->Unit):GLSurfaceView(context) {
+private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,private val onZoom:(Float)->Unit,private val onError:()->Unit):GLSurfaceView(context) {
     private val avatar=AvatarRenderer { post { onError() } }
     private var lastX=0f
     private var yawValue=0f
     private var zoomValue=1f
     private var geometry:List<Any>?=null
+    private data class Request(val key:List<Any>,val p:AvatarParameters,val s:Float,val w:Float,val h:Float,val thigh:Float)
+    private var scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
+    private var requests=Channel<Request>(Channel.CONFLATED)
+    @Volatile private var latest:Request?=null
+    private fun startWorker() {
+        scope.launch {
+            for(request in requests) {
+                try {
+                    val mesh=request.p.centimeters?.let {PremiumAvatarMesh.build(it,cancelled={!isActive})}
+                        ?: BodyAvatarMesh.build(request.p,request.s,request.w,request.h,request.thigh)
+                    if(isActive && latest==request)queueEvent {avatar.setGeometry(mesh);requestRender()}
+                } catch(_:java.util.concurrent.CancellationException) {break}
+                catch(_:IllegalArgumentException) {post {onError()}}
+                catch(_:IllegalStateException) {post {onError()}}
+            }
+        }
+    }
     private val pinch=ScaleGestureDetector(context,object:ScaleGestureDetector.SimpleOnScaleGestureListener(){
         override fun onScale(detector:ScaleGestureDetector):Boolean {
             zoomValue=(zoomValue*detector.scaleFactor).coerceIn(.8f,2f);onZoom(zoomValue);return true
@@ -127,15 +149,21 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
         preserveEGLContextOnPause=true
         setRenderer(avatar)
         renderMode=RENDERMODE_WHEN_DIRTY
+        startWorker()
     }
-    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float,thigh:Float = 1f) {
+    override fun onDetachedFromWindow() {scope.cancel();requests.close();super.onDetachedFromWindow()}
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if(!scope.isActive) {scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);requests=Channel(Channel.CONFLATED);startWorker();latest?.let {requests.trySend(it)}}
+    }
+    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float,thigh:Float = 1f,fit:Boolean=false) {
         val key=listOf(parameters,shoulder,waist,hip,thigh)
         if(key!=geometry) {
             geometry=key
-            queueEvent { avatar.setGeometry(BodyAvatarMesh.build(parameters,shoulder,waist,hip,thigh)) }
+            Request(key,parameters,shoulder,waist,hip,thigh).also {latest=it;requests.trySend(it)}
         }
         yawValue=yaw;zoomValue=zoom
-        queueEvent { avatar.yaw=yaw;avatar.zoom=zoom }
+        queueEvent { avatar.yaw=yaw;avatar.zoom=zoom;avatar.distance=if(fit)parameters.heightCm/100f/.56f else 3.8f }
         requestRender()
     }
     override fun onTouchEvent(event:MotionEvent):Boolean {
@@ -156,6 +184,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
 
 private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Renderer {
     var yaw=0f;var zoom=1f
+    var distance=3.8f
     private var program=0
     private var failed=false
     private var count=0
@@ -177,20 +206,28 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
             val vertex=shader(GLES20.GL_VERTEX_SHADER,"""
                 uniform mat4 uMvp; uniform mat4 uModel;
                 attribute vec3 aPosition; attribute vec3 aNormal; attribute vec3 aColor;
-                varying vec3 vColor;
+                varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition;
                 void main() {
-                    vec3 n=normalize(mat3(uModel)*aNormal);
-                    float light=0.35+0.65*max(dot(n,normalize(vec3(-0.4,0.7,1.0))),0.0);
-                    vColor=aColor*light;gl_Position=uMvp*vec4(aPosition,1.0);
+                    vNormal=normalize(mat3(uModel)*aNormal);vPosition=(uModel*vec4(aPosition,1.0)).xyz;
+                    vColor=aColor;gl_Position=uMvp*vec4(aPosition,1.0);
                 }
             """.trimIndent())
-            val fragment=shader(GLES20.GL_FRAGMENT_SHADER,"precision mediump float; varying vec3 vColor; void main(){gl_FragColor=vec4(vColor,1.0);}")
+            val fragment=shader(GLES20.GL_FRAGMENT_SHADER,"""
+                precision mediump float; varying mediump vec3 vColor; varying mediump vec3 vNormal; varying mediump vec3 vPosition;
+                void main(){
+                    vec3 n=normalize(vNormal);vec3 key=normalize(vec3(-0.4,0.7,1.0));
+                    float light=0.48+0.43*max(dot(n,key),0.0)+0.12*max(dot(n,normalize(vec3(0.8,0.15,0.5))),0.0)+0.06*max(n.y,0.0);
+                    vec3 eye=normalize(vec3(0.0,0.1,3.8)-vPosition);
+                    float sheen=0.045*pow(max(dot(n,normalize(key+eye)),0.0),32.0);
+                    gl_FragColor=vec4(vColor*light+vec3(sheen),1.0);
+                }
+            """.trimIndent())
             program=GLES20.glCreateProgram();GLES20.glAttachShader(program,vertex);GLES20.glAttachShader(program,fragment);GLES20.glLinkProgram(program)
             val linked=IntArray(1);GLES20.glGetProgramiv(program,GLES20.GL_LINK_STATUS,linked,0);check(linked[0]!=0)
             GLES20.glDeleteShader(vertex);GLES20.glDeleteShader(fragment)
             position=GLES20.glGetAttribLocation(program,"aPosition");normal=GLES20.glGetAttribLocation(program,"aNormal");color=GLES20.glGetAttribLocation(program,"aColor")
             mvpLocation=GLES20.glGetUniformLocation(program,"uMvp");modelLocation=GLES20.glGetUniformLocation(program,"uModel")
-            GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glClearColor(.96f,.94f,.90f,1f);failed=false
+            GLES20.glEnable(GLES20.GL_DEPTH_TEST);GLES20.glClearColor(.9804f,.9725f,.9608f,1f);failed=false
         } catch(_:RuntimeException) { failed=true;onError() }
     }
     override fun onSurfaceChanged(gl:GL10?,width:Int,height:Int) {
@@ -201,7 +238,7 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
         if(failed)return
         val data=buffer?:return
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT or GLES20.GL_DEPTH_BUFFER_BIT)
-        Matrix.setLookAtM(view,0,0f,0f,3.8f/zoom.coerceIn(.8f,2f),0f,0f,0f,0f,1f,0f)
+        Matrix.setLookAtM(view,0,0f,0f,distance/zoom.coerceIn(.8f,2f),0f,0f,0f,0f,1f,0f)
         Matrix.setIdentityM(model,0);Matrix.rotateM(model,0,yaw,0f,1f,0f)
         Matrix.multiplyMM(combined,0,view,0,model,0);Matrix.multiplyMM(mvp,0,projection,0,combined,0)
         GLES20.glUseProgram(program);GLES20.glUniformMatrix4fv(mvpLocation,1,false,mvp,0);GLES20.glUniformMatrix4fv(modelLocation,1,false,model,0)

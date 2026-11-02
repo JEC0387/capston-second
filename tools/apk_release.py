@@ -89,7 +89,8 @@ def verify(apk, output, distribution=False, preview=False):
         dex = [archive.read(name) for name in archive.namelist() if re.fullmatch(r"classes\d*\.dex", name)]
         for marker in ["3D 기본 모델", "3D 비율 아바타 보기", "신체 치수 직접 입력", "AiTryOnScreen", "AppBuildInfo",
                        "LocalVtonScreen", "LocalVtonRepository", "자체 AI 착장 이미지 생성", "fashn-vton-1.5-local",
-                       "AvatarMeasurementImport", "AvatarApplicationDialog", "3D 반영 전후 비교", "BodyMeasurementOverlay"]:
+                       "AvatarMeasurementImport", "AvatarApplicationDialog", "3D 반영 전후 비교", "BodyMeasurementOverlay",
+                       "PremiumAvatarEditor", "CmRuler", "PremiumAvatarMesh", "AvatarCentimeters", "3D 체형 조절"]:
             if not any(marker.encode("utf-8") in data for data in dex):
                 raise ValueError(f"Required APK feature missing: {marker}")
         if any("DB 연결 안 됨 · 로컬 사용 가능".encode("utf-8") in data for data in dex):

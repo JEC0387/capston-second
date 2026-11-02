@@ -129,7 +129,7 @@ private fun BodyMethodCard(
 
 /** Phase-one avatar entry reuses existing manual measurements and 3D preview. */
 @Composable
-fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
+fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitting:(()->Unit)?=null) {
     var manualExpanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -145,7 +145,7 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("3D 모델을 확인하고 체형 생성 방법을 선택해 보세요.",
                 style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
-            AvatarSetupCard()
+            AvatarSetupCard(onApplyToFitting=onFitting)
             OutlinedButton(onClick = { manualExpanded = !manualExpanded },
                 modifier = Modifier.fillMaxWidth().testTag("avatarManualExpand")) {
                 Text(if (manualExpanded) "직접 입력한 치수 접기" else "신체 치수 직접 입력")

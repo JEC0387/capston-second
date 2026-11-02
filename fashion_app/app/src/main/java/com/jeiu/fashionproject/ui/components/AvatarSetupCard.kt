@@ -14,7 +14,7 @@ import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 
 @Composable
-fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false) {
+fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false,onApplyToFitting:(()->Unit)?=null) {
     val context = LocalContext.current
     var storesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { AvatarProfileStore.load(context);ManualBodyStore.load(context);storesLoaded=true }
@@ -26,8 +26,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     var imported by remember { mutableStateOf<AvatarProfile?>(null) }
     var proposal by remember { mutableStateOf<AvatarProfile?>(null) }
     var initialImportHandled by remember { mutableStateOf(false) }
-    var height by remember { mutableStateOf("170") }
-    var weight by remember { mutableStateOf("65") }
+    var height by rememberSaveable { mutableStateOf("170") }
+    var weight by rememberSaveable { mutableStateOf("65") }
+    var cmEditingRaw by rememberSaveable {mutableStateOf<String?>(null)}
     var shoulder by remember { mutableFloatStateOf(1f) }
     var waist by remember { mutableFloatStateOf(1f) }
     var hip by remember { mutableFloatStateOf(1f) }
@@ -45,7 +46,10 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
         chest=it.chest;torso=it.torso;imported=it
     } }
     val draft = AvatarProfile(height.toFloatOrNull() ?: Float.NaN, weight.toFloatOrNull() ?: Float.NaN,
-        shoulder, waist, hip, thigh, leg,chest,torso,imported?.source ?: AvatarSource.BMI,imported?.applied.orEmpty())
+        shoulder, waist, hip, thigh, leg,chest,torso,imported?.source ?: AvatarSource.BMI,imported?.applied.orEmpty(),imported?.centimeters)
+    cmEditingRaw?.let {raw->AvatarProfileStore.decode(raw)?.let {base->
+        PremiumAvatarEditor(base,saved,onDismiss={cmEditingRaw=null},onSave={AvatarProfileStore.save(context,it)},onApplyToFitting=onApplyToFitting)
+    }}
     LaunchedEffect(autoImportPhoto, storesLoaded, photo, sessionPhoto, saved) {
         if (autoImportPhoto && storesLoaded && !initialImportHandled) {
             AvatarMeasurementImport.photo(photo ?: sessionPhoto, saved)?.let {
@@ -106,12 +110,18 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             issue?.let { Text(it,color=MaterialTheme.colorScheme.error) }
             OutlinedTextField(height,{height=it.take(8)},label={Text("키 (cm)")},singleLine=true,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
-                readOnly=draft.source!=AvatarSource.BMI,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
-            OutlinedTextField(weight,{weight=it.take(8)},label={Text(if(draft.source==AvatarSource.BMI) "몸무게 (kg)" else "몸무게 (이 모드의 형상 계산에 사용하지 않음)")},singleLine=true,
-                readOnly=draft.source!=AvatarSource.BMI,
+                readOnly=draft.source!=AvatarSource.BMI || draft.centimeters!=null,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
+            OutlinedTextField(weight,{weight=it.take(8)},label={Text("초기 형상 참고 몸무게 (kg)")},singleLine=true,
+                readOnly=draft.centimeters!=null,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                 modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
             if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
+            Button(enabled=draft.valid()&&storesLoaded,onClick={
+                AvatarCentimeters.fromLegacy(draft,System.currentTimeMillis())?.let {cm->
+                    cmEditingRaw=AvatarProfileStore.encode(draft.copy(centimeters=cm))
+                }
+            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text("3D 아바타 생성 · cm 줄자로 조절")}
+            Text("키·몸무게로 기본 치수를 자동 제안해요. 초기값은 검증된 평균이 아닌 임시 형상이므로 실제 치수에 맞춰 수정해주세요.",style=MaterialTheme.typography.bodySmall)
             @Composable fun adjustment(label:String,value:Float,onChange:(Float)->Unit,tag:String) {
                 Text("$label 표시 비율: ${(value*100).toInt()}%")
                 Slider(value,onChange,valueRange=.8f..1.2f,modifier=Modifier.testTag(tag))
@@ -121,6 +131,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
                 Text(if(controlsExpanded) "세부 체형 조절 접기" else "세부 체형 조절")
             }
             if (controlsExpanded) {
+            if(draft.centimeters==null) {
             adjustment("어깨",shoulder,{shoulder=it},"avatarShoulder")
             adjustment("가슴",chest,{chest=it},"avatarChest")
             adjustment("허리",waist,{waist=it},"avatarWaist")
@@ -128,6 +139,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             adjustment("허벅지",thigh,{thigh=it},"avatarThigh")
             adjustment("다리 길이",leg,{leg=it},"avatarLeg")
             adjustment("상체 길이",torso,{torso=it},"avatarTorso")
+            } else Text("저장된 cm 프로필은 위 줄자 화면에서 조절해요. A/B/C 출처를 다시 선택하면 변경 전 비교를 거쳐 새 초안을 만들어요.")
             imported?.applied?.forEach { (key,value) -> Text("${key.label}: ${value.cm} cm · ${value.origin.label}") }
             if(draft.source!=AvatarSource.BMI) Text("빠진 가슴/부위 치수와 앞뒤 깊이는 기본 비율 추정이에요. 둘레→타원 형상은 시각화 가정이며 실제 깊이 측정이 아니에요.")
             Text("조절값은 3D 메시 너비·관절 높이에 반영돼요. 사진 분석·직접 잰 치수에는 쓰지 않아요.",
