@@ -96,6 +96,25 @@ class SilhouetteMeasurerTest {
         val arm = pose() + (Joint.LEFT_WRIST to GuidePoint(410f, 1025f, 0.99f))
         assertNull(cm(measure(points = arm)))
     }
+    @Test fun softForegroundEdgesDoNotBecomeConfidentBodyWidths() {
+        val a=mask()
+        for(y in 150 until 180) {
+            for(x in 73 until 81)a[y*200+x]=.70f
+            for(x in 119 until 127)a[y*200+x]=.70f
+        }
+        val result=SilhouetteMeasurer.inspect(a,200,400,1000,2000,pose())
+        assertNull(result.widths)
+        assertEquals(SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY,result.issue)
+    }
+    @Test fun measurementGuidesUseTheSameBitmapAndRemainResolutionIndependent() {
+        val full=measure()!!.guides!!
+        val small=SilhouetteMeasurer.measure(mask(),200,400,500,1000,pose(2.5f))!!.guides!!
+        assertTrue(full.valid());assertEquals(full.lines,small.lines)
+        assertEquals(1000,full.imageWidth);assertEquals(2000,full.imageHeight)
+        val shoulder=full.lines.first()
+        assertEquals(.325f,shoulder.left,.001f);assertEquals(.675f,shoulder.right,.001f)
+        assertNotNull(cm(measure())!!.guides)
+    }
 }
 
 

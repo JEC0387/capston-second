@@ -14,6 +14,7 @@ enum class SilhouetteIssue(val message: String) {
     EXTRA_FOREGROUND("다른 사람이나 큰 배경 물체가 함께 감지됐어요. 한 명만 나오게 촬영해주세요."),
     ARM_CONTOUR("팔·소매와 어깨 경계가 겹쳐요. 팔을 조금 떼고 몸에 맞는 옷으로 촬영해주세요."),
     UNSTABLE_BOUNDARY("허리·힙 외곽이 불안정해요. 옷자락과 배경을 정리해 다시 촬영해주세요."),
+    LOW_CONFIDENCE_BOUNDARY("인물 외곽의 신뢰도가 낮아 너비가 달라져요. 몸과 배경이 선명하게 구분되는 사진으로 다시 촬영해주세요."),
     FULL_BODY("머리 꼭대기나 발끝 경계를 확인하지 못했어요. 위아래에 여유를 두고 촬영해주세요.")
 }
 data class SilhouetteMeasurement(val widths: BodyWidths? = null, val issue: SilhouetteIssue? = null)
@@ -50,40 +51,56 @@ object SilhouetteMeasurer {
         if(!foreground[seed]) return fail(SilhouetteIssue.NO_BODY)
         val component=BooleanArray(confidence.size); val queue=IntArray(confidence.size)
         var read=0; var count=1; queue[0]=seed;component[seed]=true
+        var confidenceSum=0.0
         var minX=seedX;var maxX=seedX;var minY=seedY;var maxY=seedY
         fun visit(i:Int){if(foreground[i]&&!component[i]){component[i]=true;queue[count++]=i}}
         while(read<count){
             val i=queue[read++];val x=i%maskWidth;val y=i/maskWidth
+            confidenceSum+=confidence[i]
             minX=minOf(minX,x);maxX=maxOf(maxX,x);minY=minOf(minY,y);maxY=maxOf(maxY,y)
             if(x>0)visit(i-1);if(x+1<maskWidth)visit(i+1)
             if(y>0)visit(i-maskWidth);if(y+1<maskHeight)visit(i+maskWidth)
         }
         if(count<confidence.size*.03f) return fail(SilhouetteIssue.NO_BODY)
         if(foreground.count{it}-count>count*.05f) return fail(SilhouetteIssue.EXTRA_FOREGROUND)
-        if(queue.take(count).map { confidence[it].toDouble() }.average()<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
-        fun run(imageY:Float):Float? {
+        if(confidenceSum/count<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        data class Boundary(val left:Float,val right:Float,val y:Float) {val width get()=right-left}
+        fun run(imageY:Float,threshold:Float=.65f):Boundary? {
             val y=(imageY/sy).roundToInt();val x=(center(imageY)/sx).roundToInt()
-            if(y !in 0 until maskHeight || x !in 0 until maskWidth || !component[y*maskWidth+x]) return null
+            fun inside(xx:Int)=component[y*maskWidth+xx] && confidence[y*maskWidth+xx]>=threshold
+            if(y !in 0 until maskHeight || x !in 0 until maskWidth || !inside(x)) return null
             var l=x;var r=x
-            while(l>0&&component[y*maskWidth+l-1])l--
-            while(r+1<maskWidth&&component[y*maskWidth+r+1])r++
-            return (r-l+1)*sx
+            while(l>0&&inside(l-1))l--
+            while(r+1<maskWidth&&inside(r+1))r++
+            return Boundary(l*sx,(r+1)*sx,(y+.5f)*sy)
         }
         fun median(values:List<Float>):Float {val a=values.sorted();val n=a.size;return if(n%2==1)a[n/2] else (a[n/2-1]+a[n/2])/2f}
-        fun representative(fractions:List<Float>, reference:Float, shoulder:Boolean=false):Float? {
+        data class Band(val width:Float,val boundary:Boundary)
+        var lowBoundaryConfidence=false
+        fun representative(fractions:List<Float>, reference:Float, shoulder:Boolean=false):Band? {
             val samples=fractions.mapNotNull { run(shoulderY+torso*it) }
             // Reject arm/sleeve spans; never replace them with a landmark-derived width.
-            val plausible=samples.filter { it>0f && (!shoulder || it in reference*.8f..reference*1.8f) }
+            val plausible=samples.filter { it.width>0f && (!shoulder || it.width in reference*.8f..reference*1.8f) }
             if(plausible.size<5 || plausible.size<fractions.size*.5f)return null
-            val middle=median(plausible)
-            val stable=plausible.filter { abs(it-middle)/middle<=.12f }
+            val middle=median(plausible.map {it.width})
+            val stable=plausible.filter { abs(it.width-middle)/middle<=.12f }
             if(stable.size<5 || stable.size<plausible.size*.7f)return null
-            return median(stable)
+            // Reject soft foreground skirts whose widths change strongly at a stricter confidence.
+            // This is segmentation stability, not a claim about real-photo cm accuracy.
+            val strict=stable.mapNotNull { run(it.y-sy*.5f,.80f)?.width }
+            if(strict.size<5 || strict.size<stable.size*.7f || abs(median(strict)-middle)/middle>.10f) {
+                lowBoundaryConfidence=true;return null
+            }
+            val width=median(stable.map {it.width})
+            return Band(width,stable.minBy {abs(it.width-width)})
         }
         val shoulderSpan=abs(ls.x-rs.x)
-        val shoulder=representative((-1..10).map { it*.025f },shoulderSpan,true) ?: return fail(SilhouetteIssue.ARM_CONTOUR)
-        val waist=representative((0..8).map { .5f+it*.025f },shoulderSpan) ?: return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
-        val hip=representative((0..10).map { .8f+it*.03f },shoulderSpan) ?: return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        val shoulder=representative((-1..10).map { it*.025f },shoulderSpan,true)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.ARM_CONTOUR)
+        val waist=representative((0..8).map { .5f+it*.025f },shoulderSpan)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY)
+        val hip=representative((0..10).map { .8f+it*.03f },shoulderSpan)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY)
         val top=minY*sy;val bottom=(maxY+1)*sy;val bodyHeight=bottom-top
         val marginX=max(2,(maskWidth*.01f).toInt());val marginY=max(2,(maskHeight*.01f).toInt())
         fun covered(point:GuidePoint):Boolean {
@@ -107,6 +124,9 @@ object SilhouetteMeasurer {
             return t in .25f.. .75f && abs(k.x-line)<=torso*.12f && abs(a.x-h.x)<=torso*.35f
         }
         if(!straight(lh,p(Joint.LEFT_KNEE),p(Joint.LEFT_ANKLE)) || !straight(rh,p(Joint.RIGHT_KNEE),p(Joint.RIGHT_ANKLE))) return fail(SilhouetteIssue.POSTURE)
-        return SilhouetteMeasurement(BodyWidths(shoulder,waist,hip,bodyHeight,ankleY-hipY,torso,true))
+        val guides=BodyMeasurementGuides(imageWidth,imageHeight,listOf("어깨" to shoulder,"허리" to waist,"골반" to hip).map { (label,band) ->
+            BodyGuideLine(label,band.boundary.left/imageWidth,band.boundary.right/imageWidth,band.boundary.y/imageHeight)
+        })
+        return SilhouetteMeasurement(BodyWidths(shoulder.width,waist.width,hip.width,bodyHeight,ankleY-hipY,torso,true,guides))
     }
 }

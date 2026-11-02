@@ -364,10 +364,14 @@ fun BodyAnalysisScreen(
                         AsyncImage(
                             model = s.imageUri,
                             contentDescription = "분석한 사진",
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()
                         )
+                        com.jeiu.fashionproject.ui.components.BodyMeasurementOverlay(result.measurements?.guides,Modifier.fillMaxSize())
                     }
+
+                    if(result.measurements?.guides!=null) Text("측정 위치: 청록 어깨 · 노랑 허리 · 보라 골반. 선은 대표 위치, cm는 주변 여러 행의 안정적인 중앙값이에요.",
+                        color=MediumGray,style=MaterialTheme.typography.bodySmall)
 
                     // 분석 결과
                     Card(
@@ -474,6 +478,8 @@ fun BodyAnalysisScreen(
                                 }
                                 Text("정면 사진과 입력 키로 환산한 추정값이에요. 허리·엉덩이는 둘레가 아닌 너비이며, 옷·자세·카메라 각도에 따라 실측과 차이가 있어요.",
                                     color = MediumGray, style = MaterialTheme.typography.bodySmall)
+                                Text("가슴 둘레·팔 길이·앞뒤 깊이는 이 분석으로 측정하지 않았어요. 넓은 옷은 몸 대신 옷의 윤곽이 잡힐 수 있고 원근 왜곡은 한 장의 사진만으로 보정하지 못해요.",
+                                    color=MediumGray,style=MaterialTheme.typography.bodySmall)
                             } else {
                                 Text(result.measurementIssue ?: "cm 측정을 완료하지 못했어요. 다시 촬영해주세요.",
                                     color = MediumGray, style = MaterialTheme.typography.bodyMedium)
