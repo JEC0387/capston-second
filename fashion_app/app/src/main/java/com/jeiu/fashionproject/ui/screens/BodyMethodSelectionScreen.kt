@@ -15,6 +15,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -126,6 +130,7 @@ private fun BodyMethodCard(
 /** Phase-one avatar entry reuses existing manual measurements and 3D preview. */
 @Composable
 fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
+    var manualExpanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -138,10 +143,14 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("3D 기본 모델을 확인하고, 알고 있는 신체 치수를 입력해 보세요.",
+            Text("3D 모델을 확인하고 체형 생성 방법을 선택해 보세요.",
                 style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
             AvatarSetupCard()
-            ManualBodyEntryCard(photo = null, onUseHeight = {})
+            OutlinedButton(onClick = { manualExpanded = !manualExpanded },
+                modifier = Modifier.fillMaxWidth().testTag("avatarManualExpand")) {
+                Text(if (manualExpanded) "직접 입력한 치수 접기" else "신체 치수 직접 입력")
+            }
+            if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = {})
             OutlinedButton(onClick = onPhotoAnalysis, modifier = Modifier.fillMaxWidth()) {
                 Text("사진으로 체형 분석하기")
             }
