@@ -1,5 +1,7 @@
 package com.jeiu.fashionproject.ui.screens
 
+import com.jeiu.fashionproject.data.ProfileStore
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -139,9 +141,12 @@ fun HomeScreen(
     // 👍👎·[오늘 이거 입었어요]를 눌러도 카드가 바로 바뀌지 않도록
     // 취향 점수는 계산할 때의 값만 쓰고, 오늘 착용 기록은 빼고 계산한다 (황상윤)
     val pastLogs = remember(wearLogs) { wearLogs.filter { it.date != WearDates.today() } }
-    val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile) {
+    // 온보딩 · 마이페이지에서 고른 선호 스타일 — 바꾸면 오늘의 코디가 바로 다시 계산된다
+    ProfileStore.load(context)
+    val preferredStyles by ProfileStore.styles.collectAsState()
+    val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile, preferredStyles) {
         OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
-            taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile)
+            taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile, preferred = preferredStyles)
     }
     // 보여 준 추천 코디를 기록 → 👍 · 실제 착용과 비교해 추천 성능을 잰다 (서버 recommendation_logs)
     // (날씨를 받기 전 임시 코디는 세지 않는다)

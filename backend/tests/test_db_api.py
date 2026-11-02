@@ -110,6 +110,12 @@ class DbApiTest(unittest.TestCase):
         self.assertEqual(['캐주얼'],self.get('/api/profile').json()['preferredStyles'])
         self.post('/api/profile/styles',{'styles':[]})
         self.assertEqual([],self.get('/api/profile').json()['preferredStyles'])
+        # 새 선호 스타일 8가지 · 예전 앱 이름(클래식)도 받아 주고, 목록에 없는 값은 400
+        self.assertEqual(200,self.post('/api/profile/styles',{'styles':['댄디','아메카지','유니크','포멀']}).status_code)
+        self.assertEqual(['댄디','아메카지','유니크','포멀'],self.get('/api/profile').json()['preferredStyles'])
+        self.assertEqual(200,self.post('/api/profile/styles',{'styles':['클래식']}).status_code)
+        self.assertEqual(400,self.post('/api/profile/styles',{'styles':['없는스타일']}).status_code)
+        self.post('/api/profile/styles',{'styles':[]})
         r=self.post('/api/style-preference/rate',{'style':'캐주얼','like':True})
         self.assertEqual(1,r.json()['ratedCount'])
         self.assertEqual(0,self.get('/api/size-charts').json()['totalCount'])
