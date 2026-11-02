@@ -1,5 +1,7 @@
 package com.jeiu.fashionproject.ui.screens
 
+import com.jeiu.fashionproject.data.ProfileStore
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -119,24 +121,28 @@ fun OutfitRecommendScreen(
     // 👍👎를 눌러도 카드가 바로 바뀌지 않도록 취향 점수는 계산할 때의 값만 쓴다
     val scores by StylePreferenceStore.scores.collectAsState()
     val taste by TastePreferenceStore.scores.collectAsState()
+    // 온보딩 · 마이페이지에서 고른 선호 스타일
+    ProfileStore.load(context)
+    val preferredStyles by ProfileStore.styles.collectAsState()
     // [오늘 이거 입었어요]를 눌러도 오늘 코디 카드가 바뀌지 않도록, 오늘 코디는 오늘 착용 기록을 빼고 계산한다 (황상윤)
     val pastLogs = remember(wearLogs, today) { wearLogs.filter { it.date != today } }
     val dayPlanLogs = if (forecastDays.getOrNull(forecastIndex)?.date == today) pastLogs else wearLogs
-    val dayPlan = remember(candidateItems, scope, dayPlanLogs, forecastDays, forecastIndex, weatherInfo, bodyProfile) {
+    val dayPlan = remember(candidateItems, scope, dayPlanLogs, forecastDays, forecastIndex, weatherInfo, bodyProfile, preferredStyles) {
         if (forecastIndex < 0) null
         else ForecastAlerts.plan(forecastDays, forecastIndex, weatherInfo?.temp, candidateItems, dayPlanLogs, scores,
-            taste = taste, bodyProfile = bodyProfile)
+            taste = taste, bodyProfile = bodyProfile, preferred = preferredStyles)
     }
-    val recommendation: OutfitEngine.Result? = remember(candidateItems, scope, pastLogs, wearLogs, weatherInfo, tab, situation, travelDay, dayPlan, bodyProfile) {
+    val recommendation: OutfitEngine.Result? = remember(candidateItems, scope, pastLogs, wearLogs, weatherInfo, tab, situation, travelDay, dayPlan, bodyProfile, preferredStyles) {
         when (tab) {
-            0 -> OutfitEngine.recommend(candidateItems, weatherInfo, pastLogs, scores, taste = taste, bodyProfile = bodyProfile)
+            0 -> OutfitEngine.recommend(candidateItems, weatherInfo, pastLogs, scores, taste = taste, bodyProfile = bodyProfile,
+                preferred = preferredStyles)
             1 -> dayPlan?.result
             else -> {
                 val day = if (situation == Situation.TRAVEL) travelDay else null
                 if (day == null) OutfitEngine.recommend(candidateItems, weatherInfo, pastLogs, scores, situation,
-                    taste = taste, bodyProfile = bodyProfile)
+                    taste = taste, bodyProfile = bodyProfile, preferred = preferredStyles)
                 else OutfitEngine.recommend(candidateItems, day.toWeatherInfo(), wearLogs, scores, situation,
-                    today = day.date, taste = taste, bodyProfile = bodyProfile)
+                    today = day.date, taste = taste, bodyProfile = bodyProfile, preferred = preferredStyles)
             }
         }
     }

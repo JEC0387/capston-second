@@ -16,7 +16,7 @@ import kotlin.math.abs
  * AI 학습 없이 "규칙 + 점수"로 옷장 옷을 조합한다. 순서:
  *  ① 걸러내기 — 오늘 날씨·계절(+ 상황)에 안 맞는 옷 빼기
  *  ② 조합 만들기 — 상의+하의(또는 원피스) + 신발 (+ 필요하면 아우터)
- *  ③ 점수 매기기 — 색 조합 + 날씨 + 상황 + 착용 기록 + 스타일 + 내 취향(스타일 · 색 · 종류 · 조합 방식)
+ *  ③ 점수 매기기 — 색 조합 + 날씨 + 상황 + 착용 기록 + 스타일 + 선호 스타일(온보딩 · 마이페이지) + 내 취향(스타일 · 색 · 종류 · 조합 방식)
  *  ④ 고르기 — 점수 높은 순으로, 같은 상의·하의가 반복되지 않게 골고루
  * 옷이 모자라면 고정 코디로 대신하지 않고 무엇이 부족한지 알려준다.
  */
@@ -66,7 +66,8 @@ object OutfitEngine {
         count: Int = 4,
         needOuter: Boolean = false,  // 일교차가 큰 날처럼 낮 기온과 상관없이 겉옷을 더해야 할 때
         taste: TasteScores = TasteScores(),  // 색 · 종류 · 조합 방식 취향 (4단계)
-        bodyProfile: BodyProfile? = null
+        bodyProfile: BodyProfile? = null,
+        preferred: List<String> = emptyList()  // 선호 스타일 (캐주얼 · 댄디 · 포멀 …, PreferredStyles)
     ): Result {
         val conditions = WeatherRules.Conditions(
             temp = weather?.temp,
@@ -114,7 +115,7 @@ object OutfitEngine {
         val stats = WearAnalyzer.stats(logs)
         val candidates = bases.flatMap { (main, bottom) ->
             shoes.flatMap { shoe ->
-                outerOptions.map { outer -> score(main, bottom, shoe, outer, conditions, situation, stats, styleScores, taste, today, bodyProfile = bodyProfile) }
+                outerOptions.map { outer -> score(main, bottom, shoe, outer, conditions, situation, stats, styleScores, taste, today, bodyProfile = bodyProfile, preferred = preferred) }
             }
         }
 
@@ -201,7 +202,8 @@ object OutfitEngine {
         taste: TasteScores,
         today: String,
         withHistory: Boolean = true,  // false면 착용 기록 점수를 빼고 계산 ("이것만 사면"용)
-        bodyProfile: BodyProfile? = null
+        bodyProfile: BodyProfile? = null,
+        preferred: List<String> = emptyList()
     ): Outfit {
         val all = listOfNotNull(outer, main, bottom, shoe)
         var score = 0.0
@@ -251,6 +253,10 @@ object OutfitEngine {
         val favorite = styleScores.maxByOrNull { it.value }?.takeIf { it.value > 0 }?.key
         score += styleTaste
 
+        // 선호 스타일 — 코디 옷 중 고른 스타일에 맞는 옷이 많을수록 가산 (상황별 코디에서는 상황 규칙을 우선해 약하게)
+        val pref = PreferredStyles.evaluate(all, preferred)
+        score += tasteWeight * pref.score
+
         // 내 취향 확장 — 색 · 종류 · 조합 방식. 평가 · 착용 기록이 적을 땐 약하게 반영한다
         val confidence = ((taste.ratedCount + taste.wornCount).toDouble() / TASTE_FULL_COUNT).coerceAtMost(1.0)
         val colorNames = all.map { it.colorName }.distinct()
@@ -267,6 +273,7 @@ object OutfitEngine {
         // 이유 — 좋은 점만 최대 3줄
         val reasons = buildList {
             situation?.let { add(SituationRules.rule(it).reason) }
+            pref.style?.let { add("선호하는 $it 스타일에 맞춘 코디예요") }
             if (color.score > 0) addAll(color.reasons.take(1))
             weatherReason?.let { add(it) }
             if (confidence >= 0.3) {

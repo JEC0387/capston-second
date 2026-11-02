@@ -49,6 +49,9 @@ import com.jeiu.fashionproject.data.BodyRecords
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.recommend.PreferredStyles
+import com.jeiu.fashionproject.ui.components.PreferredStyleChips
+import androidx.compose.runtime.mutableStateListOf
 import com.jeiu.fashionproject.notify.WeatherAlertScheduler
 import com.jeiu.fashionproject.ui.components.PrivacyPolicyDialog
 import com.jeiu.fashionproject.ui.components.ServerStatusBadge
@@ -82,6 +85,10 @@ fun MyPageScreen(
     var deleting by remember { mutableStateOf(false) }
     var saveRecords by remember { mutableStateOf(PrivacyConsent.canSaveRecords(context)) }
     var weatherAlertOn by remember { mutableStateOf(WeatherAlertScheduler.isEnabled(context)) }
+    var showStyleDialog by remember { mutableStateOf(false) }
+    // 선호 스타일 — 저장하면 홈 · 코디 추천이 바로 다시 계산된다
+    ProfileStore.load(context)
+    val savedStyles by ProfileStore.styles.collectAsState()
 
     // 알림 권한 (안드로이드 13 이상은 허용을 받아야 알림을 보낼 수 있음)
     var pendingNotifAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -255,11 +262,27 @@ fun MyPageScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
                     Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Spacer(modifier = Modifier.weight(1f))
+                    TextButton(onClick = { showStyleDialog = true }) { Text("변경", color = Camel, fontWeight = FontWeight.SemiBold) }
                 }
-                // 폰에 저장된 선택 우선, 없으면 서버 프로필
-                val styles = if (ProfileStore.hasSelection(context)) ProfileStore.preferredStyles(context) else profile?.preferredStyles.orEmpty()
+                // 폰에 저장된 선택 우선, 없으면 서버 프로필 (예전 이름은 새 이름으로)
+                val styles = if (ProfileStore.hasSelection(context)) savedStyles
+                    else PreferredStyles.normalize(profile?.preferredStyles.orEmpty())
                 if (styles.isEmpty()) {
-                    Text("아직 고르지 않았어요 (첫 화면에서 선택)", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                    Text("아직 고르지 않았어요 — [변경]을 눌러 골라 주세요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                } else {
+                    Text("고른 스타일에 맞는 코디를 먼저 추천해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                }
+                if (showStyleDialog) {
+                    PreferredStyleDialog(
+                        initial = styles,
+                        onDismiss = { showStyleDialog = false },
+                        onSave = { picked ->
+                            ProfileStore.savePreferredStyles(context, picked)
+                            showStyleDialog = false
+                            Toast.makeText(context, "선호 스타일을 저장했어요. 코디 추천에 바로 반영돼요.", Toast.LENGTH_SHORT).show()
+                        }
+                    )
                 }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -577,4 +600,32 @@ private fun MyMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
     }
+}
+
+/** 마이페이지 [변경] — 선호 스타일 다시 고르기 (여러 개 선택, 모두 해제도 가능) */
+@Composable
+private fun PreferredStyleDialog(initial: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    val picked = remember { mutableStateListOf<String>().apply { addAll(initial) } }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("선호 스타일 변경", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "여러 개 고를 수 있어요. 고른 스타일에 맞는 코디를 홈과 코디 추천에서 먼저 보여 드려요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MediumGray
+                )
+                PreferredStyleChips(picked, perRow = 3) { style ->
+                    if (style in picked) picked.remove(style) else picked.add(style)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(picked.toList()) }) { Text("저장", color = Camel, fontWeight = FontWeight.Bold) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("취소", color = MediumGray) }
+        }
+    )
 }

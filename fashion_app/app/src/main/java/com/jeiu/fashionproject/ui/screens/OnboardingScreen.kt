@@ -19,12 +19,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jeiu.fashionproject.R
 import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.ui.components.PreferredStyleChips
 import com.jeiu.fashionproject.ui.theme.*
 
 @Composable
 fun OnboardingScreen(onStart: () -> Unit) {
     val context = LocalContext.current
-    val styleOptions = ProfileStore.STYLE_OPTIONS
     // 예전에 고른 스타일이 있으면 미리 선택해 둔다
     val selected = remember { mutableStateListOf<String>().apply { addAll(ProfileStore.preferredStyles(context)) } }
 
@@ -132,27 +132,14 @@ fun OnboardingScreen(onStart: () -> Unit) {
                     color = CharcoalBlack,
                     fontWeight = FontWeight.SemiBold
                 )
-                styleOptions.chunked(4).forEach { rowItems ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rowItems.forEach { style ->
-                            val isSelected = style in selected
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = {
-                                    if (isSelected) selected.remove(style) else selected.add(style)
-                                },
-                                label = { Text(style) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = Camel,
-                                    selectedLabelColor = White,
-                                    containerColor = CreamDark,
-                                    labelColor = CharcoalBlack
-                                ),
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                        }
-                    }
+                PreferredStyleChips(selected) { style ->
+                    if (style in selected) selected.remove(style) else selected.add(style)
                 }
+                Text(
+                    "고른 스타일에 맞춰 오늘의 코디를 추천해요 · 마이페이지에서 언제든 바꿀 수 있어요",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MediumGray
+                )
             }
 
             Spacer(modifier = Modifier.height(8.dp))

@@ -177,11 +177,14 @@ PROFILE = {
     "outfitCount": 8,
     "favoriteCount": 24,
     "bodyType": "모래시계형",
-    "preferredStyles": ["미니멀", "캐주얼", "클래식"],
+    "preferredStyles": ["미니멀", "캐주얼", "댄디"],
 }
 
 # ---------- 온보딩 스타일 선택지 (OnboardingScreen.kt) ----------
-STYLE_OPTIONS = ["캐주얼", "미니멀", "스트릿", "페미닌", "빈티지", "스포티", "클래식", "아메카지"]
+# 온보딩 · 마이페이지에서 고르는 선호 스타일 (앱 PreferredStyles.OPTIONS 와 같아야 함)
+STYLE_OPTIONS = ["캐주얼", "스트릿", "미니멀", "댄디", "아메카지", "유니크", "스포티", "포멀"]
+# 예전 앱 버전의 스타일 이름 — 업데이트 전 앱이 보내도 400 이 나지 않도록 받아만 준다 (새 앱은 포멀 · 아메카지로 바꿔 읽음)
+LEGACY_STYLE_OPTIONS = ["페미닌", "빈티지", "클래식"]
 
 
 # ---------- 스타일 취향 학습 (StylePreferenceScreen.kt) ----------

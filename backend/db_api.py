@@ -464,7 +464,7 @@ def get_profile(db: Session = Depends(get_db), user: User = Depends(current_user
 def update_preferred_styles(req: UpdateStylesRequest, db: Session = Depends(get_db),
                             user: User = Depends(current_user)):
     """온보딩 '시작하기' - 선호 스타일 저장"""
-    invalid = [s for s in req.styles if s not in data.STYLE_OPTIONS]
+    invalid = [s for s in req.styles if s not in data.STYLE_OPTIONS and s not in data.LEGACY_STYLE_OPTIONS]
     if invalid:
         raise HTTPException(400, f"유효하지 않은 스타일: {invalid}")
     user.preferred_styles = list(req.styles)
