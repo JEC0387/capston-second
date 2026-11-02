@@ -146,6 +146,18 @@ object WardrobeStore {
         }
     }
 
+    /**
+     * Explicit demo action only: restore absent bundled samples when the wardrobe is empty.
+     * No startup re-seeding: users who deleted samples must remain in control.
+     */
+    fun addDemoSamplesIfEmpty(context: Context): Boolean {
+        if (_items.value.isNotEmpty()) return false
+        val restored = SampleWardrobe.items()
+        _items.value = restored
+        persist(context)
+        return true
+    }
+
     fun add(context: Context, item: WardrobeItem) {
         _items.value = _items.value + item
         persist(context)
