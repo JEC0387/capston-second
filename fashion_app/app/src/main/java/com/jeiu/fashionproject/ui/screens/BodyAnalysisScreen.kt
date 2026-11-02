@@ -11,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +69,8 @@ fun BodyAnalysisScreen(
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
     val manualMeasurements by ManualBodyStore.current.collectAsState()
+    var manualExpanded by rememberSaveable { mutableStateOf(false) }
+    var tipsExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(manualMeasurements?.heightCm) {
         if (heightInput.isBlank()) manualMeasurements?.let { viewModel.updateHeightInput(it.heightCm.toString()) }
     }
@@ -184,13 +186,10 @@ fun BodyAnalysisScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ManualBodyEntryCard(
-                photo = (state as? BodyAnalysisUiState.Success)?.result?.measurements,
-                onUseHeight = viewModel::updateHeightInput
-            )
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
-                    Text("1. 키 입력 (필수)", color = Brown, fontWeight = FontWeight.SemiBold)
+                    Text("먼저 키를 확인해주세요", color = CharcoalBlack,
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = heightInput,
                         onValueChange = viewModel::updateHeightInput,
@@ -206,89 +205,12 @@ fun BodyAnalysisScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("bodyHeightInput")
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .border(1.5.dp, LightGray, RoundedCornerShape(20.dp))
-                            .background(White)
-                            .testTag("bodyGalleryPicker").clickable { requestPhoto(BodyPhotoSource.GALLERY) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(36.dp))
-                                    .background(CamelLight),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.CameraAlt,
-                                    contentDescription = null,
-                                    tint = Camel,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                            Text(
-                                "전신 사진을 업로드하세요",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = CharcoalBlack,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "정면에서 찍은 전신 사진이 가장 정확해요",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MediumGray
-                            )
-                        }
-                    }
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = CamelLight),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                "촬영 팁",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Brown,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            listOf(
-                                "정면을 향해 서주세요",
-                                "몸 전체가 나오도록 찍어주세요",
-                                "밝은 곳에서 촬영해주세요",
-                                "몸에 붙는 옷을 입으면 더 정확해요"
-                            ).forEach {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(4.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(Camel)
-                                    )
-                                    Text(it, style = MaterialTheme.typography.bodySmall, color = Brown)
-                                }
-                            }
-                        }
-                    }
+                    Text("정면 전신 사진을 준비해주세요.", style = MaterialTheme.typography.bodySmall,
+                        color = MediumGray)
 
                     Button(
                         onClick = { requestPhoto(BodyPhotoSource.CAMERA) },
-                        modifier = Modifier.testTag("bodyCameraButton").fillMaxWidth().height(52.dp),
+                        modifier = Modifier.testTag("bodyCameraButton").fillMaxWidth().heightIn(min = 52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
                     ) {
@@ -303,7 +225,7 @@ fun BodyAnalysisScreen(
 
                     OutlinedButton(
                         onClick = { requestPhoto(BodyPhotoSource.GALLERY) },
-                        modifier = Modifier.testTag("bodyGalleryButton").fillMaxWidth().height(48.dp),
+                        modifier = Modifier.testTag("bodyGalleryButton").fillMaxWidth().heightIn(min = 48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel),
                         border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
@@ -316,8 +238,36 @@ fun BodyAnalysisScreen(
                         )
                     }
 
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = CamelLight)) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("촬영 팁", modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleMedium, color = Brown)
+                                TextButton(onClick = { tipsExpanded = !tipsExpanded },
+                                    modifier = Modifier.testTag("bodyTipsToggle")) {
+                                    Text(if (tipsExpanded) "접기" else "자세히 보기")
+                                }
+                            }
+                            Text("정면 · 전신 · 밝은 곳", style = MaterialTheme.typography.bodySmall, color = Brown)
+                            if (tipsExpanded) Column(Modifier.testTag("bodyTipsDetails"),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("정면을 향해 서주세요", "머리부터 발끝까지 나오게 해주세요",
+                                    "밝은 곳에서 촬영해주세요", "몸에 붙는 옷을 입으면 윤곽 확인에 도움이 돼요").forEach {
+                                    Text("• $it", style = MaterialTheme.typography.bodySmall, color = BrownDark)
+                                }
+                            }
+                        }
+                    }
+
                     entryError?.let { Text(it, color = Brown, modifier = Modifier.testTag("bodyEntryError")) }
                     PrivacyNote()
+                    OutlinedButton(onClick = { manualExpanded = !manualExpanded },
+                        modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
+                        Text(if (manualExpanded) "신체 치수 직접 입력 닫기" else "신체 치수 직접 입력")
+                    }
+                    if (manualExpanded) ManualBodyEntryCard(photo = null,
+                        onUseHeight = viewModel::updateHeightInput)
                     TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
                         Text("지난 측정 기록 · 변화 그래프 보기", color = Brown)
                     }
