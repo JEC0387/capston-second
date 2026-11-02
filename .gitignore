@@ -34,3 +34,7 @@ backend/local_vton_outputs/
 backend/weights/
 backend/**/model.safetensors
 backend/**/dwpose/
+backend/local_vton_private/
+backend/**/vton.manifest.json
+*.safetensors
+*.onnx

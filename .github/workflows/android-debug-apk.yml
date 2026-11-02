@@ -313,9 +313,20 @@ jobs:
           curl -s http://127.0.0.1:8001/api/health/database > "$RUNNER_TEMP/health.json"
           cat "$RUNNER_TEMP/health.json"; echo
           grep -q '"ready":false' "$RUNNER_TEMP/health.json"
+      - name: Independent local model server starts safely without GPU or weights
+        env:
+          LOCAL_VTON_HEALTH_FILE: ${{ runner.temp }}/local-vton-health.json
+        run: |
+          python -m uvicorn local_vton_server:app --host 127.0.0.1 --port 8010 --no-proxy-headers --no-access-log > "$RUNNER_TEMP/local-vton.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8010/health > "$RUNNER_TEMP/local-vton-health.json"; then break; fi
+            sleep 1
+          done
+          python -c 'import json,os; d=json.load(open(os.environ["LOCAL_VTON_HEALTH_FILE"])); assert d["service"] == "FashionAI local VTON" and d["ready"] is False'
+
       - name: Show server / pip errors as annotations
         if: failure()
         run: |
-          { tail -40 "$RUNNER_TEMP/server.log" 2>/dev/null; grep -iE 'error|failed' "$RUNNER_TEMP/pip.log" 2>/dev/null | tail -20; } > "$RUNNER_TEMP/errors.txt" || true
+          { tail -40 "$RUNNER_TEMP/server.log" 2>/dev/null; tail -15 "$RUNNER_TEMP/local-vton.log" 2>/dev/null; grep -iE 'error|failed' "$RUNNER_TEMP/pip.log" 2>/dev/null | tail -20; } > "$RUNNER_TEMP/errors.txt" || true
           msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
           echo "::error title=Server start (${{ matrix.os }})::${msg}"

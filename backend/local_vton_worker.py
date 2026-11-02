@@ -4,13 +4,35 @@ import os
 from pathlib import Path
 import sys
 import time
+import threading
 
 from local_vton import read_input, check_weights
+
+
+def watch_parent(parent):
+    """Do not leave a CUDA worker orphaned after abrupt server process loss."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+        kernel.OpenProcess.argtypes=(wintypes.DWORD,wintypes.BOOL,wintypes.DWORD)
+        kernel.OpenProcess.restype=wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes=(wintypes.HANDLE,wintypes.DWORD)
+        kernel.WaitForSingleObject.restype=wintypes.DWORD
+        handle=kernel.OpenProcess(0x00100000,False,parent)
+        if handle:
+            while kernel.WaitForSingleObject(handle,1000)==258:
+                pass
+    else:
+        while os.getppid()==parent:
+            time.sleep(1)
+    os._exit(3)
 
 
 def main():
     folder = Path(sys.argv[1])
     options = json.loads((folder / "request.json").read_text())
+    threading.Thread(target=watch_parent,args=(options['parent_pid'],),daemon=True).start()
     # Model weights must be prepared by the operator; do not download during a user's request.
     os.environ["HF_HUB_OFFLINE"] = "1"
     os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
@@ -47,6 +69,11 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except Exception:
+    except Exception as error:
         # No traceback/input paths/photos/provider payloads are logged.
+        code='cuda_out_of_memory' if error.__class__.__name__=='OutOfMemoryError' else 'model_failed'
+        try:
+            (Path(sys.argv[1])/'error.json').write_text(json.dumps({'error':code}))
+        except Exception:
+            pass
         sys.exit(2)
