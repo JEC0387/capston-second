@@ -102,6 +102,21 @@ private val secondRound = listOf(
 )
 private val prefStyleCards = firstRound + secondRound
 
+/** 여성이면 일부 카드를 여성 코디로 바꾼다 (사진 검색어에는 성별이 붙어 남녀 각각 맞는 사진이 나온다) */
+private val femaleVariants = mapOf(
+    "주말 캐주얼" to PrefStyleCard("캐주얼", "주말 캐주얼", "반팔티 + 데님 스커트", "캐주얼룩 반팔티 데님스커트 코디",
+        listOf("화이트", "블루"), listOf("반팔티", "미니스커트"), "톤온톤"),
+    "톤온톤 미니멀" to PrefStyleCard("미니멀", "톤온톤 미니멀", "베이지 니트 + 롱스커트", "미니멀룩 니트 롱스커트 코디",
+        listOf("베이지", "아이보리"), listOf("니트", "롱스커트"), "톤온톤"),
+    "오피스 포멀" to PrefStyleCard("포멀", "오피스 포멀", "블라우스 + 슬랙스 + 코트", "오피스룩 블라우스 슬랙스 코디",
+        listOf("화이트", "베이지"), listOf("블라우스", "슬랙스"), "톤온톤"),
+    "패턴 믹스" to PrefStyleCard("유니크", "플라워 원피스", "패턴 원피스 + 가디건", "유니크룩 플라워 원피스 코디",
+        listOf("퍼플", "화이트"), listOf("긴팔 원피스", "가디건"), "포인트 컬러"),
+)
+
+private fun cardsFor(gender: Gender?): List<PrefStyleCard> =
+    if (gender == Gender.FEMALE) prefStyleCards.map { femaleVariants[it.title] ?: it } else prefStyleCards
+
 @Composable
 fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
     val context = LocalContext.current
@@ -109,8 +124,9 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
 
     val scores by StylePreferenceStore.scores.collectAsState()
     val ratedCount by StylePreferenceStore.ratedCount.collectAsState()
+    val cards = remember(gender) { cardsFor(gender) }
     var cardIndex by remember { mutableIntStateOf(0) }
-    val done = cardIndex >= prefStyleCards.size
+    val done = cardIndex >= cards.size
 
     Column(
         modifier = Modifier
@@ -133,7 +149,7 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
         }
 
         if (!done) {
-            val card = prefStyleCards[cardIndex]
+            val card = cards[cardIndex]
 
             // 진행도
             Row(
@@ -142,11 +158,11 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 LinearProgressIndicator(
-                    progress = { cardIndex / prefStyleCards.size.toFloat() },
+                    progress = { cardIndex / cards.size.toFloat() },
                     modifier = Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)),
                     color = Camel, trackColor = LightGray
                 )
-                Text("${cardIndex + 1} / ${prefStyleCards.size}", style = MaterialTheme.typography.labelMedium, color = MediumGray)
+                Text("${cardIndex + 1} / ${cards.size}", style = MaterialTheme.typography.labelMedium, color = MediumGray)
             }
 
             // 코디 카드

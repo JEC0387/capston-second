@@ -176,9 +176,8 @@ private fun ProductGrid(
     val products = ShopCatalog.products
     val filteredProducts = remember(query, gender) {
         products
-            // 남성이면 원피스 · 치마 · 블라우스 같은 여성 전용 상품은 추천하지 않는다
-            .filter { GenderFit.allowsTitle(it.name, gender) && !(gender == Gender.MALE &&
-                GenderFit.isWomenOnly(it.category, it.subCategory, it.detailType, it.name)) }
+            // 성별에 맞는 상품만 (남성: 원피스 · 치마 · 블라우스 제외, 여성: 남성 전용 제외)
+            .filter { GenderFit.allows(it.category, it.subCategory, it.detailType, it.name, gender) }
             .filter { FashionQuery.matchesProduct(it, query) }
     }
     val displayProducts = filteredProducts.sortedBy { product ->

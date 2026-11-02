@@ -121,8 +121,11 @@ object OutfitEngine {
             }
         }
 
+        // 성별에 더 잘 맞는 코디 (여성: 원피스 · 스커트 · 블라우스) 조금 위로
+        val fitted = if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) }
+
         // ④ 골고루 고르기
-        return Result.Ok(pickDiverse(candidates.sortedByDescending { it.score }, count), notice)
+        return Result.Ok(pickDiverse(fitted.sortedByDescending { it.score }, count), notice)
     }
 
     // ── "이것만 사면" 계산용 (5단계) ─────────────────────────────────────

@@ -84,6 +84,37 @@ class ShopFittingTasteTest {
         assertTrue(GenderFit.allowsTitle("러블린 셔링 블라우스", Gender.FEMALE))
     }
 
+    @Test fun womenGetWomenFitAndNoMenOnlyItems() {
+        val tee = item("tee", "상의", "반팔 상의", "반팔티")
+        val menShirt = item("남성 셔츠", "상의", "반팔 상의", "셔츠")
+        val skirt = item("skirt", "하의", "치마", "미니스커트")
+        val shorts = item("shorts", "하의", "반바지", "반바지")
+        val shoes = item("shoes", "신발", "운동화", "운동화")
+        val all = listOf(tee, menShirt, skirt, shorts, shoes)
+        val weather = WeatherInfo("맑음", 26, 50, 800)
+        val women = (OutfitEngine.recommend(all, weather, emptyList(), emptyMap(), today = "2026-07-01", count = 10,
+            gender = Gender.FEMALE) as OutfitEngine.Result.Ok).outfits
+        assertTrue(women.none { o -> o.items.any { it.id == "남성 셔츠" } })
+        // 같은 조건이면 스커트 코디가 위로
+        assertTrue(women.first().items.any { it.id == "skirt" })
+        assertEquals(GenderFit.FEMALE_BONUS, GenderFit.fitBonus(listOf(tee, skirt, shoes), Gender.FEMALE), 1e-9)
+        assertEquals(0.0, GenderFit.fitBonus(listOf(tee, skirt, shoes), Gender.MALE), 0.0)
+        assertTrue(GenderFit.isMenOnly("Men's Oxford Shirt"))
+        assertFalse(GenderFit.isMenOnly("Women's Oxford Shirt"))
+        assertFalse(GenderFit.allowsTitle("남자 데일리룩 코디", Gender.FEMALE))
+        assertTrue(GenderFit.allowsTitle("여자 데일리룩 코디", Gender.FEMALE))
+    }
+
+    @Test fun loginResponseIsReadSafely() {
+        val ok = AuthStore.parseLogin("""{"accountKey":"3f1c2a9e-0000-4000-8000-123456789abc","email":"a@example.com",
+            "name":"계정A","isNewAccount":false,"switched":true}""")!!
+        assertTrue(ok.switched); assertFalse(ok.isNewAccount); assertEquals("계정A", ok.name)
+        assertNull(AuthStore.parseLogin("""{"accountKey":"../../etc","email":""}"""))
+        assertNull(AuthStore.parseLogin("not json"))
+        assertTrue(AuthStore.messageFor(-1, null).contains("서버"))
+        assertEquals("서버에 GOOGLE_CLIENT_ID 가 없어요", AuthStore.messageFor(503, """{"detail":"서버에 GOOGLE_CLIENT_ID 가 없어요"}"""))
+    }
+
     @Test fun buyThisNeverSuggestsWomenOnlyItemsToMen() {
         val report = MissingItemFinder.analyze(emptyList(), day, gender = Gender.MALE)
         assertTrue(report.suggestions.none { GenderFit.isWomenOnly(it.item) })

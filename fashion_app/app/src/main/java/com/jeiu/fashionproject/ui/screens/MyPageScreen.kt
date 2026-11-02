@@ -49,6 +49,7 @@ import com.jeiu.fashionproject.data.BodyRecords
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.data.AuthStore
 import com.jeiu.fashionproject.recommend.PreferredStyles
 import com.jeiu.fashionproject.ui.components.PreferredStyleChips
 import androidx.compose.runtime.mutableStateListOf
@@ -71,6 +72,7 @@ fun MyPageScreen(
     onVirtualFitting: () -> Unit = {},
     onBodyHistory: () -> Unit = {},
     onOutfitBook: () -> Unit = {},
+    onLogin: () -> Unit = {},      // 게스트 → 구글 로그인 화면
     onLogout: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -86,6 +88,11 @@ fun MyPageScreen(
     var saveRecords by remember { mutableStateOf(PrivacyConsent.canSaveRecords(context)) }
     var weatherAlertOn by remember { mutableStateOf(WeatherAlertScheduler.isEnabled(context)) }
     var showStyleDialog by remember { mutableStateOf(false) }
+    // 로그인 상태 (구글 계정 / 게스트)
+    AuthStore.load(context)
+    val authMode by AuthStore.mode.collectAsState()
+    val account by AuthStore.account.collectAsState()
+    val signedIn = authMode == AuthStore.Mode.GOOGLE
     // 선호 스타일 — 저장하면 홈 · 코디 추천이 바로 다시 계산된다
     ProfileStore.load(context)
     val savedStyles by ProfileStore.styles.collectAsState()
@@ -127,8 +134,8 @@ fun MyPageScreen(
         ProductInterestStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
-    val nickname = profile?.nickname ?: "나의 스타일"
-    val email = profile?.email ?: "style@fashion.ai"
+    val nickname = profile?.nickname?.takeIf { it.isNotBlank() && it != "나의 스타일" } ?: account?.name?.ifBlank { null } ?: "나의 스타일"
+    val email = if (signedIn) (account?.email ?: profile?.email.orEmpty()) else "로그인 없이 사용 중 · 기록은 이 폰에만 저장돼요"
     // 서버에 연결되지 않으면 폰에 있는 기록으로 센다 (예전에는 고정 숫자 12 · 8 · 24 를 보여 줬음)
     val wardrobeItems by WardrobeStore.items.collectAsState()
     val interestIds by ProductInterestStore.ids.collectAsState()
@@ -165,6 +172,18 @@ fun MyPageScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(nickname, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 Text(email, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                if (signedIn) {
+                    Box(
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(CamelLight).padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) { Text("Google 계정으로 로그인됨", style = MaterialTheme.typography.labelSmall, color = Brown) }
+                } else {
+                    Button(
+                        onClick = onLogin,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+                    ) { Text("구글로 로그인하고 기록 지키기", style = MaterialTheme.typography.labelLarge) }
+                }
                 ServerStatusBadge()
             }
             // 통계
@@ -403,7 +422,8 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
+            if (signedIn) MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
+            else MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 계정으로 로그인", onClick = onLogin)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -571,7 +591,7 @@ fun MyPageScreen(
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
             title = { Text("로그아웃", fontWeight = FontWeight.Bold) },
-            text = { Text("로그아웃 하시겠습니까?") },
+            text = { Text("로그아웃하면 이 폰의 기록을 지우고 로그인 화면으로 돌아가요.\n옷장 · 착용 기록 · 취향은 계정에 저장돼 있어 다시 로그인하면 그대로 돌아와요.") },
             confirmButton = {
                 TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
                     Text("로그아웃", color = MaterialTheme.colorScheme.error)

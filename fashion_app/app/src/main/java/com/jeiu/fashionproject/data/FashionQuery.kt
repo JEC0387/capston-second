@@ -10,7 +10,7 @@ import com.jeiu.fashionproject.recommend.GenderFit
  *    없으면(예: 연예인 이름) "코디"를 붙여 찾고 제목에 패션 단어가 있는 결과만 남긴다.
  *    옷과 무관한 검색어(자동차, 맛집 …)는 검색하지 않고 안내한다.
  *  - 결과 제목에 헤어 · 네일 · 인테리어 같은 다른 분야 단어가 있으면 뺀다.
- *  - 남성이면 결과에서 원피스 · 치마 등 여성 전용 옷을 뺀다 (검색어에 직접 쓴 경우는 제외).
+ *  - 성별에 맞지 않는 결과는 뺀다 — 남성: 원피스 · 치마 등, 여성: 남성 전용 (검색어에 직접 쓴 경우는 제외).
  */
 object FashionQuery {
 
@@ -94,7 +94,7 @@ object FashionQuery {
     fun keep(title: String, plan: Plan, gender: Gender?): Boolean {
         if (isBlocked(title) && !isBlocked(plan.raw)) return false
         if (plan.strict && !isFashion(title)) return false
-        // 남성: 여성 전용 옷이 제목에 있으면 뺀다 — 검색어에 직접 그 옷을 쓴 경우는 그대로
+        // 성별에 맞지 않는 옷이 제목에 있으면 뺀다 — 검색어에 직접 그 옷을 쓴 경우는 그대로
         if (!GenderFit.allowsTitle(plan.raw, gender)) return true
         return GenderFit.allowsTitle(title, gender)
     }

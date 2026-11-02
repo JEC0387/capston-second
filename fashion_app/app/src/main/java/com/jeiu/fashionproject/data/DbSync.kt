@@ -73,8 +73,11 @@ object DbSync {
         _pendingCount.value = pending.size
     }
 
+    /** 로그아웃 중 — 더 이상 대기열에 넣지 않는다 (지난 계정 기록이 새 기기 번호로 올라가지 않도록) */
+    @Volatile private var frozen = false
+
     private fun enqueue(key: String, path: String, body: String) {
-        if (!::prefs.isInitialized || !isEnabled) return
+        if (!::prefs.isInitialized || !isEnabled || frozen) return
         synchronized(queueLock) { pending[key] = path to body; persistLocked() }
         retry()
     }
@@ -257,6 +260,26 @@ object DbSync {
      * 백업 코드로 복원할 때 — 이 폰이 그 코드(기기 번호)를 쓰도록 바꾸고, 보내지 않은 대기열은 버린다.
      * @param photos 복원하면서 받은 사진 파일 (옷 id → 파일, 다시 올리지 않도록)
      */
+    /** 로그아웃 전에 보내지 못한 기록을 최대한 서버로 보낸다. 다 보냈으면 true */
+    suspend fun flushNow(): Boolean {
+        if (!::prefs.isInitialized) return true
+        flush()
+        return synchronized(queueLock) { pending.isEmpty() }
+    }
+
+    /**
+     * 로그아웃 — 대기열을 비우고 기기 번호를 지운다. 앱을 다시 시작하면 새 기기 번호(새 게스트)로 시작한다.
+     * (계정 기록은 서버에 남아 있어 다시 로그인하면 받아 온다)
+     */
+    suspend fun resetForSignOut() = networkLock.withLock {
+        frozen = true
+        if (!::prefs.isInitialized) return@withLock
+        synchronized(queueLock) { pending.clear(); persistLocked() }
+        BackendApi.deviceId = null
+        prefs.edit().clear().commit()
+        Unit
+    }
+
     suspend fun adoptForRestore(code: String, photos: Map<String, java.io.File>, uris: Map<String, String>) =
         networkLock.withLock {
             synchronized(queueLock) { pending.clear(); persistLocked() }

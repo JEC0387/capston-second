@@ -44,6 +44,12 @@ android {
             "String", "FASHN_API_KEY",
             "\"${localProperties.getProperty("FASHN_API_KEY", "")}\""
         )
+        // 구글 로그인 — Google Cloud 콘솔의 "웹 애플리케이션" OAuth 클라이언트 ID (비밀 값 아님, 서버 GOOGLE_CLIENT_ID 와 같은 값).
+        // local.properties 에 GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com 한 줄 추가. 없으면 로그인 버튼이 꺼진다.
+        buildConfigField(
+            "String", "GOOGLE_WEB_CLIENT_ID",
+            "\"${localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "")}\""
+        )
     }
 
     buildTypes {
@@ -95,6 +101,10 @@ dependencies {
     implementation(libs.mlkit.pose.detection.accurate)
     implementation(libs.mlkit.subject.segmentation)
     implementation(libs.play.services.base)   // ML Kit 누끼 모델 미리 내려받기 (ModuleInstall)
+    // 구글 로그인 (Credential Manager + Sign in with Google)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)

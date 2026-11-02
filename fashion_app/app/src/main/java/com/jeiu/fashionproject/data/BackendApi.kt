@@ -87,6 +87,27 @@ object BackendApi {
         }.getOrNull()
     }
 
+    /** JSON POST → (HTTP 코드, 응답 본문). 서버에 연결하지 못하면 코드 -1 — 로그인처럼 실패 이유를 알려야 할 때 */
+    suspend fun postJsonWithCode(path: String, jsonBody: String, readTimeoutMs: Int = 15_000): Pair<Int, String?> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 5_000
+                    readTimeout = readTimeoutMs
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    addDeviceHeader()
+                }
+                conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+                val code = conn.responseCode
+                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }
+                conn.disconnect()
+                code to body
+            }.getOrDefault(-1 to null)
+        }
+
     /** GET 으로 파일(사진) 받기 → (바이트, Content-Type). 없거나 실패하면 null. 복원할 때 옷 사진용 (최대 3MB) */
     suspend fun getBytes(path: String, asDevice: String? = null): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         runCatching {

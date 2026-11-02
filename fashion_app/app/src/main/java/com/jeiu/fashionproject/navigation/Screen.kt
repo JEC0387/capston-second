@@ -1,6 +1,8 @@
 package com.jeiu.fashionproject.navigation
 
 sealed class Screen(val route: String) {
+    /** 로그인 (구글 계정 · 로그인 없이 둘러보기) — 로그인하지 않았으면 앱 첫 화면 */
+    object Login : Screen("login")
     object Onboarding : Screen("onboarding")
     object Home : Screen("home")
     object Wardrobe : Screen("wardrobe")
