@@ -37,6 +37,9 @@
 | [RESUME_PROMPT.md](RESUME_PROMPT.md) | 이어서 작업할 때 쓰던 안내 |
 
 ## 통합 · 인계
+
+최신 자체 AI 개발: [P6_VTON_HANDOFF_20261102.md](P6_VTON_HANDOFF_20261102.md). 실제 GPU 생성은 미검증이며 수동·유료 AI와 분리한 개발용 경로다.
+
 | 문서 | 내용 |
 |---|---|
 | [P2_P6_HANDOFF_20261025.md](P2_P6_HANDOFF_20261025.md) | P2~P6 실제 구현·부분 구현·자동 검증·후속 시작 지점 |

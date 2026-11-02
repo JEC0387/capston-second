@@ -49,6 +49,11 @@ fun AiTryOnScreen(
     model: TryOnViewModel = sharedTryOnViewModel(),
     extraContent: @Composable () -> Unit = {}
 ) {
+    var showLocalMode by rememberSaveable { mutableStateOf(false) }
+    if (showLocalMode) {
+        LocalVtonScreen(defaultPhoto, garments, onBack = { showLocalMode = false })
+        return
+    }
     val context = LocalContext.current
     val configured = serviceConfigured && TryOnRepository.isConfigured()
     val scope = rememberCoroutineScope()
@@ -124,6 +129,10 @@ fun AiTryOnScreen(
             Text("AI로 입어보기", style = MaterialTheme.typography.titleLarge, color = Brown, modifier = Modifier.padding(top = 10.dp))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("모드 C · 기존 외부 AI 서비스 (유료 FASHN 프록시)", color = Brown)
+            OutlinedButton(onClick = { showLocalMode = true }, modifier = Modifier.testTag("openLocalVton")) {
+                Text("모드 B · 자체 AI 착장 이미지 생성")
+            }
             Text(if (configured) "원본 사진과 선택한 옷으로 실제 AI 이미지를 생성해요."
                 else "AI 서비스 연결 전에는 수동 배치로 옷의 위치와 크기를 조절할 수 있어요.",
                 color = Brown, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("aiTryOnGuide"))

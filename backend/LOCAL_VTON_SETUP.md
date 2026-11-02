@@ -89,7 +89,9 @@ python -m pytest -q tests/test_local_vton.py
 기존 출력 보호, 모의 파이프라인 출력 규격, 비생성 사전점검을 확인한다.
 성공해도 **실제 모델 가중치를 로드하고 생성했다는 뜻이 아니다**.
 
-## 다음 P6 작업 후보
+## P6 후속 구현
+
+이 문서는 P5 CLI 기준이다. P6에서 독립 FastAPI 서버와 Android 자체 AI 화면을 추가했다. 최신 실행·인증·삭제 정책은 [LOCAL_VTON_SERVER.md](LOCAL_VTON_SERVER.md), 검증 범위는 [P6 인수인계](../docs/P6_VTON_HANDOFF_20261102.md)를 따른다. 아래 실제 GPU 검증은 아직 남아 있다.
 
 1. GPU 환경에서 실제 인물/옷 이미지로 첫 생성·사진 품질 측정
 2. 생성 성공·실패, 평균 소요 시간, 이미지 결과(허가된 테스트 샘플만) 확보

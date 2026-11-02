@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from PIL import Image, PngImagePlugin
-from local_vton_server import create_app, LocalSettings, SubprocessEngine, EngineFailure
+from local_vton_server import create_app, LocalSettings, SubprocessEngine, EngineFailure, private_work_directory
 
 TOKEN='local-model-test-token-never-a-real-secret-01'
 OTHER='local-model-test-token-never-a-real-secret-02'
@@ -179,6 +179,8 @@ async def test_loopback_http_is_explicit_and_remote_headers_do_not_bypass(settin
         for peer,status in [('127.0.0.1',200),('203.0.113.1',403)]:
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app,client=(peer,12)),base_url='http://127.0.0.1',headers=AUTH) as client:
                 assert (await client.get('/api/local-vton/config',headers={'X-Forwarded-Proto':'https'})).status_code==status
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app,client=('127.0.0.1',12)),base_url='http://10.0.2.2',headers=AUTH) as client:
+            assert (await client.get('/api/local-vton/config')).status_code==200
     finally:await app.state.vton.close()
 
 @pytest.mark.anyio
@@ -210,6 +212,15 @@ def test_cpu_gpu_and_memory_preflight_branches_are_explicit(settings,monkeypatch
     assert SubprocessEngine(configured).reason=='vram_below_model_guidance'
     cuda.get_device_properties=lambda _:SimpleNamespace(total_memory=16*1024**3)
     assert SubprocessEngine(configured).reason is None
+
+
+def test_restart_cleans_only_marked_private_job_directories(settings):
+    root=private_work_directory(settings.journal)
+    child=root/'job-stale';child.mkdir();(child/'person.png').write_bytes(b'synthetic input')
+    unrelated=root/'operator-note.txt';unrelated.write_text('keep')
+    app=create_app(settings,FakeEngine())
+    assert not child.exists() and unrelated.read_text()=='keep'
+    app.state.vton.lease.close()
 
 
 @pytest.mark.anyio

@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -32,6 +33,23 @@ class EngineFailure(LocalVtonError):
     def __init__(self,code):
         self.code=code if code=='cuda_out_of_memory' else 'model_failed'
         super().__init__(self.code)
+
+
+def private_work_directory(journal,clean=False):
+    root=Path(journal).resolve().parent/'local-vton-work'
+    marker=root/'.fashionai-owner'
+    if root.is_symlink():raise OSError('Unsafe private work directory')
+    if root.exists():
+        if not marker.is_file() or marker.read_text()!=ENGINE:raise OSError('Unowned work directory')
+    else:
+        root.mkdir(parents=True,mode=0o700)
+        marker.write_text(ENGINE);os.chmod(marker,0o600)
+    if clean:
+        for child in root.iterdir():
+            # Confine recursive cleanup to this service's marked, private job directories.
+            if child.name.startswith('job-') and child.is_dir() and not child.is_symlink() and child.resolve().parent==root:
+                shutil.rmtree(child)
+    return root
 
 
 @dataclass(frozen=True)
@@ -111,7 +129,7 @@ class SubprocessEngine:
     async def generate(self, person, garment, options):
         process = None
         # Private per-job files exist only during the worker; user supplies no path.
-        with tempfile.TemporaryDirectory(prefix='fashionai-local-vton-') as private:
+        with tempfile.TemporaryDirectory(prefix='job-',dir=private_work_directory(self.settings.journal)) as private:
             folder = Path(private)
             person.save(folder/'person.png', 'PNG')
             garment.save(folder/'garment.png', 'PNG')
@@ -164,6 +182,7 @@ class LocalVtonService:
             else:
                 import fcntl
                 fcntl.flock(self.lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            private_work_directory(self.settings.journal,clean=True)
             if path.exists():
                 if path.stat().st_size > 2 * 1024 * 1024:
                     raise ValueError('journal_size')
@@ -195,7 +214,7 @@ class LocalVtonService:
 
     def authenticate(self, request):
         local = (self.settings.allow_loopback_http and request.url.scheme == 'http' and request.client
-            and request.client.host in ('127.0.0.1','::1') and request.url.hostname in ('127.0.0.1','localhost','::1'))
+            and request.client.host in ('127.0.0.1','::1') and request.url.hostname in ('127.0.0.1','localhost','::1','10.0.2.2'))
         if request.url.scheme != 'https' and not local:
             raise HTTPException(403, 'https_required')
         token = request.headers.get('authorization', '')
