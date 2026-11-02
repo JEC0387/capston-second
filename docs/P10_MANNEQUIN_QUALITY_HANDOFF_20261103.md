@@ -51,3 +51,48 @@ CPU 결과는 실제 Kotlin 정점/법선 버퍼를 그린 것이며 Android/S25
 S25+의 실제 GLES 셰이더/바닥 표시, 회전·핀치·연속 드래그 갱신 지연·프레임률·메모리, 백그라운드 복귀, 작은 화면/큰 글꼴/키보드, 저장 후 재실행과 기존 옷 배치를 확인해야 한다. 브랜드 수준 외관이나 실제 신체 복제 정확도를 검증했다고 주장하지 않는다. 극단적으로 비현실적인 치수 조합은 표시되더라도 해부학적으로 자연스러운 체형으로 보장하지 않는다.
 
 기존 앱 삭제/초기화/실제 데이터 이전/기기 설치/운영 배포/유료 요청은 실행하지 않는다. 기존 서명·Preview 패키지·상향 버전 조건과 APK 무결성·권한·라이브러리를 확인한 후 검증된 APK만 안내한다.
+
+## 긴급 저장 체크포인트 — 2026-11-03 01:07 KST
+
+사용자의 사용 한도 요청에 따라 신규 개발과 추가 검증을 중단하고 저장했다. **P10 최종 배포 완료 상태가 아니다.**
+
+- 작업 폴더: `C:\Users\USER\Documents\ChatGPT\capston\p10-mannequin-20261103`.
+- 브랜치: `codex/fashionai-p10-mannequin-quality-20261103`.
+- 구현 커밋: `f445d1f86b40a301e1fbbfcbb0ef2b9344570c62`.
+- CI 대상 코드 HEAD: `ac5cd8956a52dee6d52f0bee5f663b5c97fbdca6` (테스트 기준 파일 끝 공백 정리). 두 커밋 모두 Push 완료. 후속 체크포인트 문서 커밋은 실행 코드를 바꾸지 않는다.
+- 로컬 최종 기하20개 통과, 단면256건 최대 오차0.403269cm. 이전 집중32개에서 줄자/저장/피팅 회귀 통과. **P10 전체 Android/Preview/Lint/최종 백엔드 CI 결과는 아직 확정하지 않았다.**
+- [진행 중 CI #47](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41478036620): 저장 시 backend/서버 기동 매트릭스 진행 중, Android 작업은 이들 성공 후 시작한다. 중간 #46은 후속 커밋으로 대체됐으며 최종 성공으로 집계하지 않는다. CI를 직접 취소하지 않았으며 이후 결과는 다음 세션에서 조회한다.
+- 비교 이미지8세트/정면 종합/무광 무대 CPU 이미지 생성 완료: `fashion_app/app/build/p10-visual`. 원시 비교 버퍼·합성 입력·측정 결과도 같은 폴더에 보존했다. Git 제외 산출물이므로 `clean`하지 말 것. `p10-render-final.log`에8개 완료가 기록됐다.
+- 비교용 P9 기본 버퍼와 보호된 P9 작업 트리의 버퍼가 바이트 단위로 같음을 확인했다.
+- 기존 안정 APK는 P9 **14501**이며 보존됐다. P10 APK는 아직 다운로드/서명/메타데이터/무결성/전체 CI 성공을 최종 확인하지 않았다. CI가 후보 APK를 만들더라도 최종 검증된 배포본이라고 안내하지 말 것.
+- 키/토큰 패턴·금지 파일 검사에서 변경12개 파일에 노출이 없었다. actionlint 및 공백 검사 통과. 코드·테스트·문서만 커밋했고 `.env`/키/사진/빌드 산출물은 커밋하지 않았다.
+
+### 남은 문제 — 우선 확인
+
+최신 CPU 검토에서 가슴/허리/허벅지 일부에 **수평 조명 띠**가 보인다. 외형 실루엣은 개선됐지만 최종 외관 검토를 완료하지 않았다. 정확한 단면 Y행 추가 후 비균일 격자에서 `PremiumAvatarMesh.extract`의 `gy`가 단순 양쪽 차분을 쓰는 것이 원인 후보다. 이는 아직 가설이며 수정하지 않았다. 비균일3점 미분 또는 적절한 표면 법선 계산을 검토하고 같은 카메라/조명으로 재검증할 것. 허용차나 검사 기대값을 바꾸지 말 것.
+
+극단적으로 비현실적인 치수의 해부학적 자연스러움, S25+ GPU/셰이더/성능/설치/실제 측정 정확도는 미검증이다. 접촉 그림자는 근사이며 전신 shadow map이 아니다. 참고 이미지/영상은 찾지 못했고 확인하지 않았다. 기존 사용자 앱/데이터/백업/서버/DB/팀 저장소에는 작업하지 않았다.
+
+### 다음 세션 순서
+
+1. 이 문서를 읽고 위 worktree의 `git status`/브랜치/HEAD 확인. 기존 P9·다른 worktree·미추적 파일을 초기화하지 않는다.
+2. 공식 GitHub 도구 또는 이미 인증된 `gh`로 CI #47의 결과/실패 로그를 조회한다. 통과한 전체 검사를 이유 없이 재실행하지 않는다. 자격 증명 원문을 추출하지 않는다.
+3. 위 수평 조명 띠를 먼저 진단한다. 법선 수정 시 관련 기하/단면/법선 검사를 실행하고 `tools/render_p10_review.py ... --only standard`로 빠르게 비교한다. 실제 수정 전후를 확인한다.
+4. 외형 검토와 관련 검사가 통과하면 Commit·Push하고 새 전체 CI/Preview 빌드를 확인한다. 이미 만들어진 후보와 새 코드 SHA를 혼동하지 않는다.
+5. 최종 APK를 내려받아 P9 14501과 패키지·서명·상향 버전·BUILD_INFO/내장 SHA·ZIP CRC/SHA256·권한/네이티브 바이트를 대조한다. 새 `MannequinStage`/`MannequinTopology`가 DEX에 있고 테스트 전용 `P9MannequinReference`가 없는지 확인한다.
+6. 실제 결과/새 APK 경로/다운로드 링크/변경 파일/실기기 미검증 항목을 문서에 확정한다. 사용자 승인 없는 설치/초기화/이전/운영 배포/유료 요청은 실행하지 않는다.
+
+### P9 대비 변경 파일 전체
+
+- `.github/workflows/android-debug-apk.yml`
+- `docs/P10_MANNEQUIN_QUALITY_HANDOFF_20261103.md`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/MannequinStage.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/MannequinTopology.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/PremiumAvatarMesh.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/BodyAvatarDialog.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P10MannequinTest.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9GeometryTest.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9MannequinReference.kt`
+- `tools/apk_release.py`
+- `tools/render_avatar_review.py`
+- `tools/render_p10_review.py`
