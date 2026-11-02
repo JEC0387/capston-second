@@ -5,6 +5,8 @@
 
 ## 발표 준비
 
+P9 cm 줄자·새 마네킹과 최신 검증 결과는 [P9 아바타 인수인계](P9_PREMIUM_AVATAR_HANDOFF_20261102.md)를 확인하세요.
+
 최신 빌드 오류 수정·검증·APK는 [2026-11-02 Preview 빌드 인수인계](PREVIEW_BUILD_FIX_HANDOFF_20261102.md)를 확인하세요.
 서명·백업 배경은 [APK 업데이트 인수인계](APK_UPDATE_HANDOFF_20261026.md)에 보존했습니다. 배포 패키지는 **FashionAI Preview**입니다.
 

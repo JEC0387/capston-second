@@ -44,3 +44,97 @@ Material Slider가 아닌 Canvas 눈금/고정 중앙선/실제 숫자/0.5cm sna
 표시 범위 양 끝·77.5cm 입력·100/230cm 프로필을 확장 검증했다. 큰 힙 설정에서 팔이 접촉하는 문제를 고쳐 팔 위치가 몸통/힙 외곽을 피하게 했고, 허벅지와 종아리 연결/좌우 간격도 해당 단면 크기를 반영한다. 기준170cm 프로필의14개 끝점 조합×4개 단면56건은 동일한1.3cm 기준을 통과했다. 관측 최대 수치 오차는1.2829285cm(요청 가슴182→추출 메시180.71707)다. 이는 격자 근사 오차이며 실제 사람 측정 정확도가 아니다. 여러 부위의 모든 극단값을 동시에 조합한 외형·실기기 성능까지 보증하지 않는다.
 
 중간 CI #44는 Android 작업은 성공했지만 기존 합성 VTON 테스트1개가 실패했다. 공용 CI 실행기 지연으로80ms짜리 결과가 정상 조회 전에 만료됐고 테스트의 상태 대기가 expired를 종결로 보지 못했다. 운영 API/보관시간/추론 timeout은 그대로 두고 테스트 시계만 제어해 TTL 전/후를 결정적으로 검사하도록 고쳤다. 해당26개 로컬 테스트가 통과했다. 최종 APK 작업은 backend와 서버 기동 매트릭스가 모두 성공해야 시작하도록 gate를 추가했다. 실패한 중간 실행/APK를 최종 성공 배포로 안내하지 않는다.
+
+## 실행 코드와 로컬 최종 확인
+
+- 브랜치: `codex/fashionai-p9-premium-avatar-20261102` (원격 `backup`, 개인 백업 저장소).
+- 단계 커밋: `5ce064ec60ebca7d0be4f7daa1f3060bf9350fc6` (cm 데이터·메시), `41fd297cc4869e5cd3d6ca132ff7bb8ba3aebb6d` (줄자·편집·연동), `7de3d7598413c79cddcdfd1c45c88eb74ccc51d5` (끝점·피팅 회귀·CI 보호).
+- 최종 로컬 집중 검사: **53개, 실패0·오류0**. 신규 P9 26개(기하13·줄자5·편집6·피팅2)와 기존 관련27개를 포함한다. 서로 겹치는 이전 실행 횟수를 합산하지 않는다.
+- 최종 로컬 백엔드 관련 검사: **26개 통과**. actionlint와 `git diff --check` 통과. 변경 파일 검사에서 키 파일·APK·ZIP·빌드 산출물과 일반적인 개인키/토큰 패턴이 없었다.
+- 최종 전체 CI: [#45](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41464329727), **7개 작업 모두 성공**. 아래는 다운로드한 실제 보고서와 APK의 확정 결과다.
+
+## 최종 CI·APK 결과
+
+| 항목 | 결과 |
+|---|---|
+| Android 전체 단위/Compose Robolectric | **391개**, 실패0·오류0·skip0 (P8 365개 + P9 26개) |
+| Preview 패키지 선택 회귀 | **155개**, 실패0·오류0·skip0. 전체 검사와 중복이므로 합산하지 않음 |
+| Kotlin·계측 테스트 Kotlin 컴파일 / Debug·Preview APK 빌드 | 모두 성공. 기기 계측 테스트 실행은 아님 |
+| Lint | Error/Fatal0, Warning166, Hint2. P8 실제 CI 보고서와 ID·메시지·파일 목록 추가0/제거0 (P8 로컬 경고 수와 혼동하지 않음) |
+| Linux 백엔드 회귀 | **151개 + 8 subtests 통과**, skip0. APK 배포 도구 검사3개 통과 |
+| 서버 기동 | Windows Python3.11/3.12/3.13/3.14, Linux3.12의5개 환경 모두 성공 |
+| 실제 기기·실제 GPU·실측/생성 품질 | 미검증. 운영 DB/서버 배포·유료 요청·사용자 데이터 이전 없이 검사 |
+
+[Preview APK 다운로드](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41464329727/artifacts/13151346853) · [테스트/Lint 보고서](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41464329727/artifacts/13151092300) · [BUILD_INFO](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41464329727/artifacts/13152200270). 비공개 저장소 로그인이 필요하며 APK 보존 만료는2026-12-02다.
+
+- 파일: `fashionai-1.1.45.1-preview-vc14501-7de3d759.apk`.
+- 로컬 보존: `C:\Users\USER\Documents\ChatGPT\capston\p9-avatar-20261102\fashion_app\build\p9-evidence\final-vc14501\fashionai-1.1.45.1-preview-vc14501-7de3d759.apk`.
+- 앱 이름 `FashionAI Preview`, 패키지 `com.jeiu.fashionproject.preview`, 버전 **1.1.45.1-preview / 14501**. 안정 P8의14201보다 증가했다.
+- APK SHA-256: `6b7cd5ecef8fdb478f24e7773269c624a166798667d81af77fa9ba5226c728e5`.
+- 서명 인증서 SHA-256: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`. 다운로드한 P8 안정 APK와 일치했다. 새 키를 생성하거나 교체하지 않았다.
+- APK manifest·내장 identity·BUILD_INFO의 버전/브랜치/코드SHA가 일치하며 `sourceDirty=false`, `distributionVerified=true`다. 문서만 추가한 후속 HEAD와 APK 구현 SHA를 구분한다.
+- APK ZIP CRC와 파일 SHA-256 통과. DEX에서 P9 편집기/줄자/메시/치수 클래스 및 기존 AI/측정 경로가 확인됐다. 이것만으로 실제 GPU/UI 동작을 증명하지는 않는다.
+- P8 대비 권한 목록 동일, 네이티브 라이브러리15개 이름·바이트 동일, 이미지/영상/모델 리소스 바이트 동일. Gradle 의존성과 manifest도 변경하지 않았다. 참고 자료·신규 SDK·실제 사용자 사진을 추가하지 않았다.
+- CI에서 서명 비밀번호/키 파일 바이트·비공개 설정 파일의 APK 포함 검사를 통과했다. 로컬에서도 키 파일/환경파일명·일반적인 개인키/토큰 패턴이 발견되지 않았다. 키·비밀번호·토큰 원문을 출력하지 않았다.
+- 로컬 감사 결과: 같은 폴더의 `P9_APK_AUDIT.json`. 테스트 보고서는 `fashion_app/build/p9-evidence/ci45-reports`에 보존했다. 생성물·APK·외부 참고 파일은 Git에 넣지 않았다.
+
+안정 Preview14201과의 패키지/인증서/상향 버전 조건은 통과했다. 해당 Preview 사용자는 APK를 열어 업데이트할 수 있는 정적 조건을 만족한다. 실제 S25+ 설치는 실행하지 않았으며 기존 원본 FashionAI 앱을 이 APK로 덮어쓰거나 삭제하지 않는다. 업데이트가 거절되면 삭제/초기화로 우회하지 않고 설치본 패키지·서명·버전을 다시 확인한다. 설치 후 마이페이지에서 `1.1.45.1-preview / 14501 / 7de3d759`를 확인한다.
+
+전후 비교 이미지는 로컬 `fashion_app/app/build/p9-visual/avatar-comparison.png`에 있다. 실제 메시 버퍼로 그린 P8/새 정면·측면·후면 비교다. CI와 로컬의 `premium.bin` SHA가 같음을 확인했다. 기본 메시37101개 삼각형/약4.0MB 출력 버퍼이며 전체 앱 메모리나 폰 성능 측정치는 아니다. 이미지 재생성은 개발 환경의 numpy/Pillow로 `python tools/render_avatar_review.py fashion_app/app/build/p9-visual`을 실행한다. 외부 모델·텍스처·폰트 에셋을 받지 않았고 독자 코드의 생성 메시이므로 별도 외부 인체 에셋 라이선스는 없다.
+
+## 다음 개발 순서
+
+1. 이 브랜치에서 `git status`와 HEAD를 먼저 확인하고, 위 APK 구현 SHA와 후속 문서 커밋을 구분한다. 기존 P8/다른 worktree를 초기화하지 않는다.
+2. 사용자가 실제 참고 파일을 제공하면 저장소 밖에서만 외형·줄자 조작을 비교한다. 현재 지정 폴더/ZIP이 없어 참고 자료 기반 검토는 미완료다.
+3. 아래 S25+ 점검표로 실제 외형·드래그 갱신 지연·화면/GL 복원을 확인한다. 필요하면 그 결과로 LOD/메시 캐시/갱신 빈도와 관절 외형을 조정한다.
+4. 합성 범위를 넓혀 여러 부위 극단값의 동시 조합을 추가 검증하고 지원 불가능한 조합은 원본을 유지하며 안내한다. 표시 모델의 허용 범위를 인체 정상 범위로 해석하지 않는다.
+5. 실제 측정 정확도나 의복 핏 개선은 별도 동의된 측정 자료·평가 설계 후 진행한다. 운영 연결/데이터 이전/유료 AI/배포는 별도 승인 범위를 유지한다.
+
+## 사용 순서와 보존 경계
+
+1. 기존 체형 시작 화면에서 3D 체형 설정으로 들어간다. 키·몸무게를 입력하거나 A/B/C 원본을 선택한다.
+2. `3D 아바타 생성 · cm 줄자로 조절`을 누른다. 기존 프로필이 있으면 출처·원본 참고값과 함께 불러온다. 새 A/B/C 선택은 비교·승인 경로를 유지한다.
+3. 부위를 선택하고 줄자를 왼쪽으로 밀면 증가, 오른쪽으로 밀면 감소한다. 숫자·±0.5·직접 입력이 같은 상태를 쓴다. 직접 잰 값 선택 시에만 수동 실측 출처가 된다.
+4. 정면/측면/후면·전체 보기와 터치 회전/핀치를 사용한다. 모델을 보면서 하단 컨트롤을 스크롤한다.
+5. `비교 후 3D 설정 저장` 또는 `저장 후 가상피팅에 적용`에서 비교창을 승인해야 기기에 저장된다. 미저장 초안 닫기는 확인을 요구한다.
+6. 가상피팅에서 저장한 cm 메시를 사용한다. 옷의 수동 위치·회전·크기는 유지하며 자동 맞춤은 명시적 버튼을 눌러야 실행된다. 의류는 기존 2D 오버레이이고 3D 의복 물리 시뮬레이션이 아니다.
+
+옷장·사진 분석·결과·직접 신체 치수·개인정보 동의·사진 AI/유료 FASHN·자체 모델 서버 경로는 유지한다. 자동 추정 cm를 실제 의류 사이즈 측정값으로 자동 승격하지 않는다. Preview의 운영 개인 데이터 동기화 차단 정책도 유지한다. 실제 폰의 기존 앱·대기열·백업을 읽거나 쓰거나 설치/초기화/이전하지 않았다.
+
+## S25+ 후속 확인 (아직 실행하지 않음)
+
+- 설치 전 Preview의 기존 패키지/서명/versionCode 확인. 원본 FashionAI 앱은 별도 패키지이며 삭제하지 않는다. 서명/버전 오류가 나면 중단하고 앱 데이터를 유지한다.
+- 홈→체형→3D 경로, 키/몸무게만으로 생성, 7부위 선택, 숫자/드래그 동기화, 초기값/불러온 값 복원을 확인한다.
+- 회전·핀치·전후면, 연속 드래그 시 메시 갱신 지연·발열·메모리·프레임률을 확인한다. 앱 전환/복귀·화면 회전·잠금 해제 후 GLES 컨텍스트 복원을 확인한다.
+- 작은 화면/큰 글꼴/키보드에서 모델·줄자·저장 버튼 접근과 취소/뒤로 가기 동작을 확인한다.
+- 저장→앱 재시작→복원→가상피팅 적용 후 기존 옷 배치 보존을 확인한다. 사진 AI 화면도 접근하되 승인 없는 외부 생성 요청은 하지 않는다.
+- 삼성 보안 경고가 나타나면 설치를 중단하고 경고 정보와 APK SHA-256을 확인한다. 시스템 보호 기능을 끄도록 안내하지 않는다.
+
+외형은 연속 메시·매끈한 법선·무광 아이보리 조명으로 개선했지만 실제 고급 브랜드 수준의 시각 품질을 검증했다고 주장하지 않는다. 세부 얼굴·손가락·사용자 실제 신체 복제·의류 충돌/주름·포즈 리깅·실측 정확도 검증은 구현 범위 밖이다. 여러 부위의 극단값 조합, S25+ GPU 및 참고 자료 기반 외형 검토는 후속 작업이다.
+
+## P8 대비 변경 파일 전체 (24개)
+
+- `.github/workflows/android-debug-apk.yml`
+- `README.md`
+- `backend/tests/test_local_vton_server.py`
+- `docs/P9_PREMIUM_AVATAR_HANDOFF_20261102.md`
+- `docs/README.md`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/AvatarCentimeters.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/AvatarProfile.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/BodyAvatar.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/CmRulerMath.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/data/PremiumAvatarMesh.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/navigation/AppNavigation.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/AvatarApplicationDialog.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/AvatarSetupCard.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/BodyAvatarDialog.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/CmRuler.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/PremiumAvatarEditor.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/BodyMethodSelectionScreen.kt`
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/VirtualFittingScreen.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9EditorUiTest.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9FittingUiTest.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9GeometryTest.kt`
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9RulerTest.kt`
+- `tools/apk_release.py`
+- `tools/render_avatar_review.py`
