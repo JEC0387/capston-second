@@ -31,10 +31,12 @@ def check_weights(directory: Path) -> Path:
     directory = directory.expanduser().resolve()
     model = directory / "model.safetensors"
     dwpose = directory / "dwpose"
-    if not model.is_file() or not dwpose.is_dir() or not any(dwpose.rglob("*.onnx")):
+    required = ("yolox_l.onnx", "dw-ll_ucoco_384.onnx")
+    if not model.is_file() or any(not (dwpose / name).is_file() for name in required):
         raise LocalVtonError(
-            "Model weights missing: prepare model.safetensors and dwpose/*.onnx "
-            "with the official fashn-vton-1.5/scripts/download_weights.py"
+            "Model weights missing: prepare model.safetensors, dwpose/yolox_l.onnx, "
+            "dwpose/dw-ll_ucoco_384.onnx with the official "
+            "fashn-vton-1.5/scripts/download_weights.py"
         )
     return directory
 
