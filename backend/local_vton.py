@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
 import os
 import sys
 import tempfile
@@ -32,13 +33,39 @@ def check_weights(directory: Path) -> Path:
     model = directory / "model.safetensors"
     dwpose = directory / "dwpose"
     required = ("yolox_l.onnx", "dw-ll_ucoco_384.onnx")
-    if not model.is_file() or any(not (dwpose / name).is_file() for name in required):
+    paths = [model] + [dwpose / name for name in required]
+    if any(not path.is_file() or path.stat().st_size == 0 for path in paths):
         raise LocalVtonError(
             "Model weights missing: prepare model.safetensors, dwpose/yolox_l.onnx, "
             "dwpose/dw-ll_ucoco_384.onnx with the official "
             "fashn-vton-1.5/scripts/download_weights.py"
         )
+    for path in paths:
+        with path.open("rb") as stream:
+            if stream.read(80).startswith((b"version https://git-lfs", b"<!DOCTYPE", b"<html")):
+                raise LocalVtonError("Model weights contain a pointer/download error, not model data")
     return directory
+
+
+def verify_weight_manifest(directory: Path) -> None:
+    """Server preflight verifies hashes against a manifest made by the official-only downloader."""
+    directory = check_weights(directory)
+    try:
+        manifest = json.loads((directory / "vton.manifest.json").read_text(encoding="utf-8"))
+        required = {"model.safetensors", "dwpose/yolox_l.onnx", "dwpose/dw-ll_ucoco_384.onnx"}
+        if set(manifest["files"]) != required:
+            raise ValueError()
+        for name, expected in manifest["files"].items():
+            if not isinstance(expected, str) or len(expected) != 64:
+                raise ValueError()
+            digest = hashlib.sha256()
+            with (directory / name).open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            if digest.hexdigest() != expected:
+                raise ValueError()
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise LocalVtonError("Verified weight manifest missing or mismatched; run prepare_local_vton_weights.py") from exc
 
 
 def read_input(path: Path) -> Image.Image:
