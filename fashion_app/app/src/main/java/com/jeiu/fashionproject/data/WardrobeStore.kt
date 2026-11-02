@@ -151,6 +151,7 @@ object WardrobeStore {
      * No startup re-seeding: users who deleted samples must remain in control.
      */
     fun addDemoSamplesIfEmpty(context: Context): Boolean {
+        load(context) // Never overwrite saved wardrobe data before its first read.
         if (_items.value.isNotEmpty()) return false
         val restored = SampleWardrobe.items()
         _items.value = restored
