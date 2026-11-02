@@ -12,6 +12,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.ui.screens.BodyMethodSelectionScreen
 import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
+import com.jeiu.fashionproject.ui.screens.BodySizeComparisonScreen
+import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -37,6 +39,31 @@ class BodyMethodSelectionUiTest {
             assertEquals(1, photo)
             assertEquals(1, avatar)
         }
+    }
+
+    @Test fun fourEntryPathsAndBackRemainReachable() {
+        var photo = 0; var avatar = 0; var size = 0; var history = 0; var back = 0
+        compose.setContent { BodyMethodSelectionScreen(onBack = { back++ },
+            onPhotoAnalysis = { photo++ }, onAvatarSetup = { avatar++ },
+            onSizeComparison = { size++ }, onHistory = { history++ }) }
+        compose.onNodeWithTag("bodyMethodPhoto").performClick()
+        compose.onNodeWithTag("bodyMethodAvatar").performClick()
+        compose.onNodeWithTag("bodyMethodSize").performScrollTo().performClick()
+        compose.onNodeWithTag("bodyMethodHistory").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("뒤로").performClick()
+        compose.runOnIdle {
+            assertEquals(1, photo); assertEquals(1, avatar)
+            assertEquals(1, size); assertEquals(1, history); assertEquals(1, back)
+        }
+    }
+
+    @Test fun sizeComparisonOffersMeasurementOrPhotoEntry() {
+        var photo = 0
+        compose.setContent { BodySizeComparisonScreen(onBack = {}, onPhotoAnalysis = { photo++ }) }
+        compose.onNodeWithTag("sizeComparisonGuidance").assertIsDisplayed()
+        compose.onNodeWithTag("sizeComparePhoto").performClick()
+        compose.onNodeWithTag("manualBodyCard").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { assertEquals(1, photo) }
     }
 
     @Test fun avatarSetupKeepsTheExistingModelAndPhotoEntryAvailable() {

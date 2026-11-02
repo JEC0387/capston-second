@@ -12,6 +12,7 @@ sealed class Screen(val route: String) {
     object BodyAnalysis : Screen("body_analysis")
     object BodyAnalysisPhoto : Screen("body_analysis_photo")
     object BodyAnalysisAvatar : Screen("body_analysis_avatar")
+    object BodySizeComparison : Screen("body_size_comparison")
     object Shop : Screen("shop")
     object ProductDetail : Screen("product_detail")
     object MyPage : Screen("my_page")

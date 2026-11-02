@@ -240,7 +240,15 @@ fun AppNavigation() {
                 BodyMethodSelectionScreen(
                     onBack = { navController.popBackStack() },
                     onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) },
-                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) }
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) },
+                    onSizeComparison = { navController.navigate(Screen.BodySizeComparison.route) },
+                    onHistory = { navController.navigate(Screen.BodyHistory.route) }
+                )
+            }
+            composable(Screen.BodySizeComparison.route) {
+                BodySizeComparisonScreen(
+                    onBack = { navController.popBackStack() },
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
                 )
             }
             composable(Screen.BodyAnalysisAvatar.route) {

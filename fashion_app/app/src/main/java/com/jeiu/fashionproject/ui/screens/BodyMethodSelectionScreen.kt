@@ -11,6 +11,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -27,23 +29,25 @@ import com.jeiu.fashionproject.ui.theme.*
 fun BodyMethodSelectionScreen(
     onBack: () -> Unit,
     onPhotoAnalysis: () -> Unit,
-    onAvatarSetup: () -> Unit
+    onAvatarSetup: () -> Unit,
+    onSizeComparison: () -> Unit = {},
+    onHistory: () -> Unit = {}
 ) {
-    Column(
-        modifier = Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(Modifier.fillMaxSize().background(Cream)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
             }
             Text("나의 체형 분석", style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold, color = CharcoalBlack)
         }
-        Text("어떤 방법으로 체형을 확인할까요?", style = MaterialTheme.typography.titleMedium,
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("체형을 어떻게 확인할까요?", style = MaterialTheme.typography.titleLarge,
             color = CharcoalBlack)
-        Text("사진 분석 또는 3D 체형 설정 중 원하는 방법을 선택하세요.",
+        Text("사진으로 분석하거나 내 3D 체형을 직접 만들 수 있어요.",
             style = MaterialTheme.typography.bodyMedium, color = MediumGray)
         BodyMethodCard(
             title = "사진으로 체형 분석",
@@ -53,14 +57,40 @@ fun BodyMethodSelectionScreen(
             tag = "bodyMethodPhoto"
         )
         BodyMethodCard(
-            title = "3D 아바타로 체형 설정",
-            description = "기본 3D 모델을 확인하고, 신체 치수를 직접 입력해 비율을 조절해요.",
+            title = "3D 내 체형 만들기",
+            description = "키·몸무게, 사진 결과 또는 직접 입력한 치수로 모델을 조절해요.",
             icon = { Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = Camel) },
             onClick = onAvatarSetup,
             tag = "bodyMethodAvatar"
         )
-        Text("저장한 3D 표시 프로필은 가상피팅의 아바타 모드에서 사용할 수 있어요.",
-            style = MaterialTheme.typography.bodySmall, color = MediumGray)
+        Text("더 살펴보기", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack,
+            fontWeight = FontWeight.SemiBold)
+        Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = White)) {
+            Column {
+                BodyMenuRow("의류 사이즈 비교", "실측표와 내 치수를 비교해요", onSizeComparison,
+                    "bodyMethodSize", { Icon(Icons.Filled.Straighten, contentDescription = null, tint = Camel) })
+                HorizontalDivider(color = LightGray, modifier = Modifier.padding(horizontal = 16.dp))
+                BodyMenuRow("지난 분석 기록", "저장된 측정과 변화 보기", onHistory,
+                    "bodyMethodHistory", { Icon(Icons.Filled.History, contentDescription = null, tint = Camel) })
+            }
+        }
+        }
+    }
+}
+
+@Composable
+private fun BodyMenuRow(title: String, description: String, onClick: () -> Unit,
+    tag: String, icon: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick)
+        .heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        icon()
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, color = CharcoalBlack)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray)
     }
 }
 
