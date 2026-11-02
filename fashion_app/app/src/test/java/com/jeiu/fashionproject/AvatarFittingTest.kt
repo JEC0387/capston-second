@@ -2,6 +2,7 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.AvatarFittingStore
 import com.jeiu.fashionproject.data.AvatarOverlay
@@ -9,6 +10,8 @@ import com.jeiu.fashionproject.data.AvatarProfile
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.ui.screens.FitSlot
 import com.jeiu.fashionproject.ui.screens.fitAvatar
+import com.jeiu.fashionproject.ui.screens.fit
+import com.jeiu.fashionproject.ui.viewmodel.FittingPoseDetector
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -37,11 +40,29 @@ class AvatarFittingTest {
         assertTrue(coat.width > shirt.width)
         assertTrue(pants.center.y > shirt.center.y)
         assertTrue(shoes.center.y > pants.center.y)
-        assertTrue(fitAvatar(FitSlot.TOP, garment("원피스"), 2f, canvas, profile).width > shirt.width)
+        val dress = fitAvatar(FitSlot.TOP, garment("원피스"), 2f, canvas, profile)
+        assertTrue(dress.center.y + dress.width > shirt.center.y + shirt.width * .6f)
         assertTrue(fitAvatar(FitSlot.TOP, garment("상의"), 1.2f, canvas,
             profile.copy(shoulder = 1.2f)).width > shirt.width)
         assertTrue(fitAvatar(FitSlot.BOTTOM, garment("하의"), 1.4f, canvas,
             profile.copy(leg = 1.2f)).center.y < pants.center.y)
+    }
+
+    @Test fun photoAutoFitUsesPoseAnchorsAndDressExtendsBelowTop() {
+        val body = FittingPoseDetector.BodyPoints(400, 800,
+            Offset(130f, 230f) to Offset(270f, 230f),
+            Offset(150f, 430f) to Offset(250f, 430f),
+            Offset(165f, 740f) to Offset(235f, 740f))
+        val canvas = Size(400f, 800f)
+        val shirt = fit(FitSlot.TOP, garment("상의"), 1.2f, canvas, body)
+        val dress = fit(FitSlot.TOP, garment("원피스"), 2f, canvas, body)
+        val outer = fit(FitSlot.OUTER, garment("아우터"), 1.2f, canvas, body)
+        val pants = fit(FitSlot.BOTTOM, garment("하의"), 1.4f, canvas, body)
+        val shoes = fit(FitSlot.SHOES, garment("신발"), .6f, canvas, body)
+        assertTrue(outer.width > shirt.width)
+        assertTrue(dress.center.y + dress.width > shirt.center.y + shirt.width * .6f)
+        assertTrue(pants.center.y > shirt.center.y)
+        assertTrue(shoes.center.y > pants.center.y)
     }
 
     @Test fun explicitOverlaySaveRestoresNormalizedPlacementWithoutPhotoOrUri() {

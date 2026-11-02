@@ -110,9 +110,10 @@ private const val MAX_SCALE = 3f
  * 옷 종류에 맞춰 몸 위 자리·너비·기울기를 계산한다.
  * 옷 사진은 옷 영역에 맞게 잘려 있으므로(여백 약 5%), 사진 너비를 몸 너비의 몇 배로 할지 종류별 비율로 정한다.
  */
-private fun fit(
+internal fun fit(
     slot: FitSlot, item: WardrobeItem, aspect: Float, canvas: Size, body: FittingPoseDetector.BodyPoints?
 ): Placement {
+    val garmentAspect = aspect.takeIf { it.isFinite() && it > 0f } ?: 1.2f
     fun default(yRatio: Float) = Placement(Offset(canvas.width / 2, canvas.height * yRatio), canvas.width * 0.5f, 0f)
     val defaultY = when (slot) {
         FitSlot.TOP, FitSlot.OUTER -> 0.35f
@@ -137,13 +138,24 @@ private fun fit(
 
     /** 옷 윗부분이 topY에 오도록 가운데 자리 계산 */
     fun placeTop(midX: Float, topY: Float, width: Float, rotation: Float) =
-        Placement(Offset(midX, topY + width * aspect / 2), width, rotation)
+        Placement(Offset(midX, topY + width * garmentAspect / 2), width, rotation)
 
     return when (slot) {
         FitSlot.TOP, FitSlot.OUTER -> body.shoulders?.let {
             val (mid, w, angle) = measure(it)
             val ratio = if (slot == FitSlot.OUTER) 2.1f else 2.0f
-            placeTop(mid.x, mid.y - w * 0.32f, w * ratio, angle)   // 목선은 어깨보다 조금 위
+            val topY = mid.y - w * .32f
+            if (item.category == "원피스" && slot == FitSlot.TOP) {
+                val hips = body.hips?.let(::measure)
+                val ankles = body.ankles?.let(::measure)
+                val targetBottom = if (hips != null && ankles != null)
+                    hips.first.y + (ankles.first.y - hips.first.y) * .42f
+                    else hips?.first?.y?.plus(w * 2.2f) ?: mid.y + w * 4f
+                val lengthWidth = ((targetBottom - topY) / garmentAspect.coerceAtLeast(.4f)).coerceAtLeast(0f)
+                val width = maxOf(w * 1.85f, (hips?.second ?: 0f) * 2.0f, lengthWidth)
+                    .coerceAtMost(canvas.width * .85f)
+                placeTop(mid.x, topY, width, angle)
+            } else placeTop(mid.x, topY, w * ratio, angle)   // 목선은 어깨보다 조금 위
         } ?: default(defaultY)
 
         FitSlot.BOTTOM -> body.hips?.let {
@@ -157,7 +169,7 @@ private fun fit(
             // 발을 모으고 서면 발목 사이가 좁으므로 골반 너비를 최소값으로 쓴다
             val hipW = body.hips?.let { h -> measure(h).second } ?: 0f
             val width = maxOf(w * 2.0f, hipW * 1.6f)
-            placeTop(mid.x, mid.y - width * aspect * 0.1f, width, 0f)
+            placeTop(mid.x, mid.y - width * garmentAspect * 0.1f, width, 0f)
         } ?: default(defaultY)
 
         FitSlot.ACCESSORY -> default(defaultY)
@@ -185,8 +197,12 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
     return when (slot) {
         FitSlot.TOP -> {
             val isDress = item.category == "원피스"
-            place(screenY(shoulderY) - shoulderWidth * .32f,
-                shoulderWidth * if (isDress) 2.15f else 2f)
+            val topY = screenY(shoulderY) - shoulderWidth * .32f
+            val dressWidth = if (isDress) maxOf(shoulderWidth * 1.85f,
+                hipWidth * 2f,
+                (screenY(hipY * .52f) - topY) / aspect.coerceAtLeast(.4f))
+                else shoulderWidth * 2f
+            place(topY, dressWidth)
         }
         FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, shoulderWidth * 2.2f)
         FitSlot.BOTTOM -> place(screenY(hipY) - hipWidth * .35f,
@@ -407,12 +423,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
             TextButton(onClick = { worn.keys.toList().forEach { refit(it) } },
                 enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
                 Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                Text("자동 정렬", color = Camel)
+                Text("마법봉 · 자동핏", color = Camel)
             }
         }
 
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!compact) Text(if (avatarMode) "3D 형상 + 의류 이미지 오버레이예요. 실제 의복 시뮬레이션이나 AI 착장 생성이 아니에요."
+            if (!compact) Text(if (avatarMode) "3D 형상 + 정면 고정 의류 이미지예요. 회전해도 옷은 몸을 감싸지 않아요. 의복 시뮬레이션이나 AI 착장 생성이 아니에요."
                 else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
                 color = Brown, style = MaterialTheme.typography.bodySmall)
             if (!avatarMode) TextButton(onClick = {
@@ -549,6 +565,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {}, onBack: () -> Unit) {
 
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(rememberScrollState()).testTag("manualFittingControls")) {
+        if (avatarMode && compact) Text("의류 이미지 오버레이 · 3D 의복 시뮬레이션 아님",
+            modifier = Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.labelSmall,
+            color = Brown)
         // 입은 옷 — 누르면 그 옷을 조절, X로 벗기
         // (전신 사진을 고른 뒤에는 조절 영역 높이를 고정해, 옷을 입혀도 사진 위치가 바뀌지 않게 한다)
         if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {

@@ -145,11 +145,15 @@ class PresentationFittingUiTest {
             compose.setContent { VirtualFittingScreen(onBack = {}) }
             compose.onNodeWithTag("fittingAvatarMode").performClick()
             compose.waitUntil(5000) {
-                compose.onNodeWithTag("avatarAutoFit").fetchSemanticsNode().config
-                    .contains(androidx.compose.ui.semantics.SemanticsProperties.Enabled)
+                runCatching { compose.onNodeWithTag("avatarAutoFit").assertIsEnabled() }.isSuccess
             }
             compose.onNodeWithTag("avatarAutoFit").assertIsEnabled()
             compose.onNodeWithTag("avatarSaveFitting").assertIsEnabled()
+            compose.onNodeWithTag("avatarAutoFit").performClick()
+            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.runOnIdle {
+                Assert.assertEquals(1f, AvatarFittingStore.load(app).single().scale)
+            }
         } finally { AvatarFittingStore.clear(app); AvatarProfileStore.clear(app) }
     }
 
