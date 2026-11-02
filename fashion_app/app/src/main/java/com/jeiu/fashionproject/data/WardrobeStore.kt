@@ -92,6 +92,16 @@ object WardrobeStore {
                 latest.copy(addedAt = item.addedAt, favoritedAt = item.favoritedAt, keptAt = item.keptAt)
             }
         }
+        // Old installs persisted drawable URIs with the original applicationId. Preview uses
+        // a different package, so repair only known sample drawable paths on disk.
+        // User-added photos and manual edits remain unchanged.
+        items = items.map { item ->
+            val bundled = latestSamples[item.id] ?: return@map item
+            val repaired = SampleWardrobe.rebaseBundledUris(item, bundled, context.packageName)
+            if (repaired != item) needsSave = true
+            repaired
+        }
+
         // 사진 버전 칸이 생기기 전에 들어간 샘플은, 사진이 그대로면 원본·옷만 버전을 채워 준다.
         items = items.map { item ->
             val latest = latestSamples[item.id]
