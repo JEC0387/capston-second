@@ -80,6 +80,35 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
     },confirmButton={TextButton(onClick=onDismiss){Text("3D 닫기")}})
 }
 
+/** Reuses the same real GLES mesh inside the fitting canvas. Touch rotates; pinch zooms. */
+@Composable
+fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var yaw by remember { mutableFloatStateOf(0f) }
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var failed by remember { mutableStateOf(false) }
+    var surface by remember { mutableStateOf<AvatarSurface?>(null) }
+    val supported = remember { (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
+        ?.deviceConfigurationInfo?.reqGlEsVersion?.let { it >= 0x20000 } == true }
+    DisposableEffect(lifecycle, surface) {
+        val observer = LifecycleEventObserver { _, event -> when (event) {
+            Lifecycle.Event.ON_RESUME -> surface?.onResume()
+            Lifecycle.Event.ON_PAUSE -> surface?.onPause()
+            else -> Unit
+        } }
+        lifecycle.addObserver(observer)
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) surface?.onResume()
+        onDispose { lifecycle.removeObserver(observer); surface?.onPause() }
+    }
+    if (!supported || failed) {
+        Text("이 기기에서 3D 모델을 표시하지 못했어요. 저장된 설정은 유지돼요.", modifier = modifier)
+    } else {
+        AndroidView(factory = { ctx -> AvatarSurface(ctx, { yaw = it }, { zoom = it }, { failed = true }).also { surface = it } },
+            update = { it.update(parameters, 1f, 1f, 1f, yaw, zoom, thighScale) }, modifier = modifier)
+    }
+}
+
 private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,private val onZoom:(Float)->Unit,onError:()->Unit):GLSurfaceView(context) {
     private val avatar=AvatarRenderer { post { onError() } }
     private var lastX=0f

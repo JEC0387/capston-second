@@ -59,7 +59,7 @@ fun BodyMethodSelectionScreen(
             onClick = onAvatarSetup,
             tag = "bodyMethodAvatar"
         )
-        Text("입력한 체형은 나중에 가상피팅에서도 활용할 수 있도록 연결할 예정이에요.",
+        Text("저장한 3D 표시 프로필은 가상피팅의 아바타 모드에서 사용할 수 있어요.",
             style = MaterialTheme.typography.bodySmall, color = MediumGray)
     }
 }

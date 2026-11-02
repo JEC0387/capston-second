@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.xmlpull.v1.XmlPullParser
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
@@ -72,6 +73,24 @@ class AvatarProfileTest {
             assertEquals("existing-user-data", manual.getString("preservation_marker", null))
         } finally {
             manual.edit().remove("preservation_marker").commit()
+        }
+    }
+
+    @Test fun avatarPreferencesAreExcludedFromCloudBackupAndDeviceTransfer() {
+        val parser = app.resources.getXml(R.xml.data_extraction_rules)
+        var section = ""
+        val excluded = mutableMapOf<String, MutableSet<String>>()
+        while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                if (parser.name == "cloud-backup" || parser.name == "device-transfer") section = parser.name
+                if (parser.name == "exclude") excluded.getOrPut(section) { mutableSetOf() }
+                    .add(parser.getAttributeValue(null, "path"))
+            }
+            parser.next()
+        }
+        listOf("cloud-backup", "device-transfer").forEach { target ->
+            assertTrue("$target missing avatar profile", "avatar_visual_profile_v1.xml" in excluded[target].orEmpty())
+            assertTrue("$target missing avatar overlay", "avatar_fitting_overlay_v1.xml" in excluded[target].orEmpty())
         }
     }
 }

@@ -13,6 +13,11 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.core.app.ActivityOptionsCompat
 import com.jeiu.fashionproject.data.TryOnGarment
+import com.jeiu.fashionproject.data.AvatarProfile
+import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.AvatarFittingStore
+import com.jeiu.fashionproject.data.AvatarOverlay
+import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.ui.screens.AiTryOnScreen
 import com.jeiu.fashionproject.ui.screens.VirtualFittingScreen
 import org.junit.*
@@ -98,6 +103,54 @@ class PresentationFittingUiTest {
         compose.onNodeWithContentDescription("벗기", useUnmergedTree = true)
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
+    }
+
+    @Test fun photoAndAvatarModesKeepSeparateEntryPaths() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
+        var setupOpened = 0
+        compose.setContent { VirtualFittingScreen(onBack = {}, onAvatarSetup = { setupOpened++ }) }
+        compose.onNodeWithTag("fittingAvatarMode").performClick()
+        compose.onNodeWithTag("fittingGoAvatarSetup").assertIsDisplayed().performClick()
+        compose.runOnIdle { Assert.assertEquals(1, setupOpened) }
+        compose.onNodeWithTag("aiTryOnWand").assertDoesNotExist()
+        compose.onNodeWithTag("fittingPhotoMode").performClick()
+        compose.onNodeWithText("전신 사진 선택").assertIsDisplayed()
+        compose.onNodeWithTag("aiTryOnWand").assertExists()
+    }
+
+    @Test fun savedProfileOpensAvatarCanvasWithoutRequestingPhoto() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
+        Assert.assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f)))
+        try {
+            compose.setContent { VirtualFittingScreen(onBack = {}) }
+            compose.onNodeWithTag("fittingAvatarMode").performClick()
+            compose.onNodeWithTag("fittingAvatarViewport").assertExists()
+            compose.onNodeWithTag("avatarAutoFit").assertIsNotEnabled()
+            compose.onNodeWithText("전신 사진 선택").assertDoesNotExist()
+        } finally { AvatarProfileStore.clear(app) }
+    }
+
+    @Test fun savedWardrobePlacementReturnsInAvatarMode() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
+        AvatarFittingStore.clear(app)
+        WardrobeStore.load(app)
+        val item = WardrobeStore.items.value.first()
+        Assert.assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f)))
+        Assert.assertTrue(AvatarFittingStore.save(app,
+            listOf(AvatarOverlay(item.id, .5f, .4f, .3f, 1.1f, 0f))))
+        try {
+            compose.setContent { VirtualFittingScreen(onBack = {}) }
+            compose.onNodeWithTag("fittingAvatarMode").performClick()
+            compose.waitUntil(5000) {
+                compose.onNodeWithTag("avatarAutoFit").fetchSemanticsNode().config
+                    .contains(androidx.compose.ui.semantics.SemanticsProperties.Enabled)
+            }
+            compose.onNodeWithTag("avatarAutoFit").assertIsEnabled()
+            compose.onNodeWithTag("avatarSaveFitting").assertIsEnabled()
+        } finally { AvatarFittingStore.clear(app); AvatarProfileStore.clear(app) }
     }
 
 }

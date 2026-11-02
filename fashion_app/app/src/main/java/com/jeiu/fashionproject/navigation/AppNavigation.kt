@@ -217,7 +217,8 @@ fun AppNavigation() {
                     gender = gender)
             }
             composable(Screen.VirtualFitting.route) {
-                VirtualFittingScreen(onBack = { navController.popBackStack() })
+                VirtualFittingScreen(onBack = { navController.popBackStack() },
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) })
             }
             composable(
                 Screen.OutfitRecommend.route,

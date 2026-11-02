@@ -21,7 +21,8 @@
         <exclude domain="sharedpref" path="privacy_consent.xml" />
         <exclude domain="sharedpref" path="manual_body_measurements.xml" />
     <exclude domain="sharedpref" path="avatar_visual_profile_v1.xml" />
-        <exclude domain="sharedpref" path="size_feedback.xml" />
+    <exclude domain="sharedpref" path="avatar_fitting_overlay_v1.xml" />
+    <exclude domain="sharedpref" path="size_feedback.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="db_sync.xml" />
@@ -40,6 +41,8 @@
         <exclude domain="sharedpref" path="restore_stage_db_sync.xml" />
         <exclude domain="sharedpref" path="privacy_consent.xml" />
         <exclude domain="sharedpref" path="manual_body_measurements.xml" />
+        <exclude domain="sharedpref" path="avatar_visual_profile_v1.xml" />
+        <exclude domain="sharedpref" path="avatar_fitting_overlay_v1.xml" />
         <exclude domain="sharedpref" path="size_feedback.xml" />
     </device-transfer>
 </data-extraction-rules>
