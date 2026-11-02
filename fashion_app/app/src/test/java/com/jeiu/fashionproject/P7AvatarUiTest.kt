@@ -40,4 +40,17 @@ class P7AvatarUiTest {
         compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(AvatarSource.PHOTO,AvatarProfileStore.current.value!!.source)}
     }
+    @Test fun photoResultCanOpenSourceComparisonDirectlyWithoutSaving() {
+        val prior = AvatarProfile(175f, 72f)
+        assertTrue(AvatarProfileStore.save(app, prior))
+        compose.setContent { Column(Modifier.verticalScroll(rememberScrollState())) {
+            AvatarSetupCard(BodyMeasurements(170f,40f,28f,37f,80f,46f,.1f,1700f,1L),
+                autoImportPhoto = true)
+        } }
+        compose.waitUntil(5000) {
+            compose.onAllNodesWithTag("avatarApplyCancel").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("avatarApplyCancel").performClick()
+        compose.runOnIdle { assertEquals(prior, AvatarProfileStore.current.value) }
+    }
 }

@@ -13,9 +13,10 @@ import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 
 @Composable
-fun AvatarSetupCard(photo: BodyMeasurements? = null) {
+fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { AvatarProfileStore.load(context);ManualBodyStore.load(context) }
+    var storesLoaded by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { AvatarProfileStore.load(context);ManualBodyStore.load(context);storesLoaded=true }
     val saved by AvatarProfileStore.current.collectAsState()
     val issue by AvatarProfileStore.issue.collectAsState()
     val sessionPhoto by BodyAnalysisSessionStore.measurements.collectAsState()
@@ -23,6 +24,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
     val manualIssue by ManualBodyStore.issue.collectAsState()
     var imported by remember { mutableStateOf<AvatarProfile?>(null) }
     var proposal by remember { mutableStateOf<AvatarProfile?>(null) }
+    var initialImportHandled by remember { mutableStateOf(false) }
     var height by remember { mutableStateOf("170") }
     var weight by remember { mutableStateOf("65") }
     var shoulder by remember { mutableFloatStateOf(1f) }
@@ -42,6 +44,14 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null) {
     } }
     val draft = AvatarProfile(height.toFloatOrNull() ?: Float.NaN, weight.toFloatOrNull() ?: Float.NaN,
         shoulder, waist, hip, thigh, leg,chest,torso,imported?.source ?: AvatarSource.BMI,imported?.applied.orEmpty())
+    LaunchedEffect(autoImportPhoto, storesLoaded, photo, sessionPhoto, saved) {
+        if (autoImportPhoto && storesLoaded && !initialImportHandled) {
+            AvatarMeasurementImport.photo(photo ?: sessionPhoto, saved)?.let {
+                proposal = it
+                initialImportHandled = true
+            }
+        }
+    }
     proposal?.let { proposed -> AvatarApplicationDialog(saved,proposed,onDismiss={proposal=null},onApprove={
         imported=proposed;height=proposed.heightCm.toString();weight=proposed.weightKg.toString()
         shoulder=proposed.shoulder;waist=proposed.waist;hip=proposed.hip;thigh=proposed.thigh;leg=proposed.leg
