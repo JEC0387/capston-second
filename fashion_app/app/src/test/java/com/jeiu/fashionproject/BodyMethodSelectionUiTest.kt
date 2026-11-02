@@ -7,6 +7,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextReplacement
+import androidx.test.core.app.ApplicationProvider
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.ui.screens.BodyMethodSelectionScreen
 import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
 import org.junit.Assert.assertEquals
@@ -44,5 +47,21 @@ class BodyMethodSelectionUiTest {
         compose.onNodeWithText("3D 닫기").performClick()
         compose.onNodeWithText("사진으로 체형 분석하기").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, photo) }
+    }
+
+    @Test fun avatarSetupAcceptsHeightWeightAndSavesVisualProfile() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
+        compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
+        compose.onNodeWithTag("avatarHeight").performTextReplacement("175")
+        compose.onNodeWithTag("avatarWeight").performTextReplacement("72")
+        compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(175f, AvatarProfileStore.current.value?.heightCm)
+            assertEquals(72f, AvatarProfileStore.current.value?.weightKg)
+        }
+        compose.onNodeWithTag("avatarShow").performScrollTo().performClick()
+        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
+        AvatarProfileStore.clear(app)
     }
 }

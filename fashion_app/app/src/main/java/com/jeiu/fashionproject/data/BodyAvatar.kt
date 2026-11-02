@@ -50,9 +50,9 @@ data class AvatarParameters(
 /** Original low-poly 3D geometry: interleaved XYZ position, normal and RGB. No photo texture. */
 object BodyAvatarMesh {
     const val STRIDE = 9
-    fun build(parameters: AvatarParameters, shoulderScale: Float = 1f, waistScale: Float = 1f, hipScale: Float = 1f): FloatArray {
+    fun build(parameters: AvatarParameters, shoulderScale: Float = 1f, waistScale: Float = 1f, hipScale: Float = 1f, thighScale: Float = 1f): FloatArray {
         require(parameters.isValid())
-        require(listOf(shoulderScale,waistScale,hipScale).all { it.isFinite() && it in .8f..1.2f })
+        require(listOf(shoulderScale,waistScale,hipScale,thighScale).all { it.isFinite() && it in .8f..1.2f })
         val vertices=ArrayList<Float>()
         val h=parameters.heightCm/100f
         fun vertex(x:Float,y:Float,z:Float,nx:Float,ny:Float,nz:Float,color:FloatArray) {
@@ -82,8 +82,8 @@ object BodyAvatarMesh {
             Triple(shoulderY-h*.06f,chest,chest*.68f),Triple(shoulderY,shoulder,shoulder*.50f),
             Triple(shoulderY+h*.02f,h*.035f,h*.03f),Triple(h*.865f,h*.035f,h*.03f)),bodyColor)
         for (side in listOf(-1f,1f)) {
-            tube(side*hip*.48f,listOf(Triple(h*.04f,h*.025f,h*.03f),Triple(h*.27f,h*.038f,h*.04f),
-                Triple(hipY,h*.055f,h*.055f)),limbColor)
+            tube(side*hip*.48f,listOf(Triple(h*.04f,h*.025f,h*.03f),Triple(h*.27f,h*.038f*thighScale,h*.04f*thighScale),
+                Triple(hipY,h*.055f*thighScale,h*.055f*thighScale)),limbColor)
             tube(side*(shoulder+h*.035f),listOf(Triple(h*.43f,h*.019f,h*.022f),Triple(h*.61f,h*.025f,h*.028f),
                 Triple(shoulderY,h*.034f,h*.035f)),limbColor)
         }

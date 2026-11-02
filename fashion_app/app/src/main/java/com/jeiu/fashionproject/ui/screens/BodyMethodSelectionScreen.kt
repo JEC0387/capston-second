@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
+import com.jeiu.fashionproject.ui.components.AvatarSetupCard
 import com.jeiu.fashionproject.ui.theme.*
 
 /** Start with a clear user choice rather than showing photo and avatar controls together. */
@@ -109,8 +110,7 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("3D 기본 모델을 확인하고, 알고 있는 신체 치수를 입력해 보세요.",
                 style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
-            Text("키·몸무게 자동 체형 생성과 실시간 부위별 변형은 다음 개발 단계에서 연결합니다. 지금은 기존 치수 입력·3D 참고 모델을 사용해요.",
-                style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            AvatarSetupCard()
             ManualBodyEntryCard(photo = null, onUseHeight = {})
             OutlinedButton(onClick = onPhotoAnalysis, modifier = Modifier.fillMaxWidth()) {
                 Text("사진으로 체형 분석하기")

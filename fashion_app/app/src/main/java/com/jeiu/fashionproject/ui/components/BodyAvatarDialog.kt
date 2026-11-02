@@ -28,7 +28,8 @@ import javax.microedition.khronos.opengles.GL10
 
 /** Optional OpenGL ES 2.0 viewer; no asset download, network, body photo or persistence. */
 @Composable
-fun BodyAvatarDialog(profile: BodyDimensionProfile, onDismiss: () -> Unit) {
+fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters? = null,
+    thighScale: Float = 1f, onDismiss: () -> Unit) {
     val context=LocalContext.current
     val lifecycle=LocalLifecycleOwner.current.lifecycle
     var useProfile by remember { mutableStateOf(profile.values.isNotEmpty()) }
@@ -39,7 +40,7 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, onDismiss: () -> Unit) {
     var zoom by remember { mutableFloatStateOf(1f) }
     var failed by remember { mutableStateOf(false) }
     var surface by remember { mutableStateOf<AvatarSurface?>(null) }
-    val parameters=remember(profile,useProfile) { if(useProfile) AvatarParameters.from(profile) else AvatarParameters() }
+    val parameters=remember(profile,useProfile,configured) { configured ?: if(useProfile) AvatarParameters.from(profile) else AvatarParameters() }
     val supported=remember { (context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager)
         ?.deviceConfigurationInfo?.reqGlEsVersion?.let { it>=0x20000 } == true }
     DisposableEffect(lifecycle,surface) {
@@ -54,11 +55,11 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, onDismiss: () -> Unit) {
     }
     AlertDialog(onDismissRequest=onDismiss,title={Text("3D 비율 아바타 · 참고 모델")},text={
         Column(Modifier.heightIn(max=560.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-            Text("${parameters.heightCm.toInt()} cm · ${if(useProfile) "입력/사진 출처 반영" else "기본 모델"}")
+            Text("${parameters.heightCm.toInt()} cm · ${if(configured != null) "키·몸무게 기반 추정 형상" else if(useProfile) "입력/사진 출처 반영" else "기본 모델"}")
             Text("실제 3D 표면을 회전해 보여줘요. 사진으로 복원한 몸이나 의류 시뮬레이션이 아니에요.")
             if(!supported || failed) Text("이 기기의 3D 화면을 준비하지 못했어요. 기존 체형 분석과 기록은 계속 사용할 수 있어요.")
             else AndroidView(factory={ctx -> AvatarSurface(ctx,{yaw=it},{zoom=it},{failed=true}).also { surface=it }},
-                update={it.update(parameters,shoulder,waist,hip,yaw,zoom)},modifier=Modifier.fillMaxWidth().height(300.dp))
+                update={it.update(parameters,shoulder,waist,hip,yaw,zoom,thighScale)},modifier=Modifier.fillMaxWidth().height(300.dp))
             Text("드래그: 회전 · 두 손가락: 확대/축소")
             Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                 TextButton(onClick={yaw=0f}) { Text("정면") }
@@ -72,7 +73,7 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, onDismiss: () -> Unit) {
             Text("표시 조절은 저장된 신체 치수나 사이즈 추천값을 변경하지 않아요. 관절 높이는 기본 인체의 표시 범위 안에서 제한해요.")
             parameters.sources.forEach { Text(it,style=MaterialTheme.typography.bodySmall) }
             parameters.notes.forEach { Text(it,style=MaterialTheme.typography.bodySmall) }
-            OutlinedButton(enabled=profile.values.isNotEmpty(),onClick={useProfile=!useProfile;shoulder=1f;waist=1f;hip=1f;yaw=0f;zoom=1f}) {
+            OutlinedButton(enabled=configured == null && profile.values.isNotEmpty(),onClick={useProfile=!useProfile;shoulder=1f;waist=1f;hip=1f;yaw=0f;zoom=1f}) {
                 Text(if(useProfile) "기본 모델로 되돌리기" else "내 치수 다시 반영")
             }
         }
@@ -96,11 +97,11 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
         setRenderer(avatar)
         renderMode=RENDERMODE_WHEN_DIRTY
     }
-    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float) {
-        val key=listOf(parameters,shoulder,waist,hip)
+    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float,thigh:Float = 1f) {
+        val key=listOf(parameters,shoulder,waist,hip,thigh)
         if(key!=geometry) {
             geometry=key
-            queueEvent { avatar.setGeometry(BodyAvatarMesh.build(parameters,shoulder,waist,hip)) }
+            queueEvent { avatar.setGeometry(BodyAvatarMesh.build(parameters,shoulder,waist,hip,thigh)) }
         }
         yawValue=yaw;zoomValue=zoom
         queueEvent { avatar.yaw=yaw;avatar.zoom=zoom }
