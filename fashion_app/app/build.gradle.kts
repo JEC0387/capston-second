@@ -94,6 +94,7 @@ dependencies {
     implementation(libs.play.services.location)
     implementation(libs.mlkit.pose.detection.accurate)
     implementation(libs.mlkit.subject.segmentation)
+    implementation(libs.play.services.base)   // ML Kit 누끼 모델 미리 내려받기 (ModuleInstall)
     implementation(libs.mediapipe.tasks.vision)
     implementation(libs.camerax.core)
     implementation(libs.camerax.camera2)

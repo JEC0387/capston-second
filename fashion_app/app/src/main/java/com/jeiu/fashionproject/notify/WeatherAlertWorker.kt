@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.notify
 
+import com.jeiu.fashionproject.ui.viewmodel.UserPreferencesViewModel
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -74,7 +75,8 @@ class WeatherAlertWorker(context: Context, params: WorkerParameters) : Coroutine
             styleScores = StylePreferenceStore.scores.value,
             count = 1,
             taste = TastePreferenceStore.scores.value,
-            preferred = ProfileStore.preferredStyles(ctx)
+            preferred = ProfileStore.preferredStyles(ctx),
+            gender = UserPreferencesViewModel.saved(ctx)
         )
 
         val day = plan.day

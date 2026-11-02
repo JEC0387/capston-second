@@ -480,6 +480,7 @@ def _preference_payload(db: Session, user: User) -> dict:
         select(StyleRating.style, StyleRating.liked).where(StyleRating.user_id == user.id)
     ):
         rated += 1
+        style = data.LEGACY_STYLE_MAP.get(style, style)   # 예전 이름(클래식 · 빈티지)은 새 이름으로
         if style in scores:
             scores[style] += 2 if liked else -1
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -500,7 +501,7 @@ def get_style_preference(db: Session = Depends(get_db), user: User = Depends(cur
 def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_db),
                           user: User = Depends(current_user)):
     """코디 카드 좋아요/싫어요 평가를 DB 에 한 줄씩 기록"""
-    if req.style not in data.STYLE_PREFERENCE_STYLES:
+    if req.style not in data.STYLE_PREFERENCE_STYLES and req.style not in data.LEGACY_STYLE_MAP:
         raise HTTPException(400, f"알 수 없는 스타일: {req.style}")
     db.add(StyleRating(user_id=user.id, style=req.style, liked=req.like))
     db.commit()

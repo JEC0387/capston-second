@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -28,7 +30,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.FashionQuery
 import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.recommend.GenderFit
 import com.jeiu.fashionproject.data.ProductInterestStore
 import com.jeiu.fashionproject.data.ShopCatalog
 import com.jeiu.fashionproject.data.ShopImageResult
@@ -59,11 +63,12 @@ fun ShopScreen(
     var searchQuery by remember { mutableStateOf(preset ?: "") }
     var searchKeyword by remember { mutableStateOf<String?>(null) }
 
-    // 스타일 검색: 입력 멈춘 지 400ms 지나면 검색 — 매 키입력마다 API 호출하지 않게 디바운스
+    // 입력 멈춘 지 400ms 지나면 검색 — 매 키입력마다 API 호출하지 않게 디바운스
+    // 스타일 검색은 옷 스타일 검색어만, 상품 검색은 옷 상품 검색어만 네이버에 묻는다 (FashionQuery)
     LaunchedEffect(tab, searchQuery, gender) {
-        if (tab != ShopTab.STYLES) return@LaunchedEffect
         delay(400)
-        viewModel.search(searchQuery, gender)
+        if (tab == ShopTab.STYLES) viewModel.search(searchQuery, gender)
+        else viewModel.searchProducts(searchQuery, gender)
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -74,7 +79,7 @@ fun ShopScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text(if (tab == ShopTab.PRODUCTS) "상품 검색" else "스타일 검색 (예: 가을 코디)", color = MediumGray) },
+                placeholder = { Text(if (tab == ShopTab.PRODUCTS) "옷 상품 검색 (예: 셔츠, 청바지)" else "스타일 검색 (예: 가을 코디, 미니멀룩)", color = MediumGray) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MediumGray) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(12.dp),
@@ -124,6 +129,9 @@ fun ShopScreen(
         when (tab) {
             ShopTab.PRODUCTS -> ProductGrid(
                 query = searchQuery,
+                gender = gender,
+                online = viewModel.productState.collectAsState().value,
+                onOnlineClick = { keyword -> searchKeyword = keyword },
                 likedSet = likedSet,
                 onToggleLike = { ProductInterestStore.toggle(context, it) },
                 onOpen = { url ->
@@ -136,9 +144,9 @@ fun ShopScreen(
                 StyleResults(state = state, onClick = {
                     // 이미지 제목은 블로그·SNS 글 제목이라 쇼핑몰 검색어로 쓰면 결과가 안 나온다.
                     // 사용자가 입력한 검색어(없으면 "성별 데일리룩")로 비슷한 상품을 찾게 한다.
-                    searchKeyword = searchQuery.trim().ifBlank {
-                        listOfNotNull(gender?.label, "데일리룩").joinToString(" ")
-                    }
+                    // 옷과 관련 없는 단어로 쇼핑몰을 검색하지 않도록, 실제로 검색한 패션 검색어를 쓴다
+                    searchKeyword = (state as? ShopUiState.Success)?.keyword?.ifBlank { null }
+                        ?: listOfNotNull(gender?.label, "데일리룩").joinToString(" ")
                 })
             }
         }
@@ -153,16 +161,25 @@ fun ShopScreen(
 @Composable
 private fun ProductGrid(
     query: String,
+    gender: Gender?,
+    online: ShopUiState,
+    onOnlineClick: (keyword: String) -> Unit,
     likedSet: List<String>,
     onToggleLike: (String) -> Unit,
     onOpen: (purchaseUrl: String) -> Unit
 ) {
+    // 옷과 관련 없는 검색어 → 상품 대신 안내
+    if (online is ShopUiState.NotFashion) {
+        SearchHint(online.message)
+        return
+    }
     val products = ShopCatalog.products
-    val filteredProducts = remember(query) {
-        if (query.isBlank()) products
-        else products.filter {
-            it.name.contains(query, ignoreCase = true) || it.brand.contains(query, ignoreCase = true)
-        }
+    val filteredProducts = remember(query, gender) {
+        products
+            // 남성이면 원피스 · 치마 · 블라우스 같은 여성 전용 상품은 추천하지 않는다
+            .filter { GenderFit.allowsTitle(it.name, gender) && !(gender == Gender.MALE &&
+                GenderFit.isWomenOnly(it.category, it.subCategory, it.detailType, it.name)) }
+            .filter { FashionQuery.matchesProduct(it, query) }
     }
     val displayProducts = filteredProducts.sortedBy { product ->
         val favIndex = likedSet.indexOf(product.id)
@@ -239,6 +256,50 @@ private fun ProductGrid(
                 }
             }
         }
+
+        // 온라인 쇼핑몰에서 찾은 같은 종류의 옷 (검색어가 옷 상품일 때만)
+        when (online) {
+            is ShopUiState.Loading -> item(span = { GridItemSpan(maxLineSpan) }) {
+                Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Camel)
+                }
+            }
+            is ShopUiState.Success -> {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (displayProducts.isEmpty()) {
+                            Text("추천 상품 중에는 \"${query.trim()}\"이(가) 없어요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                        }
+                        Text("온라인 쇼핑몰의 \"${query.trim()}\"", style = MaterialTheme.typography.titleSmall,
+                            color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                        Text("옷 상품만 모았어요 · 누르면 쇼핑몰에서 바로 검색해요", style = MaterialTheme.typography.labelSmall, color = MediumGray)
+                    }
+                }
+                if (online.results.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text("검색된 옷 상품이 없어요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                }
+                items(online.results) { result ->
+                    ImageResultCard(result = result, onClick = { onOnlineClick(online.keyword) })
+                }
+            }
+            is ShopUiState.Error -> if (displayProducts.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("온라인 상품을 불러오지 못했어요. ${online.message}", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            }
+            else -> if (displayProducts.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+                Text("검색 결과가 없어요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            }
+        }
+    }
+}
+
+/** 옷과 관련 없는 검색어일 때 안내 */
+@Composable
+private fun SearchHint(message: String) {
+    Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Filled.Checkroom, contentDescription = null, tint = Camel, modifier = Modifier.size(44.dp))
+            Text(message, style = MaterialTheme.typography.bodyMedium, color = MediumGray, textAlign = TextAlign.Center)
+        }
     }
 }
 
@@ -246,7 +307,8 @@ private fun ProductGrid(
 @Composable
 private fun StyleResults(state: ShopUiState, onClick: () -> Unit) {
     when (state) {
-        is ShopUiState.Loading -> {
+        is ShopUiState.NotFashion -> SearchHint(state.message)
+        is ShopUiState.Loading, is ShopUiState.Idle -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Camel)
             }
@@ -264,9 +326,7 @@ private fun StyleResults(state: ShopUiState, onClick: () -> Unit) {
         }
         is ShopUiState.Success -> {
             if (state.results.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("검색 결과가 없어요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
-                }
+                SearchHint("옷 스타일과 관련된 결과가 없어요.\n다른 검색어로 찾아 보세요 (예: 가을 코디, 미니멀룩)")
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),

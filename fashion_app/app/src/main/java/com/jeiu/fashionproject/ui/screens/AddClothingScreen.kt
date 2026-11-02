@@ -33,7 +33,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.ClothingCategories
-import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
 import com.jeiu.fashionproject.recommend.StyleTagger
 import com.jeiu.fashionproject.ui.theme.*
@@ -341,7 +340,7 @@ fun AddClothingScreen(
                     // 스타일 (옷 종류·색으로 자동, 수정 가능) — 코디 추천에 쓰인다
                     Label("스타일")
                     ChipRow {
-                        StylePreferenceStore.styles.forEach { style ->
+                        StyleTagger.STYLES.forEach { style ->
                             FilterChip(
                                 selected = (styleOverride ?: autoStyle) == style,
                                 // 자동으로 골라진 스타일을 다시 누르면 자동으로 되돌린다

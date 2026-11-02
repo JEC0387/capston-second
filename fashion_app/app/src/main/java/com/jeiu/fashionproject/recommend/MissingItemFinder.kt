@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.recommend
 
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.BasicItems
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WearDates
@@ -43,13 +44,15 @@ object MissingItemFinder {
         val season: String
     )
 
-    fun analyze(wardrobe: List<WardrobeItem>, today: String = WearDates.today()): Report {
+    fun analyze(allItems: List<WardrobeItem>, today: String = WearDates.today(), gender: Gender? = null): Report {
+        // 성별에 맞지 않는 옷(남성: 원피스 · 치마 등)은 코디 계산과 구매 후보에서 뺀다
+        val wardrobe = GenderFit.filter(allItems, gender)
         val conditions = OutfitEngine.seasonConditions(today)
         val good = goodOutfits(wardrobe, conditions, null, today)
         val baseLooks = good.map { lookKey(it) }.toSet()
         // 신발 · 아우터를 이미 갖고 있는지 (계절에 맞는 것)
         val owned = setOf("신발", "아우터").filter { cat -> wardrobe.any { it.category == cat && WeatherRules.allows(it, conditions) } }
-        val candidates = candidatesFor(wardrobe, conditions)
+        val candidates = candidatesFor(wardrobe, conditions, gender)
 
         // ① 후보를 하나씩 넣어 보고, 새로 생기는 좋은 코디(상의+하의 짝 기준)를 센다
         val added: Map<WardrobeItem, List<OutfitEngine.Outfit>> = candidates.associateWith { c ->
@@ -79,7 +82,7 @@ object MissingItemFinder {
 
         // ③ 상황별 부족 아이템 — 그 상황 코디를 하나도 못 만들면(상황별 탭의 "옷이 부족해요"와 같은 기준),
         //    코디가 생길 때까지 후보를 하나씩 더해 본다
-        val situationNeeds = Situation.entries.mapNotNull { s -> situationNeed(wardrobe, s, today) }
+        val situationNeeds = Situation.entries.mapNotNull { s -> situationNeed(wardrobe, s, today, gender) }
 
         return Report(baseLooks.size, suggestions, orphans, situationNeeds, conditions.season)
     }
@@ -88,13 +91,16 @@ object MissingItemFinder {
      * 이 상황 코디를 하나도 못 만들 때, 무엇을 사면 되는지 (만들 수 있으면 null).
      * 코디가 생길 때까지 후보를 하나씩(최대 3개) 더해 본다. 상황별 탭의 "옷이 부족해요" 카드에서도 쓴다.
      */
-    fun situationNeed(wardrobe: List<WardrobeItem>, situation: Situation, today: String = WearDates.today()): SituationNeed? {
+    fun situationNeed(
+        allItems: List<WardrobeItem>, situation: Situation, today: String = WearDates.today(), gender: Gender? = null
+    ): SituationNeed? {
+        val wardrobe = GenderFit.filter(allItems, gender)
         val conditions = OutfitEngine.seasonConditions(today)
         if (OutfitEngine.scoreAll(wardrobe, conditions, situation, today).isNotEmpty()) return null
         val chosen = mutableListOf<WardrobeItem>()
         var count = 0
         while (chosen.size < MAX_SITUATION_ITEMS && count == 0) {
-            val pool = candidatesFor(wardrobe + chosen, conditions).filter { SituationRules.allows(it, situation) }
+            val pool = candidatesFor(wardrobe + chosen, conditions, gender).filter { SituationRules.allows(it, situation) }
             val (best, bestCount) = pool
                 .map { c -> c to OutfitEngine.scoreAll(wardrobe + chosen + c, conditions, situation, today).size }
                 // 아직 0개면 상의·하의·신발 중 더 많이 채우는 후보를 먼저
@@ -119,10 +125,12 @@ object MissingItemFinder {
      * 지금 계절에 입을 수 있는 후보 중, 옷장에 이미 비슷한 옷(같은 종류 · 같은 색)이 없는 것.
      * (예: 블랙 슬랙스가 있으면 블랙 슬랙스는 후보에서 뺀다)
      */
-    private fun candidatesFor(wardrobe: List<WardrobeItem>, conditions: WeatherRules.Conditions): List<WardrobeItem> {
+    private fun candidatesFor(
+        wardrobe: List<WardrobeItem>, conditions: WeatherRules.Conditions, gender: Gender? = null
+    ): List<WardrobeItem> {
         val owned = wardrobe.map { SituationRules.kindOf(it) to it.colorName }.toSet()
         return BasicItems.all.filter { c ->
-            WeatherRules.allows(c, conditions) &&
+            GenderFit.allows(c, gender) && WeatherRules.allows(c, conditions) &&
                 (SituationRules.kindOf(c) to c.colorName) !in owned &&
                 wardrobe.none { it.id == c.id }
         }

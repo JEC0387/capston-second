@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.recommend
 
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.TasteScores
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WeatherInfo
@@ -67,7 +68,8 @@ object OutfitEngine {
         needOuter: Boolean = false,  // 일교차가 큰 날처럼 낮 기온과 상관없이 겉옷을 더해야 할 때
         taste: TasteScores = TasteScores(),  // 색 · 종류 · 조합 방식 취향 (4단계)
         bodyProfile: BodyProfile? = null,
-        preferred: List<String> = emptyList()  // 선호 스타일 (캐주얼 · 댄디 · 포멀 …, PreferredStyles)
+        preferred: List<String> = emptyList(),  // 선호 스타일 (캐주얼 · 댄디 · 포멀 …, PreferredStyles)
+        gender: Gender? = null                  // 마이페이지 성별 — 남성이면 원피스 · 치마 등은 추천하지 않는다 (GenderFit)
     ): Result {
         val conditions = WeatherRules.Conditions(
             temp = weather?.temp,
@@ -76,7 +78,7 @@ object OutfitEngine {
         )
 
         // 옷장에 (이 상황에 맞는) 옷이 아예 없는 종류가 있으면 안내
-        val forSituation = items.filter { SituationRules.allows(it, situation) }
+        val forSituation = GenderFit.filter(items, gender).filter { SituationRules.allows(it, situation) }
         missingCategories(forSituation).takeIf { it.isNotEmpty() }?.let { missing ->
             return Result.NotEnough(
                 if (situation == null) "코디를 만들려면 ${amountText(missing)} 필요해요"
@@ -246,11 +248,12 @@ object OutfitEngine {
         if (styles.count { it == style } >= all.size - 1 && all.size >= 3) score += STYLE_UNITY_SCORE
         if ("클래식" in styles && "스트릿" in styles) score += STYLE_CLASH_SCORE
 
-        // 내 취향 (취향 카드·코디 👍👎로 쌓인 스타일 점수) — 옷마다 스타일 점수를 매겨 평균
-        val maxTaste = styleScores.values.maxOfOrNull { abs(it) } ?: 0
+        // 내 취향 (스타일 취향 학습 카드 · 코디 👍👎로 쌓인 8가지 스타일 점수)
+        // 옷마다 그 옷이 맞는 스타일의 점수를 보고 평균 — 좋아한 스타일 옷이 많으면 +, 싫어한 스타일이면 −
         val tasteWeight = situation?.let { SituationRules.rule(it).tasteMultiplier } ?: 1.0
-        val styleTaste = if (maxTaste > 0) tasteWeight * TASTE_MAX_SCORE * styles.map { styleScores[it] ?: 0 }.average() / maxTaste else 0.0
-        val favorite = styleScores.maxByOrNull { it.value }?.takeIf { it.value > 0 }?.key
+        val styleTaste = tasteWeight * TASTE_MAX_SCORE * PreferredStyles.learnedAffinity(all, styleScores)
+        val favorite = PreferredStyles.canonicalScores(styleScores).maxByOrNull { it.value }?.takeIf { it.value > 0 }?.key
+            ?.takeIf { f -> all.count { PreferredStyles.matches(it, f) } * 2 >= all.size }
         score += styleTaste
 
         // 선호 스타일 — 코디 옷 중 고른 스타일에 맞는 옷이 많을수록 가산 (상황별 코디에서는 상황 규칙을 우선해 약하게)
@@ -280,7 +283,8 @@ object OutfitEngine {
                 likedColor?.let { add("좋아하는 $it 색이 들어 있어요") }
                 likedKind?.let { add("자주 고르는 ${josa(it, "이에요", "예요")}") }
             }
-            if (style == favorite && styleTaste >= TASTE_MAX_SCORE * 0.3) add("평소 좋아하는 $style 스타일이에요")
+            if (favorite != null && favorite != pref.style && styleTaste >= TASTE_MAX_SCORE * 0.3)
+                add("취향 학습에서 좋아한 $favorite 스타일이에요")
             unwornPick?.let { (item, days) ->
                 val period = if (days >= 60) "${days / 30}개월째" else "${days}일째"
                 add("$period 안 입은 ${josa(item.name, "을", "를")} 꺼내 봤어요")

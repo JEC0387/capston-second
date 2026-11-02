@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import com.jeiu.fashionproject.data.TryOnGarment
 import com.jeiu.fashionproject.data.TryOnRepository
+import com.jeiu.fashionproject.data.TryOnPipeline
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -206,7 +207,8 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
             return
         }
         scope.launch {
-            val uri = fittingUri(item)
+            // 통일 사진(정사각 캔버스 · 그림자)은 여백 없이 옷만 잘라 써야 관절 위치에 크기가 맞는다
+            val uri = TryOnPipeline.tightGarmentUri(context, fittingUri(item))
             val aspect = FittingPoseDetector.imageSize(context, uri)?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
             val p = fit(slot, item, aspect, canvasSize, body)
             worn[slot] = WornGarment(item, uri, aspect, p.center, p.width, rotation = p.rotation)
@@ -270,8 +272,9 @@ fun VirtualFittingScreen(onBack: () -> Unit) {
                 else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
                 color = Brown, style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = {
+                // 배경을 지운 옷 사진(옷만 → 배경 제거)을 flat-lay로 보낸다 — 배경 있는 원본보다 훨씬 자연스럽다
                 aiSelection = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
-                    g.item.originalUri ?: g.item.imageUri) }
+                    fittingUri(g.item), flatLay = hasCutout(g.item)) }
                 showAi = true
             }, contentPadding = PaddingValues(vertical = 2.dp)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))

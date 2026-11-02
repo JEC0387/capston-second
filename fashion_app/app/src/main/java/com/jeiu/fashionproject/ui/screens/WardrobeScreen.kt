@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.ui.screens
 
+import com.jeiu.fashionproject.data.Gender
 import android.net.Uri
 import android.content.Intent
 import coil.compose.AsyncImage
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -48,6 +50,8 @@ import com.jeiu.fashionproject.ui.viewmodel.WearAnalyzer
 import com.jeiu.fashionproject.ui.theme.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import com.jeiu.fashionproject.ui.viewmodel.ClosetPhotoUnifier
 
 @Composable
 fun WardrobeScreen(
@@ -60,7 +64,8 @@ fun WardrobeScreen(
     onWearCalendar: () -> Unit = {},     // 착용 기록 달력
     onEditClothing: (id: String) -> Unit = {},  // 옷 정보 수정
     onMissingItem: () -> Unit = {},             // "이것만 사면" 화면
-    onMusinsaCloset: () -> Unit = {}            // 무신사 랭킹 옷장 (성별 맞춤 데모 옷 · 가상 피팅)
+    onMusinsaCloset: () -> Unit = {},           // 무신사 랭킹 옷장 (성별 맞춤 데모 옷 · 가상 피팅)
+    gender: Gender? = null                      // 마이페이지 성별 — "이것만 사면" 추천에 반영
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     LaunchedEffect(Unit) {
@@ -80,6 +85,10 @@ fun WardrobeScreen(
     var detailItemId by remember { mutableStateOf<String?>(null) }   // 상세 창에 보여줄 옷
 
     var showAddDialog by remember { mutableStateOf(false) }
+    // 사진 정리 — 옷 사진을 같은 크기 · 배경 없음 · 같은 그림자로 맞추기
+    val unifyScope = rememberCoroutineScope()
+    var showUnifyDialog by remember { mutableStateOf(false) }
+    var unifyProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     var newItemName by remember { mutableStateOf("") }
     var newItemCategory by remember { mutableStateOf("상의") }
@@ -97,8 +106,41 @@ fun WardrobeScreen(
     val gridState = rememberLazyListState()
     val unworn = remember(allDisplayed, logs) { WearAnalyzer.unworn(allDisplayed, logs) }
     var missingReport by remember { mutableStateOf<MissingItemFinder.Report?>(null) }
-    LaunchedEffect(allDisplayed) {
-        missingReport = withContext(Dispatchers.Default) { MissingItemFinder.analyze(allDisplayed) }
+    LaunchedEffect(allDisplayed, gender) {
+        missingReport = withContext(Dispatchers.Default) { MissingItemFinder.analyze(allDisplayed, gender = gender) }
+    }
+
+    if (showUnifyDialog) {
+        val targets = allDisplayed.filter { ClosetPhotoUnifier.needs(it) }
+        AlertDialog(
+            onDismissRequest = { showUnifyDialog = false },
+            title = { Text("옷 사진 정리", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    if (targets.isEmpty()) "모든 옷 사진이 이미 같은 모양으로 정리돼 있어요."
+                    else "옷 ${targets.size}벌의 사진을 배경 없이 같은 크기 · 같은 그림자로 맞춰요.\n" +
+                        "배경이 있는 사진은 배경을 지우고, 원본 사진은 옷 정보 수정에서 다시 고를 수 있어요."
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = targets.isNotEmpty(), onClick = {
+                    showUnifyDialog = false
+                    unifyProgress = 0 to targets.size
+                    unifyScope.launch {
+                        var changed = 0
+                        targets.forEachIndexed { i, item ->
+                            ClosetPhotoUnifier.unify(context, item)?.let { WardrobeStore.update(context, it); changed++ }
+                            unifyProgress = (i + 1) to targets.size
+                        }
+                        unifyProgress = null
+                        android.widget.Toast.makeText(context,
+                            if (changed > 0) "옷 ${changed}벌의 사진을 정리했어요" else "배경을 지울 수 있는 사진이 없었어요",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("정리하기", color = Camel, fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { showUnifyDialog = false }) { Text("취소", color = MediumGray) } }
+        )
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
@@ -113,6 +155,10 @@ fun WardrobeScreen(
                 Text("${OutfitSources.entries(allDisplayed, interested, selectedScope).size}개", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { if (unifyProgress == null) showUnifyDialog = true }) {
+                    if (unifyProgress != null) CircularProgressIndicator(Modifier.size(20.dp), color = Camel, strokeWidth = 2.dp)
+                    else Icon(Icons.Filled.AutoFixHigh, contentDescription = "옷 사진 정리", tint = Brown)
+                }
                 IconButton(onClick = onWearCalendar) {
                     Icon(Icons.Filled.CalendarMonth, contentDescription = "착용 기록 달력", tint = Brown)
                 }
@@ -126,6 +172,16 @@ fun WardrobeScreen(
                     Text("오늘 입은 옷", style = MaterialTheme.typography.labelLarge)
                 }
             }
+        }
+
+        unifyProgress?.let { (done, total) ->
+            LinearProgressIndicator(
+                progress = { if (total == 0) 0f else done / total.toFloat() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                color = Camel, trackColor = LightGray
+            )
+            Text("옷 사진 정리 중… $done / $total", style = MaterialTheme.typography.labelSmall, color = MediumGray,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         }
 
         WardrobeContentGrid(

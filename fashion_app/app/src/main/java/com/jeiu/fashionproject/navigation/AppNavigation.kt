@@ -165,7 +165,8 @@ fun AppNavigation() {
                     onWearLog = { navController.navigate(Screen.WearLog.route()) },
                     onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
                     onMissingItem = { navController.navigate(Screen.MissingItem.route) },
-                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) }
+                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) },
+                    gender = gender
                 )
             }
             composable(Screen.MusinsaCloset.route) {
@@ -205,10 +206,10 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.MissingItem.route) {
-                MissingItemScreen(onBack = { navController.popBackStack() })
+                MissingItemScreen(onBack = { navController.popBackStack() }, gender = gender)
             }
             composable(Screen.StylePreference.route) {
-                StylePreferenceScreen(onBack = { navController.popBackStack() })
+                StylePreferenceScreen(onBack = { navController.popBackStack() }, gender = gender)
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
@@ -232,7 +233,8 @@ fun AppNavigation() {
                     onShop = { navController.navigate(Screen.Shop.route) },
                     onBack = { navController.popBackStack() },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
-                    weatherViewModel = weatherViewModel
+                    weatherViewModel = weatherViewModel,
+                    gender = gender
                 )
             }
             composable(Screen.BodyAnalysis.route) {

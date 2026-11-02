@@ -48,7 +48,8 @@ sealed class AddClothingUiState {
         val colors: Map<ImageMode, ColorTag>,      // 사진 종류별 대표 색
         val defaultMode: ImageMode,                // 처음 보여줄 사진 종류
         val garmentLoading: Boolean = false,
-        val analyzed: Boolean = true               // 수정 화면처럼 분석 없이 저장된 정보를 불러왔으면 false
+        val analyzed: Boolean = true,              // 수정 화면처럼 분석 없이 저장된 정보를 불러왔으면 false
+        val maskBasePath: String? = null           // 서버 옷 윤곽 마스크를 씌울 기준 이미지 (서버에 보낸 사진과 같은 비율, 캐시)
     ) : AddClothingUiState() {
         val selectedCandidate: ClothingCandidate? get() = candidates.getOrNull(selected)
         fun uriFor(mode: ImageMode): String? = when (mode) {
@@ -107,7 +108,8 @@ class AddClothingViewModel : ViewModel() {
             cutoutUri = cut.cutoutPath?.let(::fileUri),
             garmentUri = null,
             colors = colors,
-            defaultMode = if (cut.cutoutPath != null) ImageMode.CUTOUT else ImageMode.ORIGINAL
+            defaultMode = if (cut.cutoutPath != null) ImageMode.CUTOUT else ImageMode.ORIGINAL,
+            maskBasePath = cut.maskBasePath
         )
         _state.value = tagged
         // ④ 첫 번째 후보만 오려내기
@@ -126,8 +128,8 @@ class AddClothingViewModel : ViewModel() {
             defaultMode = baseMode, garmentLoading = candidate.maskPngBase64 != null
         )
         val mask = candidate.maskPngBase64 ?: return
-        // 서버에 보낸 사진과 같은 비율의 이미지(누끼, 없으면 원본) 위에 마스크를 씌운다
-        val basePath = pathOf(s.cutoutUri ?: s.originalUri) ?: return
+        // 서버에 보낸 사진과 같은 비율의 이미지(자른 누끼, 없으면 원본) 위에 마스크를 씌운다
+        val basePath = s.maskBasePath ?: pathOf(s.originalUri) ?: return
 
         garmentJob = viewModelScope.launch {
             val garment = runCatching { BackgroundRemover.cutGarment(context, basePath, mask) }.getOrNull()
@@ -181,6 +183,7 @@ class AddClothingViewModel : ViewModel() {
                 price = price
             )
         )
+        deleteMaskBase(s)
         _state.value = AddClothingUiState.Idle
     }
 
@@ -266,8 +269,14 @@ class AddClothingViewModel : ViewModel() {
 
     private var appContext: Context? = null
 
-    /** 화면이 사라질 때 임시 파일 정리를 위해 앱 Context를 기억해 둔다. */
-    fun attach(context: Context) { appContext = context.applicationContext }
+    /**
+     * 화면이 사라질 때 임시 파일 정리를 위해 앱 Context를 기억해 둔다.
+     * 처음 열 때 ML Kit 누끼 모델을 미리 내려받아 두어, 사진을 고르자마자 배경이 지워지게 한다.
+     */
+    fun attach(context: Context) {
+        if (appContext == null) viewModelScope.launch { BackgroundRemover.prepare(context.applicationContext) }
+        appContext = context.applicationContext
+    }
 
     override fun onCleared() {
         appContext?.let { discardFiles(it) }
@@ -276,6 +285,13 @@ class AddClothingViewModel : ViewModel() {
     private fun discardFiles(context: Context) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         listOfNotNull(s.originalUri, s.cutoutUri, s.garmentUri).forEach { deleteIfTemp(context, it) }
+        deleteMaskBase(s)
+    }
+
+    /** 캐시에 둔 마스크 기준 이미지는 저장 · 취소 뒤 지운다 (원본 사본과 같은 파일이면 그대로) */
+    private fun deleteMaskBase(s: AddClothingUiState.Tagged) {
+        val base = s.maskBasePath ?: return
+        if (base != pathOf(s.originalUri)) File(base).delete()
     }
 
     /** 이번 등록/수정 중에 만든 파일만 지운다 (수정 중인 옷에 저장된 사진은 지키기) */
