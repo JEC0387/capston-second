@@ -118,3 +118,95 @@ Preview는 개인 API를 차단하는 배포 변형이므로 원래의 주 패�
 두 번째 실행에서는 Preview 격리와 패키지별 사진/화면/보존 동작을 검증한다. 기존 검사를 삭제하거나 무시하지 않는다.
 
 로컬 Preview 별도 검사도 **43개 / 8개 클래스, 실패·오류·건너뜀 0** 및 Preview APK 빌드 성공.
+
+## 사용자 업데이트 절차 — 앱 삭제/초기화 없음
+
+1. 마지막 CI 확정 절에 링크한 **성공 실행의 Preview APK** ZIP을 받는다. 로컬 code 4 검증 APK나 주 패키지 APK를 사용하지 않는다.
+2. 압축 안 APK·BUILD_INFO.json/txt·SHA256SUMS.txt를 함께 보관한다. Windows에서는
+   `Get-FileHash .\실제파일명.apk -Algorithm SHA256`을 동봉된 APK 체크섬과 비교한다.
+3. package=`com.jeiu.fashionproject.preview`, code>11201, 서명 지문=`f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`,
+   sourceDirty=false, Git SHA가 최종 실행 코드와 일치하는지 확인한다.
+4. 기기에서 APK를 열어 **업데이트**하거나 확인한 APK에만 `adb install -r 실제파일명.apk`를 사용한다.
+   이번 세션에서는 이 설치 명령을 실행하지 않았다. `-r`은 정상 데이터 유지 업데이트 옵션이다.
+5. 서명/버전 불일치가 나오면 중단한다. 앱 삭제·데이터 초기화·강제 다운그레이드로 우회하지 않는다.
+6. 업데이트 후 마이페이지의 패키지/버전/code/Git SHA를 대조하고, 기존 옷·사진·즐겨찾기·착용/코디 기록을 확인한다.
+   기존 개인 옷장이 있으면 샘플 버튼 테스트를 위해 비우지 않는다. 빈 옷장 조건의 검사는 별도 시험 환경에서 진행한다.
+7. 체형 선택 화면의 사진 분석과 3D 설정, 뒤로 이동, 기존 촬영/갤러리 동의, 모델 조작, 수동 피팅과 추천을 확인한다.
+8. Preview의 개인 API 차단 표시를 유지하고 기존 운영 계정 복구 코드를 입력하지 않는다. 유료 AI 생성은 별도 승인 전 실행하지 않는다.
+
+패키지·공개 인증서·버전의 일치는 정상 업데이트의 사전 조건이다. 실제 S25+의 설치·데이터 유지 결과를
+대신 증명하지 않는다. 실기기 결과를 다음 세션에 기록하되 사용자 사진·토큰·원본 JSON은 공개 로그에 올리지 않는다.
+아티팩트가 만료되면 최신 브랜치에서 새 workflow 실행으로 버전을 발급한다. 오래된 실행 재시도는
+다른 브랜치/최신 배포보다 낮은 code가 되어 배포 안전 검사에서 거절될 수 있다.
+
+## 최종 원격 검증 확정 — 2026-11-02 13:55 KST
+
+- APK 실행 코드 Commit: **`f4f72c7938be77180da0bbdaaea9bf0ca1b09078`**.
+- [작업 브랜치](https://github.com/jimnnieo-svg/capstone-integration-backup/tree/codex/fashionai-p0-wardrobe-20261102): `codex/fashionai-p0-wardrobe-20261102`.
+- [최종 Actions 41389809309](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41389809309):
+  **completed / success, 7개 작업 전부 성공**. 주 패키지 빌드/테스트, 기기 테스트 Kotlin 컴파일,
+  Lint, Preview 빌드/테스트, 서명·버전 검증, 게시 및 후처리까지 성공했다.
+- 원격 테스트·Lint ZIP을 다운로드해 XML을 직접 집계했다.
+  - 전체 주 패키지: **303개 / 43개 클래스**, 실패·오류·건너뜀 0.
+  - 별도 Preview: **43개 / 8개 클래스**, 실패·오류·건너뜀 0. 전체 결과를 별도 보존했으며 두 결과를 합쳐 고유 테스트 수로 보고하지 않는다.
+  - 원격 Lint: Fatal/Error 0, Warning **165**, Hint 2. 로컬 152개와 차이 13개는
+    `AndroidGradlePluginVersion` 2개와 `GradleDependency` 11개 분류의 개수 차이로 확인했다.
+    버전 알림을 해결하거나 의존성을 교체하지 않았다. `Aligned16KB` 등 기존 잔여 경고의 실제 기기 영향은 미검증이다.
+- 백엔드 로그: **105 passed, 8 subtests passed, 7 warnings**. 배포 안전성 도구 **3개 통과**.
+- 서버 기동: Linux Python 3.12, Windows Python 3.11/3.12/3.13/3.14 전부 성공.
+  DB 없는 기동과 접속 불가능한 시험 DB 주소를 확인한 것이며 운영 DB에 연결하지 않았다.
+
+### 게시된 Preview APK
+
+- [Preview APK 다운로드](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41389809309/artifacts/13117431112)
+  - artifact: `fashionai-preview-apk-vc12301-f4f72c7938be77180da0bbdaaea9bf0ca1b09078`
+  - 파일: **`fashionai-1.1.23.1-preview-vc12301-f4f72c79.apk`**
+  - artifact ID `13117431112`, zip 170,059,137 bytes, **2026-12-02 13:53 KST 만료 예정**.
+- [BUILD_INFO·체크섬 별도 다운로드](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41389809309/artifacts/13117585869)
+  - artifact ID `13117585869`, Preview 정보는 `apk-artifact/` 경로.
+- [전체·Preview 테스트와 Lint 보고서](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41389809309/artifacts/13117471131)
+  - artifact ID `13117471131`, 전체 결과는 `fashion_app/build/primary-test-results/`,
+    Preview는 `fashion_app/app/build/test-results/testDebugUnitTest/` 경로.
+- 비공개 저장소이므로 권한이 있는 GitHub 계정으로 다운로드한다.
+
+### 실제 APK 검사와 BUILD_INFO 대조
+
+실제 APK의 `aapt` manifest/`apksigner verify`·공개 인증서·내장 identity 검사와 APK SHA 계산은
+**CI에서 실행**했다. 이 환경은 APK 직접 다운로드 경로가 제한돼 대용량 APK를 로컬에서 다시
+검사하지는 않았다. 별도 metadata/test ZIP은 내려받아 직접 분석했으며 CI APK 검사 출력과
+Preview BUILD_INFO.json/txt/SHA256SUMS의 정확한 일치를 확인했다.
+
+| 항목 | 기존 11201 배포 APK 검증 기록 | 새 게시 APK |
+|---|---|---|
+| Package | `com.jeiu.fashionproject.preview` | 동일 |
+| Version | `1.1.12.1-preview` | **`1.1.23.1-preview`** |
+| Version Code | 11201 | **12301**, 증가 |
+| 인증서 SHA-256 | `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9` | 동일 |
+| Git SHA | `041d4f811005de77b645d0bd0ac32dc30ec8325f` | `f4f72c7938be77180da0bbdaaea9bf0ca1b09078` |
+| Dirty / Distribution verified | false / true | false / true |
+
+새 **APK 파일** SHA-256:
+`33e26b34086d55512853f167e458554b77681ed355900b8357e33f557ac0befe`
+
+위 값은 GitHub artifact zip digest와 다르다. BUILD_INFO는 APK의 실제 manifest와 내장
+`assets/build_identity.json`, checkout SHA/브랜치/버전, 신뢰 서명 지문을 검사한 결과다.
+기존 `tools/check_apk_update.py`의 compatibility 함수로 위 두 배포 메타데이터를 비교해
+**COMPATIBLE: package, signer and version pass**를 확인했다.
+현재 S25+ APK를 직접 읽거나 설치하지는 않았으므로 실제 설치·데이터 유지 성공으로 보고하지 않는다.
+
+서명 비밀번호·키 파일이 APK에 들어가지 않았는지 기존 게시 검사도 성공했다. 변경 9개 경로의
+민감 파일/빌드 산출물 검사, 추가 내용의 고신뢰 비밀 패턴 검사, `git diff --check`도 통과했다.
+기존 workflow의 localhost 시험용 DB 자격정보는 변경하지 않았고 운영 비밀번호/API 키는 추가하지 않았다.
+키스토어/사용자 사진/원본 사용자 데이터/APK를 Git에 넣지 않았다.
+
+### 최종 보존 및 다음 시작 지점
+
+- 기준 브랜치 `codex/apk-update-diagnostics-20261026`은 `d7d8612328f807382d682ee23038149f8d74b057`,
+  P2/P6 `codex/p2-p3-core-upgrade-20261025`는 `ff58d48165bd25020dd941ddce467a1b677865f0`,
+  기존 백업/P0·P1 브랜치도 원격 조회로 그대로임을 확인했다.
+- 팀 저장소 수정, 사용자 데이터 삭제/초기화/강제 덮어쓰기, 서명키 교체, 운영 설정/DB 변경,
+  유료 API, Merge, Force Push는 수행하지 않았다.
+- 남은 단계는 위 사용자 업데이트 절차에 따른 **실제 S25+ 업데이트·데이터 유지·사진/3D/피팅/추천 수동 검증**이다.
+  손상 JSON의 일반 복구 도구, 16KB/사진 권한/수명주기 경고 점검은 별도 후속 작업이다.
+- 이 절을 확정하는 후속 커밋은 **문서만** 변경한다. 최신 브랜치 HEAD와 검증된 APK 코드 SHA를
+  구분하고, 문서 자체의 확정 커밋은 `git log -1 --format=%H -- docs/PREVIEW_BUILD_FIX_HANDOFF_20261102.md`로 확인한다.
