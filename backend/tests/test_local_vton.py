@@ -13,7 +13,8 @@ def inputs(tmp_path: Path):
     weights = tmp_path / "private-weights"
     (weights / "dwpose").mkdir(parents=True)
     (weights / "model.safetensors").write_bytes(b"fixture; not a real model")
-    (weights / "dwpose" / "detector.onnx").write_bytes(b"fixture")
+    (weights / "dwpose" / "yolox_l.onnx").write_bytes(b"fixture")
+    (weights / "dwpose" / "dw-ll_ucoco_384.onnx").write_bytes(b"fixture")
     person = tmp_path / "person.png"
     garment = tmp_path / "garment.jpg"
     Image.new("RGBA", (500, 850), (20, 120, 200, 0)).save(person)
