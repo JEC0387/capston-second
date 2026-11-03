@@ -305,6 +305,59 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         worn[slot] = g.copy(center = p.center, baseWidth = p.width, rotation = p.rotation, scale = 1f)
     }
 
+    // A successful tap must either change placement or explain why it cannot.
+    // Never silently fall back to centre-of-screen coordinates when ML Kit did not
+    // find the landmarks needed for the selected garment.
+    fun autoFitNow() {
+        if (worn.isEmpty()) {
+            inputNotice = "먼저 아래 옷장에서 입어볼 의류를 선택해주세요."
+            return
+        }
+        if (canvasSize.width <= 0f || canvasSize.height <= 0f) {
+            inputNotice = "피팅 화면을 준비 중이에요. 화면이 표시된 뒤 다시 눌러주세요."
+            return
+        }
+        if (avatarMode) {
+            if (avatarProfile == null) {
+                inputNotice = "먼저 3D 체형 설정을 저장해주세요."
+                return
+            }
+            avatarCameraReset++
+            worn.keys.toList().forEach { refit(it) }
+            inputNotice = "선택한 옷 ${worn.size}개를 3D 아바타의 정면 기준 위치와 크기로 다시 맞췄어요. 2D 의류 배치이며 실제 3D 의복 시뮬레이션은 아니에요."
+            return
+        }
+        if (bodyPhoto == null) {
+            inputNotice = "먼저 전신 사진을 선택해주세요."
+            return
+        }
+        if (poseStatus == PoseStatus.LOADING) {
+            inputNotice = "사진에서 어깨·골반 위치를 찾고 있어요. 분석이 끝난 뒤 다시 눌러주세요."
+            return
+        }
+        val detected = body
+        if (detected == null) {
+            inputNotice = "사진의 자세를 인식하지 못해 자동핏을 적용하지 않았어요. 전신이 보이는 정면 사진으로 다시 시도하거나 옷을 손으로 배치해주세요."
+            return
+        }
+        val supported = worn.keys.filter { slot ->
+            when (slot) {
+                FitSlot.TOP, FitSlot.OUTER -> detected.shoulders != null
+                FitSlot.BOTTOM -> detected.hips != null
+                FitSlot.SHOES -> detected.ankles != null
+                FitSlot.ACCESSORY -> true
+            }
+        }
+        supported.forEach { refit(it) }
+        val skipped = worn.size - supported.size
+        inputNotice = if (supported.isEmpty()) {
+            "선택한 옷에 필요한 어깨·골반·발목 위치를 찾지 못했어요. 옷을 손으로 배치하거나 다시 촬영해주세요."
+        } else {
+            "사진 관절 기준으로 ${supported.size}개 의류의 위치와 크기를 다시 맞췄어요." +
+                if (skipped > 0) " 위치 검출이 부족한 ${skipped}개는 기존 배치를 유지했어요." else ""
+        }
+    }
+
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
         bodyPhoto = uri
@@ -406,10 +459,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         if (avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { avatarCameraReset++;worn.keys.toList().forEach { refit(it) } },
+                TextButton(onClick = { autoFitNow() },
                     enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
                     Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
-                    Text("마법봉 · 자동핏", color = Camel)
+                    Text("마법봉 · 옷 위치 자동맞춤", color = Camel)
                 }
                 TextButton(onClick = {
                     val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
@@ -428,10 +481,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
             }
         } else if (bodyPhoto != null) {
-            TextButton(onClick = { worn.keys.toList().forEach { refit(it) } },
+            TextButton(onClick = { autoFitNow() },
                 enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
                 Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                Text("마법봉 · 자동핏", color = Camel)
+                Text("마법봉 · 옷 위치 자동맞춤", color = Camel)
             }
         }
 
@@ -455,7 +508,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (aiModel.state.pending) "진행 중인 AI 피팅 보기" else "마법봉 · AI로 입어보기", color = Camel)
+                Text(if (aiModel.state.pending) "진행 중인 AI 착장 보기" else "AI 착장 사진 생성 (서버 필요)", color = Camel)
             }
             inputNotice?.let { Text(it, color = Brown, modifier = Modifier.testTag("fittingInputNotice")) }
             if (!avatarMode && !compact && !TryOnRepository.isConfigured()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
