@@ -9,6 +9,11 @@ import kotlin.math.*
 object PremiumAvatarMesh {
     const val STRIDE=9
     const val MAX_FLOATS=3_000_000 // 12MB maximum output; ordinary profiles stay below the P9 6MB bound.
+    /** Derivative at the centre sample, including unequal distances to measurement rows.
+     * Weighted secants avoid cancellation of large quadratic-interpolation coefficients.
+     */
+    internal fun rowDerivative(previous:Float,center:Float,next:Float,left:Float,right:Float):Float =
+        ((center-previous)/left*right+(next-center)/right*left)/(left+right)
     data class Section(val y:Float,val a:Float,val b:Float)
     /** Monotone cubic interpolation preserves measured sections without shelves between them. */
     private data class Knot(val y:Float,val a:Float,val b:Float,val x:Float=0f,val z:Float=0f)
@@ -188,7 +193,11 @@ object PremiumAvatarMesh {
         for(y in 0..ny)for(z in 0..nz)for(x in 0..nx) {
             val i=index(x,y,z)
             gx[i]=(field[index(min(x+1,nx),y,z)]-field[index(max(x-1,0),y,z)])/(if(x==0||x==nx)step else 2*step)
-            gy[i]=(field[index(x,min(y+1,ny),z)]-field[index(x,max(y-1,0),z)])/(ys[min(y+1,ny)]-ys[max(y-1,0)])
+            gy[i]=when(y) {
+                0->(field[index(x,1,z)]-field[i])/(ys[1]-ys[0])
+                ny->(field[i]-field[index(x,ny-1,z)])/(ys[ny]-ys[ny-1])
+                else->rowDerivative(field[index(x,y-1,z)],field[i],field[index(x,y+1,z)],ys[y]-ys[y-1],ys[y+1]-ys[y])
+            }
             gz[i]=(field[index(x,y,min(z+1,nz))]-field[index(x,y,max(z-1,0))])/(if(z==0||z==nz)step else 2*step)
         }
         var output=FloatArray(300_000);var used=0

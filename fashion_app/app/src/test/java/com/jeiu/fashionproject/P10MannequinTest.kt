@@ -135,6 +135,11 @@ class P10MannequinTest {
             listOf("standard" to (170f to 65f),"slender" to (158f to 45f),"broad" to (185f to 105f),
                 "short" to (145f to 55f),"tall" to (198f to 90f),"minimum-height" to (100f to 25f),"maximum-height" to (230f to 300f))
                 .map {(name,hw)->name to AvatarCentimeters.generate(hw.first,hw.second,1)!!}+
+                listOf("wide-shoulders" to (AvatarPart.SHOULDER to 47f),
+                    "narrow-waist" to (AvatarPart.WAIST to 65f),
+                    "wide-hips" to (AvatarPart.HIP to 115f),
+                    "thick-thighs" to (AvatarPart.THIGH to 58f))
+                    .map {(name,edit)->name to requireNotNull(AvatarCentimeters.generate(170f,65f,1)!!.adjusted(edit.first,edit.second)) {"Invalid synthetic profile $name"}}+
                 listOf("adjusted" to AvatarCentimeters.generate(170f,65f,1)!!.let {base->
                     mapOf(AvatarPart.SHOULDER to 38f,AvatarPart.CHEST to 100f,AvatarPart.WAIST to 90f,AvatarPart.HIP to 110f,AvatarPart.THIGH to 58f)
                         .entries.fold(base) {b,(p,v)->b.adjusted(p,v)!!}})
