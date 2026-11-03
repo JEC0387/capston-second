@@ -31,8 +31,9 @@ fun CmRuler(value:Float,range:ClosedFloatingPointRange<Float>,label:String,onVal
     val paint=remember(textSize){Paint(Paint.ANTI_ALIAS_FLAG).apply {color=Brown.toArgb();this.textSize=textSize;textAlign=Paint.Align.CENTER}}
     val current by rememberUpdatedState(value)
     val update by rememberUpdatedState(onValueChange)
-    var origin by remember {mutableFloatStateOf(value)}
-    var total by remember {mutableFloatStateOf(0f)}
+    // The valid range changes when a different body part is edited. Keep it live
+    // without restarting the pointer coroutine during an active ruler drag.
+    val activeRange by rememberUpdatedState(range)
     Column(modifier,verticalArrangement=Arrangement.spacedBy(4.dp)) {
         TextButton(onClick=onDirectInput,modifier=Modifier.align(Alignment.CenterHorizontally).testTag("rulerCurrentValue")) {
             Text(String.format(Locale.KOREA,"%.1f cm",value),style=MaterialTheme.typography.headlineMedium,color=Brown)
@@ -44,10 +45,17 @@ fun CmRuler(value:Float,range:ClosedFloatingPointRange<Float>,label:String,onVal
                 progressBarRangeInfo=ProgressBarRangeInfo(value,range,((range.endInclusive-range.start)*2).toInt().coerceAtLeast(1)-1)
                 setProgress {v->if(v.isFinite()) {update(CmRulerMath.drag(v,0f,pixelsPerCm,range));true} else false}
             }
-            .pointerInput(label,range,pixelsPerCm) {
-                detectHorizontalDragGestures(onDragStart={origin=current;total=0f},
-                    onHorizontalDrag={change,amount->change.consume();total+=amount
-                        update(CmRulerMath.drag(origin,total,pixelsPerCm,range))})
+            .pointerInput(label,pixelsPerCm) {
+                var dragStartCm=current
+                var dragDistancePx=0f
+                detectHorizontalDragGestures(
+                    onDragStart={ dragStartCm=current; dragDistancePx=0f },
+                    onHorizontalDrag={change,amount->
+                        change.consume()
+                        dragDistancePx+=amount
+                        update(CmRulerMath.drag(dragStartCm,dragDistancePx,pixelsPerCm,activeRange))
+                    }
+                )
             }) {
             drawRoundRect(CamelLight,cornerRadius=androidx.compose.ui.geometry.CornerRadius(12.dp.toPx()))
             val half=size.width/(2*pixelsPerCm)
