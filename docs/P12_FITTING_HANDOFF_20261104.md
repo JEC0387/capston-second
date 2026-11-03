@@ -1,6 +1,6 @@
-# P12 발표용 피팅 안정화 — 2026-11-04
+# P12 발표용 피팅 안정화 — 2026-11-03
 
-저장소 `jimnnieo-svg/capstone-integration-backup`, 브랜치 `codex/fashionai-p12-fitting-stabilization`. 시작 시 원격 P11 `a7fcd35e310b3c4170dad7e98327fa0f477b2d14`와 로컬 clean 상태를 확인했다. P11의 최신 옷 조작 코드를 기반으로, 별도 P11-final의 검증 수정도 개발 브랜치에서 병합해 보존했다. 기존 P10/P11/배포 브랜치를 수정하지 않았다. 개발 브랜치 통합 커밋 `e48b253`.
+저장소 `jimnnieo-svg/capstone-integration-backup`, 브랜치 `codex/fashionai-p12-fitting-stabilization`. 시작 시 원격 P11 `a7fcd35e310b3c4170dad7e98327fa0f477b2d14`와 로컬 clean 상태를 확인했다. P11의 최신 옷 조작 코드를 기반으로, 별도 P11-final의 검증 수정도 개발 브랜치에서 병합해 보존했다. 기존 P10/P11/배포 브랜치를 수정하지 않았다. 개발 브랜치 통합 커밋 `e48b253`, P12 기능 코드 커밋 `423f71e86b5bd6a783c0b0252a1936f42f1249d1`.
 
 ## 실패 원인과 수정
 
@@ -9,6 +9,8 @@
 - 지원하지 않는 cm 조합은 해당 모델의 검증 이유를 표시하며 기존 값을 유지한다.
 
 ## 실제 피팅 변경
+
+P12 체크포인트에서 수정한 파일: `.github/workflows/android-debug-apk.yml`, `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/PremiumAvatarEditor.kt`, `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/VirtualFittingScreen.kt`, 신규 `GarmentGeometry.kt`, `fashion_app/app/src/test/java/com/jeiu/fashionproject/P9FittingUiTest.kt`, 신규 `P12GarmentGeometryTest.kt`, 이 문서. P11-final 통합으로 들어온 파일은 병합 커밋 `e48b253`에서 확인한다.
 
 1. 의류 이미지와 native Surface 위에 고정된 캔버스 좌표계의 단일 Compose 터치 수신 영역을 두었다. 보이는 의류 경계와 회전을 역변환해 터치한 의류를 고르고, 같은 좌표계로 이동·배율·회전을 적용한다. 옷 조작 중 native GLSurfaceView의 모델 터치를 잠그고, 별도 ‘모델 회전 확인’에서는 옷을 숨겨 모델을 확인한다. 옷 조작으로 돌아오면 정면/기본 줌으로 복귀한다. 실제 의복이 몸을 감싸며 회전한다고 표시하지 않는다.
 2. 움직이는 이미지 자체에 제스처를 붙이지 않아 이미지 이동·회전으로 드래그 좌표계가 바뀌지 않게 한다. 큰 이미지가 부모 크기에 강제로 줄어들어 계산 비율과 달라지지 않도록 이미지 레이아웃을 처리한다. 방향 버튼, 배율, 회전, 사진/아바타의 별도 상태와 저장 경로를 유지한다.
@@ -29,7 +31,19 @@ alpha 경계는 이미 잘라낸 이미지에서 투명 여백만 찾는다. 머
 
 전체 회귀에서 추가 헤더가 작은 화면의 캔버스/조절 영역을 밀어내는 문제를 발견했다. 모델 확인/되돌리기/상세 안내를 기존 스크롤 영역으로 이동하여 실패한 화면 회귀를 통과시켰다. 테스트를 완화하지 않았다.
 
-검증 결과와 최종 CI/서명 APK 증거는 완료 후 아래에 기록한다.
+로컬 검증 로그 `/workspace/work/p12-final.log`: Debug APK 빌드, 전체 단위/Compose 회귀 **409개 통과, 실패·건너뜀 0개**, 계측 테스트 Kotlin 코드 컴파일, Android Lint 모두 통과했다. 실제 Android 계측 실행은 에뮬레이터나 기기 없이 수행하지 않았다. 새 테스트는 두 손가락 배율/회전 후 저장, 복수 의류 독립 조작, 투명 이미지 경계 계산을 포함한다. Preview 격리 빌드/테스트와 최신 CI 서명 APK 검증 결과는 아래 최종 검증 기록에 적는다.
+
+## 최종 검증 기록
+
+로컬 Preview 격리 빌드/선택 회귀는 `/workspace/work/p12-preview.log`에서 **173개 통과, 실패·건너뜀 0개**. `tools/apk_release.py verify --preview`로 패키지 `com.jeiu.fashionproject.preview`, 내장 소스 SHA `423f71e`, APK SHA-256 `7d8463002990bdb141834d432f7b16d2d0eaa4557d6934c5d4d594f23ddd91b6`을 확인했다. 이 로컬 APK는 `versionCode=4`, 로컬 임시 인증서이므로 **기존 설치본 업데이트용으로 배포하지 않는다**. CI의 원래 배포 인증서로 서명된 artifact만 업데이트 후보이다.
+
+최신 [GitHub Actions 실행 41670384334](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41670384334)은 코드 SHA `423f71e86b5bd6a783c0b0252a1936f42f1249d1`에서 **7개 Job 모두 성공**했다. 백엔드 회귀, Windows/Linux 서버 시작, Debug APK, Android 전체 단위 테스트, 계측 테스트 코드 컴파일, Lint, Preview 격리 빌드/선택 회귀와 CPU 메시 비교가 포함된다. 이전 실행 `41667118221`은 새 커밋으로 대체되어 취소됐으므로 성공 증거로 사용하지 않는다.
+백엔드 Job 로그는 별도 APK 배포 안전성 테스트 3개 `OK`, 백엔드 `151 passed`와 하위 테스트 8개 통과를 기록한다. 로컬 Android 409개, Preview 173개 모두 실패 0개이며 CI Android/Preview 테스트 단계도 각각 성공했다.
+
+- [서명된 Preview APK 아티팩트](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41670384334/artifacts/13248753754) · 파일 `fashionai-1.1.71.1-preview-vc17101-423f71e8.apk` · 업로드 아티팩트 170,354,199바이트, 보존 기간 30일.
+- [BUILD_INFO 및 SHA256SUMS](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41670384334/artifacts/13248454043) · [테스트·Lint·메시 렌더 보고서](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41670384334/artifacts/13250186352).
+- CI 러너의 `tools/apk_release.py verify --distribution --preview`는 실제 APK manifest, 내장 build identity, `BUILD_INFO`, 서명 인증서, DEX 기능 표식, APK ZIP 전체 읽기/CRC, 비밀 설정·서명 키/비밀번호 미포함을 검사하고 `distributionVerified=true`를 반환했다. 패키지는 `com.jeiu.fashionproject.preview`, 코드 SHA는 `423f71e`, `sourceDirty=false`, APK SHA-256은 `1fdaccfa3d61babe607caf14185d8ca373efb0220b0a38a7123146910f189e46`이다.
+- 서명 인증서 SHA-256은 `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`로 P10/P11 배포 기록과 같다. `versionCode=17101`은 P10 `14801`, P11 `15901`보다 높다. 동일 패키지·서명·상향 버전이므로 Android의 기존 Preview 덮어쓰기 사전 조건을 만족한다. 실제 S25+ 업데이트와 저장 데이터 복원은 실기기에서 아직 확인하지 않았다. 기존 앱을 삭제하거나 초기화하지 않는다.
 
 ## 11월 16일 발표 전 필수 실기기 순서
 
@@ -51,3 +65,9 @@ alpha 경계는 이미 잘라낸 이미지에서 투명 여백만 찾는다. 머
 | AI VTON 착장 사진 | 기존 인증·서버 프록시·사진 동의, 별도 GPU 또는 승인된 외부 서비스 | GPU/서비스 비용과 개인정보 전송 검토 필요. 결과는 2D 이미지이며 회전 가능한 3D 의류가 아님 |
 
 우선순위는 실제 S25+ 검증과 시연용 유효 누끼 확보 → 결과 기반 버그 수정 → 발표 이후 기본 의류 메시 한 종류의 독립 프로토타입이다. 옷 사진 한 장에서 완전한 3D 의류를 생성한다고 가정하지 않는다.
+
+## P13 자체 AI 착장 이미지 생성 TODO
+
+1. 기존 `LocalVtonScreen`·`LocalVtonRepository`와 서버 프록시/인증/사진 동의 경로를 그대로 추적하여 현재 가능한 경로와 GPU 모델이 필요한 경로를 분리한다. P12의 옷장·아바타 저장 형식은 변경하지 않는다.
+2. 운영과 분리된 GPU 실험 환경에서 인체 사진·누끼 의류의 입력 조건, 실패/타임아웃/재시도, 결과의 로컬 저장·삭제 동의를 정의한다. 사용자의 사진이나 토큰을 로그·GitHub에 올리지 않는다.
+3. 허가된 테스트 이미지로 품질/속도/비용/개인정보를 측정한 뒤 유료 API나 운영 서버 변경 전에 별도 승인을 받는다. 생성 이미지는 2D 결과로 표기하고 실시간 3D 의복처럼 설명하지 않는다.
