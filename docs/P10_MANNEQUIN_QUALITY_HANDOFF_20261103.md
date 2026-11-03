@@ -118,3 +118,16 @@ S25+의 실제 GLES 셰이더/바닥 표시, 회전·핀치·연속 드래그 �
 새 이미지/버퍼/수치: `fashion_app/app/build/p10-visual`. `comparison-*.png`12세트는 같은 카메라·광원으로 P9/P10 정면/측면/후면을 비교한다. `normal-before-after.png/json`은 P10 법선 수정 전후 비교다. 재현: `python tools/review_p10_normals.py fashion_app/app/build/p10-visual-before-resume fashion_app/app/build/p10-visual`. CPU 결과이며 S25+ GLES 결과가 아니다. 참고 자료 폴더는 여전히 없어서 몽클레어 실물을 확인하지 않았다.
 
 재개 변경 파일: `PremiumAvatarMesh.kt`, `P10MannequinTest.kt`, 새 `P10NormalsTest.kt`, 새 `tools/review_p10_normals.py`, 이 문서. 줄자·입력·출처·저장 schema·마이그레이션·피팅·권한·SDK·서명 정책에는 변경이 없다. 새 코드 CI/APK 검증 결과는 아래 최종 배포 항목에서 확정한다.
+
+### 최종 CI 및 Preview APK 검증
+
+- 실행 코드 Commit: `c2858b75abddc57efc3da5a6a83a185f3d853832`; P10 브랜치에 Push 완료. 아래 최종 문서 Commit은 실행 코드를 바꾸지 않는다.
+- [GitHub Actions #48](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41568182287): Backend, Windows 4종과 Linux 서버 기동 5개, Android build 1개로 총 7개 Job 성공. 운영 Railway/DB에 접속하거나 배포하지 않았다.
+- CI XML 기준 Android Debug 단위 테스트 **401개 실패0**, 격리 Preview 선택 회귀 **165개 실패0**. Kotlin/Debug/Preview APK 빌드와 계측 테스트 컴파일 성공. Backend **151개 + 하위 검사8개 통과**, API 배포 안전성 unittest3개 통과. Lint 오류0/경고166/Hint2. 경고는 비차단이나 별도 정리가 필요하다.
+- APK 아티팩트 ID `13200492861`; 버전 `1.1.48.1-preview`, code `14801`, 패키지 `com.jeiu.fashionproject.preview`.
+- 로컬 보존 경로: `fashion_app/build/p10-final-apk/fashionai-1.1.48.1-preview-vc14801-c2858b75.apk`. SHA-256 `d7ec59d4676b2c25cc2cc1191cc2fe5fa5a8441c36e24fe96ccbf88caf48152e`.
+- `apksigner`에서 P9 14501과 같은 인증서 SHA-256 `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`를 확인했다. 버전14801>14501 및 수정 전 후보14701, 같은 패키지이므로 P9 Preview에서 Android 서명/버전 기준의 업데이트 호환 조건을 충족한다. 실제 설치 동작/기존 데이터 복원은 실기기 미검증이다. 원래 별도 패키지 FashionAI 앱을 덮어쓰는 파일은 아니다.
+- `BUILD_INFO.txt/json`, Manifest, 내장 `assets/build_identity.json`, Git SHA가 서로 일치한다. ZIP CRC 통과. P9 대비 권한 목록 동일, native `.so` 15개 및 미디어237개 바이트 해시 동일. 새 렌더링 DEX 클래스와 `rowDerivative` 포함, 테스트 기준/법선 클래스 배포 DEX 미포함. 비밀키/토큰/개인 사진의 신규 패키징 흔적과 비밀 파일/서명키 파일 패턴이 발견되지 않았다. CI의 실제 비밀키 값은 확인/출력하지 않았다.
+- 상세 APK 감사: `fashion_app/build/p10-final-apk/P10_APK_AUDIT.json`; 테스트/Lint 보고서 `fashion_app/build/p10-ci48-reports`; P10 기준 전 비교 `fashion_app/app/build/p10-visual-before-resume`; 수정 후12세트 `fashion_app/app/build/p10-visual`. 모두 Git 제외 로컬 자료이며 기존 결과를 삭제하지 않았다.
+- 모델 진입·cm 변경·저장·복원·가상피팅 연동은 기존 P9 회귀/CI에서 통과했다. 이번 변경은 법선 계산과 테스트 샘플에 한정된다. 실제 S25+ GLES 셰이더·터치·프레임률·메모리·작은 화면·설치 업그레이드·실제 인체 치수 정확도는 확인하지 않았다.
+- 시각적 잔여 한계: 넓은 힙115cm 등 극단적인 조합에서 팔·손목 주변이 휘어 보일 수 있다. 손가락/관절 리깅, 실제 의복 피팅, 인체 스캔 수준 정확도는 포함되지 않는다. 이 CPU 검토만으로 고급 브랜드 수준의 실기기 외형을 보장하지 않는다. P10의 수평 음영 띠는 실제 원인인 비균일 행 법선을 고쳐 개선했다.
