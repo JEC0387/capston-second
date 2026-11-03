@@ -63,9 +63,12 @@ jobs:
 
       - name: Push APK to apk-output branch
         run: |
+          fail() { echo "::error::$1"; exit 1; }
+          apk=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
+          [ -n "$apk" ] || fail "APK 파일 없음: $(ls -R app/build/outputs 2>&1 | head -20 | tr '\n' ' ')"
           out="$RUNNER_TEMP/apk-output"
           mkdir -p "$out"
-          cp app/build/outputs/apk/debug/app-debug.apk "$out/FashionAI-debug.apk"
+          cp "$apk" "$out/FashionAI-debug.apk"
           sha256sum "$out/FashionAI-debug.apk" > "$out/SHA256.txt"
           echo "${GITHUB_SHA}" > "$out/COMMIT.txt"
           cd "$out"
@@ -73,4 +76,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A && git commit -q -m "Debug APK from ${GITHUB_SHA::7}"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk-output
+          if ! msg=$(git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk-output 2>&1); then
+            fail "push 실패: $(echo "$msg" | tr '\n' ' ' | sed 's/x-access-token:[^@]*@/***@/g')"
+          fi
