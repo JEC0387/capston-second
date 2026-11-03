@@ -16,7 +16,10 @@ val appVersionCode = providers.environmentVariable("FASHION_VERSION_CODE").orNul
 require(appVersionCode in 4..2_100_000_000) { "versionCode must exceed the previous distribution (3)" }
 val appVersionName = providers.environmentVariable("FASHION_VERSION_NAME").orNull ?: "1.1-local"
 val previewBuild = providers.gradleProperty("fashionPreview").orNull == "true"
-val packagedVersionName = appVersionName + if (previewBuild) "-preview" else ""
+// Opt-in device QA has its own Android sandbox; never run storage fixtures in the user's Preview.
+val deviceQaBuild = providers.gradleProperty("fashionDeviceQa").orNull == "true"
+require(!deviceQaBuild || previewBuild) { "Device QA must retain Preview network isolation" }
+val packagedVersionName = appVersionName + if (deviceQaBuild) "-qa" else if (previewBuild) "-preview" else ""
 require(appVersionName.matches(Regex("[A-Za-z0-9._-]+")))
 fun gitValue(vararg args: String) = providers.exec {
     workingDir(rootProject.projectDir.parentFile)
@@ -31,7 +34,7 @@ fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\
 
 val identityDir = layout.buildDirectory.dir("generated/assets/buildIdentity")
 val generateBuildIdentity by tasks.registering {
-    val identity = """{"versionCode":$appVersionCode,"versionName":${quoted(packagedVersionName)},"gitSha":${quoted(sourceSha)},"branch":${quoted(sourceBranch)},"buildNumber":${quoted(buildNumber)},"sourceDirty":$sourceDirty,"preview":$previewBuild}"""
+    val identity = """{"versionCode":$appVersionCode,"versionName":${quoted(packagedVersionName)},"gitSha":${quoted(sourceSha)},"branch":${quoted(sourceBranch)},"buildNumber":${quoted(buildNumber)},"sourceDirty":$sourceDirty,"preview":$previewBuild,"deviceQa":$deviceQaBuild}"""
     inputs.property("identity", identity)
     outputs.dir(identityDir)
     doLast {
@@ -44,12 +47,12 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.jeiu.fashionproject" + if (previewBuild) ".preview" else ""
+        applicationId = "com.jeiu.fashionproject" + if (deviceQaBuild) ".preview.qa" else if (previewBuild) ".preview" else ""
         minSdk = 24
         targetSdk = 36
         versionCode = appVersionCode
         versionName = packagedVersionName
-        resValue("string", "build_app_name", if (previewBuild) "FashionAI Preview" else "FashionAI")
+        resValue("string", "build_app_name", if (deviceQaBuild) "FashionAI QA P16" else if (previewBuild) "FashionAI Preview" else "FashionAI")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 서버(FastAPI) 기본 주소 = Railway 에 올린 서버 (어디서든 접속 가능).
         // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는
@@ -60,6 +63,7 @@ android {
         buildConfigField("String", "BUILD_NUMBER", quoted(buildNumber))
         buildConfigField("boolean", "SOURCE_DIRTY", sourceDirty.toString())
         buildConfigField("boolean", "PREVIEW_BUILD", previewBuild.toString())
+        buildConfigField("boolean", "DEVICE_QA_BUILD", deviceQaBuild.toString())
 
 
     }

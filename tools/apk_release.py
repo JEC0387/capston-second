@@ -70,7 +70,9 @@ def inspect(apk):
             "certificateSha256": certificates[0].lower()}
 
 
-def verify(apk, output, distribution=False, preview=False):
+def verify(apk, output, distribution=False, preview=False, device_qa=False):
+    if device_qa and (distribution or not preview):
+        raise ValueError("Device QA is a separate isolated test app, never a Preview update distribution")
     manifest = inspect(apk)
     with zipfile.ZipFile(apk) as archive:
         # Build/signing secrets belong to CI only, never an APK entry or DEX constant.
@@ -102,10 +104,18 @@ def verify(apk, output, distribution=False, preview=False):
     for field in ["versionCode", "versionName"]:
         if identity[field] != manifest[field]:
             raise ValueError(f"APK manifest/embedded identity mismatch: {field}")
-    if manifest["packageName"] != "com.jeiu.fashionproject" + (".preview" if preview else ""):
+    if manifest["packageName"] != "com.jeiu.fashionproject" + (".preview.qa" if device_qa else ".preview" if preview else ""):
         raise ValueError("Unexpected application ID; this would be a different app")
     if identity.get("preview") != preview:
         raise ValueError("Preview identity mismatch")
+    if identity.get("deviceQa", False) != device_qa:
+        raise ValueError("Device QA identity mismatch")
+    if device_qa:
+        certificate = os.environ.get("APK_SIGNING_CERT_SHA256", "").replace(":", "").lower()
+        if not certificate or manifest["certificateSha256"] != certificate or identity["sourceDirty"]:
+            raise ValueError("Device QA requires the trusted signer and a clean source checkpoint")
+        if not manifest["versionName"].endswith("-qa"):
+            raise ValueError("Device QA must have a distinct version label")
     reject_downgrade(manifest["versionCode"], 3)
     git_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     if identity["gitSha"] != git_sha:
@@ -143,6 +153,7 @@ if __name__ == "__main__":
     command.add_argument("output", type=Path)
     command.add_argument("--distribution", action="store_true")
     command.add_argument("--preview", action="store_true")
+    command.add_argument("--device-qa", action="store_true")
     args = parser.parse_args()
     if args.command == "prepare":
         run, attempt = int(os.environ["GITHUB_RUN_NUMBER"]), int(os.environ["GITHUB_RUN_ATTEMPT"])
@@ -154,4 +165,4 @@ if __name__ == "__main__":
                 file.write(f"{key}={value}\n")
         print(f"Allocated version {values['FASHION_VERSION_NAME']} ({code})")
     else:
-        verify(args.apk, args.output, args.distribution, args.preview)
+        verify(args.apk, args.output, args.distribution, args.preview, args.device_qa)

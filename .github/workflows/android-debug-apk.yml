@@ -149,11 +149,21 @@ jobs:
             --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
             --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*OfficialDemoTest' --tests '*P7*' \
-            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' \
+            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Build Preview instrumentation harness (no device or live service execution)
-        run: bash gradlew :app:assembleDebugAndroidTest -PfashionPreview=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+        run: |
+          bash gradlew :app:assembleDebugAndroidTest -PfashionPreview=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+          mkdir -p build/preview-instrumentation
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk build/preview-instrumentation/
+
+      - name: Verify every packaged 64-bit ELF and APK ZIP alignment
+        working-directory: .
+        run: |
+          python tools/native_alignment.py fashion_app/app/build/outputs/apk/debug/app-debug.apk \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --output fashion_app/build/native-alignment/preview.json
 
       - name: Render synthetic P9 and P10 mesh comparisons (CPU only)
         working-directory: .
@@ -184,6 +194,37 @@ jobs:
         run: |
           python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk apk-artifact --distribution --preview
 
+      - name: Build separate device QA app and guarded instrumentation
+        if: success() && steps.distribution.outputs.ready == 'true'
+        run: bash gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PfashionPreview=true -PfashionDeviceQa=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Verify QA package and trusted signer (never a Preview update)
+        if: success() && steps.distribution.outputs.ready == 'true'
+        working-directory: .
+        env:
+          APK_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk qa-artifact --preview --device-qa
+          python tools/native_alignment.py fashion_app/app/build/outputs/apk/debug/app-debug.apk \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --output fashion_app/build/native-alignment/device-qa.json
+          python - <<'PY'
+          import hashlib, json, shutil
+          from pathlib import Path
+          from tools.apk_release import inspect
+          target = Path('qa-artifact')
+          meta = json.loads((target / 'BUILD_INFO.json').read_text())
+          test = Path('fashion_app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
+          info = inspect(test)
+          assert info['packageName'] == 'com.jeiu.fashionproject.preview.qa.test'
+          assert info['certificateSha256'] == meta['certificateSha256']
+          destination = target / 'fashionai-device-qa-tests.apk'
+          shutil.copy2(test, destination)
+          with (target / 'SHA256SUMS.txt').open('a') as sums:
+              sums.write(hashlib.sha256(destination.read_bytes()).hexdigest() + '  ' + destination.name + '\n')
+          (target / 'QA_ONLY.txt').write_text('FashionAI QA P16: separate package/data, not a Preview update. Only opt-in P16DeviceQaTest; no live AI requests.\n')
+          PY
+
       - name: Upload APK
         if: success() && steps.distribution.outputs.ready == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -199,7 +240,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fashionai-preview-instrumentation-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
-          path: fashion_app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          path: fashion_app/build/preview-instrumentation/app-debug-androidTest.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -216,6 +257,16 @@ jobs:
             apk-artifact/BUILD_INFO.json
             apk-artifact/SHA256SUMS.txt
           if-no-files-found: error
+
+      - name: Upload separate device QA app and tests
+        if: success() && steps.distribution.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fashionai-device-qa-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
+          path: qa-artifact/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
 
       - name: Remove temporary signing key
         if: always()
@@ -234,6 +285,7 @@ jobs:
             fashion_app/app/build/reports/lint-results-debug.*
             fashion_app/app/build/p9-visual/
             fashion_app/app/build/p10-visual/
+            fashion_app/build/native-alignment/
           if-no-files-found: warn
           retention-days: 30
 
@@ -269,7 +321,7 @@ jobs:
         run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
       - name: APK release safety tests
         working-directory: tools
-        run: python -m unittest -v test_apk_release
+        run: python -m unittest -v test_apk_release test_native_alignment
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''

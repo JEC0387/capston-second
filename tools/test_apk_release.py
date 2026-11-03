@@ -1,9 +1,16 @@
 import unittest
-from apk_release import reject_downgrade, version_code
+from apk_release import reject_downgrade, version_code, verify
 from check_apk_update import compatibility
 
 
 class ReleaseSafetyTest(unittest.TestCase):
+    def test_device_qa_cannot_be_published_as_a_preview_update(self):
+        # Fail before accessing any APK/key/network when the mode combination is unsafe.
+        with self.assertRaisesRegex(ValueError, "separate isolated test app"):
+            verify(None, None, distribution=True, preview=True, device_qa=True)
+        with self.assertRaisesRegex(ValueError, "separate isolated test app"):
+            verify(None, None, preview=False, device_qa=True)
+
     def test_versions_increase_and_old_reruns_are_rejected(self):
         self.assertGreater(version_code(1, 1), 3)
         self.assertGreater(version_code(2, 1), version_code(1, 99))
