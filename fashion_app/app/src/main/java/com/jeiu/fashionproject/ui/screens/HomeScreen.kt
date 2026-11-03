@@ -30,6 +30,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -240,61 +241,7 @@ fun HomeScreen(
             }
         }
 
-        // 날씨 카드
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clickable(onClick = onOutfitRecommendClick),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Camel),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val weatherIcon = when (val s = weatherState) {
-                            is WeatherUiState.Success -> if (s.info.isRainy() || s.info.isCloudy()) Icons.Filled.Cloud else Icons.Filled.WbSunny
-                            else -> Icons.Filled.WbSunny
-                        }
-                        Icon(weatherIcon, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
-                        Text(
-                            when (val s = weatherState) {
-                                is WeatherUiState.Success -> "${s.info.condition} · ${s.info.temp}°C · 습도 ${s.info.humidity}%"
-                                is WeatherUiState.Loading -> "날씨 불러오는 중..."
-                                is WeatherUiState.Error -> s.message
-                            },
-                            style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Text(
-                        when (val s = weatherState) {
-                            is WeatherUiState.Success -> s.info.advice()
-                            else -> "오늘 날씨에 맞는 코디를 추천해드려요"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = White.copy(alpha = 0.85f)
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(White.copy(alpha = 0.2f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text("AI 추천 보기", style = MaterialTheme.typography.labelLarge, color = White, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
+        HomeWeatherCard(weatherState, onOutfitRecommendClick)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -545,4 +492,64 @@ private fun TomorrowOutfitSection(
             }
         }
     }
+}
+
+@Composable
+internal fun HomeWeatherCard(state: WeatherUiState, onClick: () -> Unit) {
+        // 날씨 카드
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clickable(onClick = onClick),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Camel),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp).testTag("homeWeatherSummary"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val weatherIcon = when (val s = state) {
+                            is WeatherUiState.Success -> if (s.info.isRainy() || s.info.isCloudy()) Icons.Filled.Cloud else Icons.Filled.WbSunny
+                            else -> Icons.Filled.WbSunny
+                        }
+                        Icon(weatherIcon, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
+                        Text(
+                            when (val s = state) {
+                                is WeatherUiState.Success -> "${s.info.condition} · ${s.info.temp}°C · 습도 ${s.info.humidity}%"
+                                is WeatherUiState.Loading -> "날씨 불러오는 중..."
+                                is WeatherUiState.Error -> s.message
+                            },
+                            style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        when (val s = state) {
+                            is WeatherUiState.Success -> s.info.advice()
+                            else -> "오늘 날씨에 맞는 코디를 추천해드려요"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = White.copy(alpha = 0.85f)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(White.copy(alpha = 0.2f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("AI 추천 보기", modifier = Modifier.widthIn(max = 96.dp).testTag("homeWeatherAction"), style = MaterialTheme.typography.labelLarge, color = White, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
 }

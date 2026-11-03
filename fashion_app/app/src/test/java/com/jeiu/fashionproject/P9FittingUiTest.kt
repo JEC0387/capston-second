@@ -53,7 +53,8 @@ class P9FittingUiTest {
         assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f, centimeters=body)))
         compose.setContent { VirtualFittingScreen(startAvatar=true, onBack={}) }
         compose.onNodeWithTag("fittingCanvas").assertIsDisplayed()
-        compose.onNodeWithTag("manualGarment-${item.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("manualWardrobe").performScrollTo()
+        compose.onNodeWithTag("manualGarment-${item.id}").assertIsDisplayed().performClick()
         compose.waitUntil(5000) {
             compose.onAllNodesWithTag("fittingOverlay-${item.id}").fetchSemanticsNodes().isNotEmpty()
         }

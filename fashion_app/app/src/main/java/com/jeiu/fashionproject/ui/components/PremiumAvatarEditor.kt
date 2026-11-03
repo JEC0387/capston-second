@@ -49,10 +49,6 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
     var details by rememberSaveable {mutableStateOf(false)}
     var lastSaved by rememberSaveable {mutableStateOf<String?>(null)}
     fun update(next:AvatarCentimeters) {json=next.toJson().toString();message=null}
-    fun adjust(value:Float) {
-        val next=body.adjusted(selected,value)
-        if(next!=null)update(next) else message="이 표시 모델에서 지원하지 않는 조합이에요. 원본과 현재 값은 유지했어요."
-    }
     fun leave() {if(json!=(lastSaved ?: initialJson))askLeave=true else onDismiss()}
     fun openInput() {text=String.format(Locale.KOREA,"%.1f",body[selected]);measured=false;input=true}
     val candidate=initial.copy(centimeters=body)
@@ -108,21 +104,20 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         TextButton(onClick={yaw=0f;cameraReset++}) {Text("전체 보기")}
                     }
                 }
-                Column(Modifier.weight(if(compact).55f else .42f).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         AvatarPart.entries.forEach {part->FilterChip(selected==part,{selectedName=part.name},label={Text(part.label)},
                             modifier=Modifier.testTag("cmPart-${part.name}"))}
                     }
+                Column(Modifier.weight(if(compact).55f else .42f).fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Text("${selected.label} ${selected.unit}",style=MaterialTheme.typography.titleMedium,color=Brown,
                         modifier=Modifier.testTag("cmPartLabel"))
                     Text(body.values.getValue(selected).origin.label,style=MaterialTheme.typography.bodySmall,
                         modifier=Modifier.testTag("cmValueOrigin"))
-                    // A body-part switch must replace the ruler's pointer and semantics
-                    // nodes, while the unsaved cm draft above remains shared.
-                    key(selected) {
-                        CmRuler(body[selected],range,"${selected.label} ${selected.unit}",::adjust,::openInput)
-                    }
+                    CmRuler(body[selected],range,"${selected.label} ${selected.unit}",{ value ->
+                        val next=body.adjusted(selected,value)
+                        if(next!=null)update(next) else message="이 표시 모델에서 지원하지 않는 조합이에요. 원본과 현재 값은 유지했어요."
+                    },{openInput()})
                     Text("초기 추정 ${body.initial.getValue(selected)} cm · 실제 측정값에 맞게 조절해주세요.",style=MaterialTheme.typography.bodySmall)
                     body.references[selected]?.let {Text("불러온 원본 ${it.cm} cm · ${it.origin.label}",style=MaterialTheme.typography.bodySmall)}
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
@@ -131,8 +126,8 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         TextButton(onClick={askReset=true}) {Text("초기 추정값 복원")}
                         TextButton(onClick={json=initialJson;message=null}) {Text("불러온 설정 복원")}
                     }
-                    Button(onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("비교 후 3D 설정 저장")}
-                    if(onApplyToFitting!=null)OutlinedButton(onClick={applyAfterSave=true;confirmSave=true},
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("비교 후 3D 설정 저장")}
+                    if(onApplyToFitting!=null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
                         modifier=Modifier.fillMaxWidth().testTag("cmApplyFitting")) {Text("저장 후 가상피팅에 적용")}
                     TextButton(onClick={details=!details}) {Text(if(details)"출처·형상 가정 접기" else "출처·형상 가정 보기")}
                     if(details) {
