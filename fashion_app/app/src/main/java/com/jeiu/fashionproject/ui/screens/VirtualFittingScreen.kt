@@ -199,16 +199,16 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
         FitSlot.TOP -> {
             val isDress = item.category == "원피스"
             val topY = screenY(shoulderY) - shoulderWidth * .32f
-            val dressWidth = if (isDress) maxOf(torsoWidth * 1.85f,
-                hipWidth * 2f,
+            val dressWidth = if (isDress) maxOf(torsoWidth * 1.25f,
+                hipWidth * 1.35f,
                 (screenY(hipY * .52f) - topY) / aspect.coerceAtLeast(.4f))
-                else torsoWidth * 2f
+                else torsoWidth * 1.25f
             place(topY, dressWidth)
         }
-        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, torsoWidth * 2.2f)
+        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, torsoWidth * 1.45f)
         FitSlot.BOTTOM -> place(screenY(hipY) - hipWidth * .35f,
-            hipWidth * if (item.subCategory == "치마") 2.8f else 2.6f)
-        FitSlot.SHOES -> place(screenY(h * .05f), hipWidth * 1.6f)
+            hipWidth * if (item.subCategory == "치마") 1.75f else 1.35f)
+        FitSlot.SHOES -> place(screenY(h * .05f), hipWidth * 1.2f)
         FitSlot.ACCESSORY -> place(screenY(shoulderY) - shoulderWidth * .4f, shoulderWidth * .8f)
     }
 }
@@ -394,6 +394,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             if (activeSlot == slot) activeSlot = worn.keys.maxByOrNull { it.ordinal }
             return
         }
+        if (avatarMode) avatarCameraReset++ // A 2D garment is only aligned in the avatar's front view.
         scope.launch {
             val uri = fittingUri(item)
             val aspect = FittingPoseDetector.imageSize(context.applicationContext, uri)?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
