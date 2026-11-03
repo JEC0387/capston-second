@@ -527,12 +527,17 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     val old = canvasSize
                     val updated = Size(size.width.toFloat(), size.height.toFloat())
                     if (old.width > 0f && old.height > 0f && old != updated) {
-                        manual.avatarWorn.keys.toList().forEach { slot ->
-                            manual.avatarWorn[slot]?.let { g ->
-                                manual.avatarWorn[slot] = g.copy(
-                                    center = Offset(g.center.x * updated.width / old.width,
-                                        g.center.y * updated.height / old.height),
-                                    baseWidth = g.baseWidth * updated.width / old.width)
+                        // Keep BOTH photo overlays and avatar overlays anchored when
+                        // the canvas changes height (e.g. text/notice/keyboard changes).
+                        // Resizing only avatarWorn made photo auto-fit appear to drift.
+                        listOf(manual.avatarWorn, manual.worn).forEach { outfit ->
+                            outfit.keys.toList().forEach { slot ->
+                                outfit[slot]?.let { g ->
+                                    outfit[slot] = g.copy(
+                                        center = Offset(g.center.x * updated.width / old.width,
+                                            g.center.y * updated.height / old.height),
+                                        baseWidth = g.baseWidth * updated.width / old.width)
+                                }
                             }
                         }
                     }
