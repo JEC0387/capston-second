@@ -68,8 +68,9 @@ jobs:
           [ -n "$apk" ] || fail "APK 파일 없음: $(ls -R app/build/outputs 2>&1 | head -20 | tr '\n' ' ')"
           out="$RUNNER_TEMP/apk-output"
           mkdir -p "$out"
-          cp "$apk" "$out/FashionAI-debug.apk"
-          sha256sum "$out/FashionAI-debug.apk" > "$out/SHA256.txt"
+          # GitHub 파일 한도(100MB)를 넘으므로 90MB 조각으로 나눠 올린다 (받은 뒤 cat 으로 합침)
+          sha256sum "$apk" | sed 's#  .*#  FashionAI-debug.apk#' > "$out/SHA256.txt"
+          split -b 90m -d "$apk" "$out/FashionAI-debug.apk.part"
           echo "${GITHUB_SHA}" > "$out/COMMIT.txt"
           cd "$out"
           git init -q -b apk-output
