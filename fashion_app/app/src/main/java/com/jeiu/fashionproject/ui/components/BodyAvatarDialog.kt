@@ -133,7 +133,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
                     val mesh=request.p.centimeters?.let {PremiumAvatarMesh.build(it,cancelled={!isActive})}
                         ?: BodyAvatarMesh.build(request.p,request.s,request.w,request.h,request.thigh)
                     val stage=request.p.centimeters?.let {MannequinStage.build(it,mesh)}
-                    if(isActive && latest==request)queueEvent {avatar.setGeometry(mesh,stage);requestRender()}
+                    if(isActive && latest==request)queueEvent {if(latest==request) {avatar.setGeometry(mesh,stage);requestRender()}}
                 } catch(_:java.util.concurrent.CancellationException) {break}
                 catch(_:IllegalArgumentException) {post {onError()}}
                 catch(_:IllegalStateException) {post {onError()}}

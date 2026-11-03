@@ -52,7 +52,7 @@ class P9EditorUiTest {
     }
     @Test fun switchingBodyPartsPreservesEveryUnsavedMeasurementUntilExplicitSave() {
         var captured:AvatarProfile?=null
-        compose.setContent { PremiumAvatarEditor(initial,null,{},onSave={captured=it;true}) }
+        compose.setContent { PremiumAvatarEditor(initial,null,{},onSave={captured=it;AvatarProfileStore.save(app,it)}) }
         val waist=body[AvatarPart.WAIST]+.5f
         compose.onNodeWithTag("rulerPlus").performScrollTo().performClick()
         assertEquals(waist,value())
@@ -77,16 +77,19 @@ class P9EditorUiTest {
             assertEquals(waist,saved[AvatarPart.WAIST])
             assertEquals(shoulder,saved[AvatarPart.SHOULDER])
             assertEquals(chest,saved[AvatarPart.CHEST])
+            AvatarProfileStore.load(app)
+            assertEquals(saved,AvatarProfileStore.current.value!!.centimeters)
         }
     }
 
     @Test fun rulerCanStillDragAfterMultipleBodyPartChanges() {
         compose.setContent {PremiumAvatarEditor(initial,null,{},onSave={true})}
         compose.onNodeWithTag("cmPart-HIP").performScrollTo().performClick()
+        compose.onNodeWithTag("cmPart-HIP").assertIsSelected()
         val hipBefore=value()
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput { swipeLeft() }
         val hipAfter=value()
-        assertTrue("Dragging HIP ruler should update cm",hipAfter>hipBefore)
+        assertTrue("Dragging HIP ruler should update cm: $hipBefore -> $hipAfter",hipAfter>hipBefore)
         compose.onNodeWithTag("cmPart-WAIST").performScrollTo().performClick()
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput { swipeLeft() }
         val waistAfter=value()

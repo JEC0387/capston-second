@@ -11,6 +11,7 @@ import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.ui.screens.FitSlot
 import com.jeiu.fashionproject.ui.screens.fitAvatar
 import com.jeiu.fashionproject.ui.screens.fit
+import com.jeiu.fashionproject.ui.screens.photoAutoPlacement
 import com.jeiu.fashionproject.ui.viewmodel.FittingPoseDetector
 import org.junit.After
 import org.junit.Assert.*
@@ -63,6 +64,23 @@ class AvatarFittingTest {
         assertTrue(dress.center.y + dress.width > shirt.center.y + shirt.width * .6f)
         assertTrue(pants.center.y > shirt.center.y)
         assertTrue(shoes.center.y > pants.center.y)
+    }
+
+    @Test fun photoAutoFitRequiresGarmentLandmarksAndChangesRealPlacement() {
+        val canvas=Size(400f,800f)
+        val pose=FittingPoseDetector.BodyPoints(400,800,
+            Offset(100f,200f) to Offset(240f,220f),null,null)
+        assertNull(photoAutoPlacement(FitSlot.TOP,garment("상의"),1.2f,canvas,null))
+        assertNull(photoAutoPlacement(FitSlot.BOTTOM,garment("하의"),1.2f,canvas,pose))
+        assertNull(photoAutoPlacement(FitSlot.TOP,garment("원피스"),2f,canvas,pose))
+        assertNull(photoAutoPlacement(FitSlot.ACCESSORY,garment("액세서리"),1f,canvas,pose))
+        val placement=checkNotNull(photoAutoPlacement(FitSlot.TOP,garment("상의"),1.2f,canvas,pose))
+        assertNotEquals(Offset(200f,280f),placement.center)
+        assertTrue(placement.rotation>0f)
+        assertTrue(placement.width>200f)
+        val twice=checkNotNull(photoAutoPlacement(FitSlot.TOP,garment("상의"),1.2f,Size(800f,1600f),pose))
+        assertEquals(placement.center*2f,twice.center)
+        assertEquals(placement.width*2f,twice.width,.001f)
     }
 
     @Test fun explicitOverlaySaveRestoresNormalizedPlacementWithoutPhotoOrUri() {

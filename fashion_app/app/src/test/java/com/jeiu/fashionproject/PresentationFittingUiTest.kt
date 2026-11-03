@@ -35,7 +35,7 @@ class PresentationFittingUiTest {
         compose.setContent {
             Box(Modifier.height(360.dp)) { AiTryOnScreen(null, emptyList(), { returned++ }, serviceConfigured = false) }
         }
-        compose.onNodeWithTag("aiTryOnGuide").performScrollTo().assertTextContains("수동 배치", substring = true)
+        compose.onNodeWithTag("aiTryOnGuide").performScrollTo().assertTextContains("실제 착장 이미지를 생성할 수는 없어요", substring = true)
         compose.onNodeWithText("원하는 옷을 선택하고 마법봉을 누르면 AI가 자연스럽게 입혀줘요 ✨").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnNotConfigured").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("aiTryOnGenerate").assertIsDisplayed().assertIsNotEnabled()
@@ -98,7 +98,8 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertIsEnabled().performClick()
         compose.onNodeWithTag("manualScale").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
-            androidx.compose.ui.semantics.ProgressBarRangeInfo(1f, .4f..3f)))
+            androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
+        compose.onNodeWithTag("fittingInputNotice").assertTextContains("자동핏을 적용하지 않았어요", substring = true)
         compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsEnabled()
         compose.onNodeWithContentDescription("벗기", useUnmergedTree = true)
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }

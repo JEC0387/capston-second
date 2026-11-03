@@ -103,6 +103,24 @@ private data class WornGarment(
 
 internal data class Placement(val center: Offset, val width: Float, val rotation: Float)
 
+/** Null means preserve the existing placement; never report a fallback as detection. */
+internal fun photoAutoPlacement(slot: FitSlot, item: WardrobeItem, aspect: Float,
+    canvas: Size, body: FittingPoseDetector.BodyPoints?): Placement? {
+    if (body == null || body.imageWidth <= 0 || body.imageHeight <= 0 ||
+        canvas.width <= 0f || canvas.height <= 0f) return null
+    fun valid(pair: Pair<Offset, Offset>?) = pair != null &&
+        listOf(pair.first.x, pair.first.y, pair.second.x, pair.second.y).all { it.isFinite() } &&
+        (pair.first - pair.second).getDistance() > 0f
+    val supported = when (slot) {
+        FitSlot.TOP -> valid(body.shoulders) && (item.category != "원피스" || valid(body.hips))
+        FitSlot.OUTER -> valid(body.shoulders)
+        FitSlot.BOTTOM -> valid(body.hips)
+        FitSlot.SHOES -> valid(body.ankles)
+        FitSlot.ACCESSORY -> false
+    }
+    return if (supported) fit(slot, item, aspect, canvas, body) else null
+}
+
 private const val MIN_SCALE = 0.4f
 private const val MAX_SCALE = 3f
 
@@ -340,15 +358,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             inputNotice = "사진의 자세를 인식하지 못해 자동핏을 적용하지 않았어요. 전신이 보이는 정면 사진으로 다시 시도하거나 옷을 손으로 배치해주세요."
             return
         }
-        val supported = worn.keys.filter { slot ->
-            when (slot) {
-                FitSlot.TOP, FitSlot.OUTER -> detected.shoulders != null
-                FitSlot.BOTTOM -> detected.hips != null
-                FitSlot.SHOES -> detected.ankles != null
-                FitSlot.ACCESSORY -> true
-            }
+        val supported = worn.mapNotNull { (slot, garment) ->
+            photoAutoPlacement(slot, garment.item, garment.aspect, canvasSize, detected)?.let { slot to it }
         }
-        supported.forEach { refit(it) }
+        supported.forEach { (slot, p) ->
+            worn[slot]?.let { g -> worn[slot] = g.copy(center=p.center, baseWidth=p.width, rotation=p.rotation, scale=1f) }
+        }
         val skipped = worn.size - supported.size
         inputNotice = if (supported.isEmpty()) {
             "선택한 옷에 필요한 어깨·골반·발목 위치를 찾지 못했어요. 옷을 손으로 배치하거나 다시 촬영해주세요."
@@ -372,7 +387,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             if (requestGeneration != photoGeneration) return@launch
             body = detected
             poseStatus = if (detected != null) PoseStatus.FOUND else PoseStatus.NOT_FOUND
-            worn.keys.toList().forEach { refit(it) }
+            // Detection only updates landmarks. Placement changes require explicit auto-fit;
+            // a late result must not overwrite a drag or the other mode’s outfit.
         }
     }
 

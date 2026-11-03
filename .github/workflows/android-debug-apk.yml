@@ -146,7 +146,7 @@ jobs:
             --tests '*SampleWardrobePreviewTest' --tests '*WardrobeSampleRestoreUiTest' \
             --tests '*BackupAndRecommendationLogTest' --tests '*BodyMethodSelectionUiTest' \
             --tests '*BodyPhotoEntryUiTest' --tests '*BodyAnalysisResultUiTest' \
-            --tests '*BodyAvatarTest' \
+            --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
             --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*P7*' \
             --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' \
