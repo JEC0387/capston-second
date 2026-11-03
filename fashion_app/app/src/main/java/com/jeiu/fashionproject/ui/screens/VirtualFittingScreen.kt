@@ -341,8 +341,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 return
             }
             avatarCameraReset++
+            val before = worn.toMap()
             worn.keys.toList().forEach { refit(it) }
-            inputNotice = "선택한 옷 ${worn.size}개를 3D 아바타의 정면 기준 위치와 크기로 다시 맞췄어요. 2D 의류 배치이며 실제 3D 의복 시뮬레이션은 아니에요."
+            inputNotice = if (before == worn.toMap()) "이미 아바타 기준 위치와 크기예요. 정면 보기로 돌아왔어요." else "선택한 옷 ${worn.size}개를 3D 아바타의 정면 기준 위치와 크기로 다시 맞췄어요. 2D 의류 배치이며 실제 3D 의복 시뮬레이션은 아니에요."
             return
         }
         if (bodyPhoto == null) {
@@ -361,12 +362,16 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         val supported = worn.mapNotNull { (slot, garment) ->
             photoAutoPlacement(slot, garment.item, garment.aspect, canvasSize, detected)?.let { slot to it }
         }
+        val before = worn.toMap()
         supported.forEach { (slot, p) ->
             worn[slot]?.let { g -> worn[slot] = g.copy(center=p.center, baseWidth=p.width, rotation=p.rotation, scale=1f) }
         }
         val skipped = worn.size - supported.size
         inputNotice = if (supported.isEmpty()) {
             "선택한 옷에 필요한 어깨·골반·발목 위치를 찾지 못했어요. 옷을 손으로 배치하거나 다시 촬영해주세요."
+        } else if (before == worn.toMap()) {
+            "인식 가능한 의류는 이미 관절 기준 위치와 크기예요." +
+                if (skipped > 0) " 위치 검출이 부족한 ${skipped}개는 기존 배치를 유지했어요." else ""
         } else {
             "사진 관절 기준으로 ${supported.size}개 의류의 위치와 크기를 다시 맞췄어요." +
                 if (skipped > 0) " 위치 검출이 부족한 ${skipped}개는 기존 배치를 유지했어요." else ""
