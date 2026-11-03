@@ -36,15 +36,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.verticalScroll
 import kotlinx.coroutines.CancellationException
 import androidx.compose.ui.text.font.FontWeight
@@ -209,7 +213,11 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
     val joints=p.joints();val hipY=joints.hipY;val shoulderY=joints.shoulderY
     fun screenY(modelY: Float) = canvas.height / 2f - (modelY - h / 2f) * pixelsPerMeter
     fun place(topY: Float, width: Float, maxHeight:Float=canvas.height*.82f): Placement {
-        val safeWidth = minOf(width,maxHeight/aspect.coerceAtLeast(.1f)).coerceIn(canvas.width * .04f, canvas.width * .85f)
+        // A minimum display width must never defeat the garment's height limit.
+        // Below the persisted placement's 1% width limit, report unsupported rather than stretch it.
+        val safeWidth = minOf(width, maxHeight / aspect.coerceAtLeast(.1f), canvas.width * .85f)
+        if (!safeWidth.isFinite() || safeWidth < canvas.width * .01f)
+            return Placement(Offset.Zero, 0f, 0f)
         return Placement(Offset(canvas.width / 2f,
             (topY + safeWidth * aspect / 2f).coerceIn(-canvas.height, canvas.height * 2f)), safeWidth, 0f)
     }
@@ -289,6 +297,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var avatarCameraReset by remember { mutableIntStateOf(0) }
     var inspectAvatar by remember { mutableStateOf(false) }
     var fittingHelp by remember { mutableStateOf(false) }
+    val controlsScroll = rememberScrollState()
+    LaunchedEffect(inputNotice) {
+        if (inputNotice != null) controlsScroll.scrollTo(0)
+    }
     var undoAvatar by remember { mutableStateOf<Map<FitSlot,WornGarment>?>(null) }
     var lastProfile by remember {mutableStateOf(avatarProfile)}
     LaunchedEffect(avatarProfile) {
@@ -356,17 +368,21 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 val region=g.region ?: return@mapNotNull null
                 val content=fitAvatar(slot,g.item,g.aspect*region.height/region.width,canvasSize,avatarProfile!!)
                 val p=region.expand(content,g.aspect)
-                if(p.width>canvasSize.width*2f) null else slot to p
+                if(p.width<=0f || p.width>canvasSize.width*2f) null else slot to p
             }
             if(placements.isEmpty()) {
-                inputNotice="투명 의류 영역을 확인하지 못했어요. 기존 배치는 유지했어요. 옷장 사진을 확인하거나 수동으로 조절해주세요."
+                inputNotice=if (worn.values.none { it.region != null })
+                    "투명 의류 영역을 확인하지 못했어요. 기존 배치는 유지했어요. 옷장 사진을 확인하거나 수동으로 조절해주세요."
+                else "의류 비율이나 투명 여백 때문에 자동 정렬할 수 없어요. 기존 배치는 유지했어요. 다른 사진을 선택해주세요."
                 return
             }
-            undoAvatar=previous; inspectAvatar=false; avatarCameraReset++
+            inspectAvatar=false; avatarCameraReset++
             placements.forEach { (slot,p) -> worn[slot]?.let {g -> worn[slot]=g.copy(center=p.center,baseWidth=p.width,rotation=p.rotation,scale=1f)} }
             val changed=worn.toMap()!=previous
+            // A no-op wand tap must retain the undo point from the last actual alignment.
+            if (changed) undoAvatar=previous
             inputNotice=(if(changed) "의류 영역 기준으로 정면 위치와 크기를 맞췄어요." else "이미 자동 정렬된 위치예요.")+
-                if(placements.size<worn.size) " 영역을 확인하지 못한 옷은 기존 배치를 유지했어요." else ""
+                if(placements.size<worn.size) " 영역·비율을 적용할 수 없는 옷은 기존 배치를 유지했어요." else ""
             return
         }
         if (bodyPhoto == null) {
@@ -448,6 +464,11 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 fitAvatar(slot,item,aspect*(region?.height ?: 1f)/(region?.width ?: 1f),canvasSize,avatarProfile!!)
                 else fit(slot,item,aspect,canvasSize,body)
             val p=if(targetAvatar && region!=null)region.expand(content,aspect) else content
+            if (targetAvatar && (p.width <= 0f || p.width > canvasSize.width * 2f)) {
+                if (avatarMode == targetAvatar)
+                    inputNotice="의류 비율이나 투명 여백 때문에 자동 배치할 수 없어요. 기존 옷 배치는 유지했어요. 다른 사진을 선택해주세요."
+                return@launch
+            }
             target[slot]=WornGarment(item,uri,aspect,p.center,p.width.coerceAtMost(canvasSize.width*2f),rotation=p.rotation,region=region)
             if(avatarMode==targetAvatar) {
                 activeSlot=slot
@@ -578,7 +599,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 Spacer(Modifier.width(6.dp))
                 Text(if (aiModel.state.pending) "진행 중인 AI 착장 보기" else "AI 착장 사진 생성 (서버 필요)", color = Camel)
             }
-            inputNotice?.let { Text(it, color = Brown, modifier = Modifier.testTag("fittingInputNotice")) }
             if (!avatarMode && !compact && !TryOnRepository.isConfigured()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
@@ -651,8 +671,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     AsyncImage(model = bodyPhoto, contentDescription = "전신 사진",
                         modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
-                // Render back-to-front; each garment also has its own direct
-                // gesture detector so a drag targets the touched garment.
+                // Render back-to-front. Selection feedback follows the image; all input stays on the fixed canvas.
                 (if(inspectAvatar && avatarMode) emptyList() else worn.values.toList()).sortedBy { slotOf(it.item).ordinal }.forEach { g ->
                     val w = g.baseWidth * g.scale
                     val h = w * g.aspect
@@ -666,6 +685,16 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                             .wrapContentSize(Alignment.TopStart,unbounded=true)
                             .requiredSize(with(density) { w.toDp() }, with(density) { h.toDp() })
                             .graphicsLayer(rotationZ = g.rotation, alpha = overlayAlpha)
+                            .drawWithContent {
+                                drawContent()
+                                if (slotOf(g.item) == activeSlot) {
+                                    val bounds = g.region ?: GarmentRegion(0f, 0f, 1f, 1f)
+                                    drawRect(Camel, topLeft = Offset(bounds.left * size.width, bounds.top * size.height),
+                                        size = Size(bounds.width * size.width, bounds.height * size.height),
+                                        style = Stroke(2.dp.toPx()))
+                                }
+                            }
+                            .semantics { selected = slotOf(g.item) == activeSlot }
                             .testTag("fittingOverlay-${g.item.id}")
 
                     )
@@ -723,7 +752,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
-            .verticalScroll(rememberScrollState()).testTag("manualFittingControls")) {
+            .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
+        // Status changes must not resize the avatar viewport and move an otherwise unchanged auto-fit.
+        inputNotice?.let { Text(it, color = Brown,
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingInputNotice")) }
         TextButton(onClick = { showLocalAi = true },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
             Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)

@@ -124,7 +124,11 @@ class P9EditorUiTest {
         compose.onNodeWithTag("cmPart-TORSO").performScrollTo().performClick()
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("cmEditorSave").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("cmApplyFitting").assertDoesNotExist()
+        compose.onNodeWithText("초기 추정값 복원").assertDoesNotExist()
+        compose.onNodeWithTag("cmEditorAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("cmApplyFitting").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("초기 추정값 복원").performScrollTo().assertIsDisplayed()
     }
     @Test fun exitingUnsavedDraftKeepsOriginalProfile() {
         AvatarProfileStore.save(app,AvatarProfile(170f,65f));val previous=AvatarProfileStore.current.value;var closed=false

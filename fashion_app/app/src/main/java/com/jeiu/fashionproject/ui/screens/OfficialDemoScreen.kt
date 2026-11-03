@@ -45,11 +45,13 @@ fun OfficialDemoScreen(onBack: () -> Unit, model: OfficialDemoViewModel = shared
     var consent by remember { mutableStateOf(false) }
     var compare by rememberSaveable { mutableStateOf(false) }
     var reset by remember { mutableStateOf(false) }
+    // Entering with an existing job/result is a review of that trial, never a new generation.
+    var previousTrial by remember { mutableStateOf(state.phase != "idle") }
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { model.save(context, it) }
     BackHandler(onBack = onBack)
     if (consent) AlertDialog(onDismissRequest = { consent = false }, title = { Text("공식 예제만 외부 서비스에서 실행") },
         text = { Text("Hugging Face의 FASHN 공개 Space에 공식 예제 ID에 해당하는 공개 사진 주소만 보내요. 내 사진·옷장·계정 토큰은 보내지 않아요. IP 등 접속 정보는 외부 서비스에 전달돼요. 무료 한도·대기열이 있고 보관·삭제·취소는 우리 자체 서버 정책과 달라요. 결과 품질·삭제 시점을 보장하지 않으며 유료 전환과 자동 재요청은 없어요. 예제·결과는 연구 시험용이며 무단 재배포하지 마세요.") },
-        confirmButton = { TextButton(onClick = { consent = false; compare = false; model.start(OfficialDemoContract.EXAMPLE, true) },
+        confirmButton = { TextButton(onClick = { consent = false; compare = false; previousTrial = false; model.start(OfficialDemoContract.EXAMPLE, true) },
             modifier = Modifier.testTag("officialDemoConsent")) { Text("동의하고 공식 예제 1회 생성") } },
         dismissButton = { TextButton(onClick = { consent = false }) { Text("전송하지 않기") } })
     if (reset) AlertDialog(onDismissRequest = { reset = false }, title = { Text("새 시험 준비") },
@@ -71,7 +73,9 @@ fun OfficialDemoScreen(onBack: () -> Unit, model: OfficialDemoViewModel = shared
                 style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = model::check, enabled = state.phase == "idle" && !state.working,
                 modifier = Modifier.testTag("officialDemoCheck")) { Text("공개 API 준비 확인") }
-            Text(state.message, modifier = Modifier.testTag("officialDemoStatus"))
+            Text(if (previousTrial && state.result != null && state.message.startsWith("공식 공개 데모의 새 요청 결과 수신"))
+                "이전에 생성한 결과예요. 새 생성 요청 없이 비교·저장할 수 있어요."
+                else state.message, modifier = Modifier.testTag("officialDemoStatus"))
             if (state.working) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.working && state.result == null) TextButton(onClick = model::stopWaiting) { Text("앱에서 대기 종료 (서버 취소 아님)") }
             if (model.canResume) OutlinedButton(onClick = model::resume, modifier = Modifier.testTag("officialDemoResume")) { Text("같은 작업 결과 조회 · 재생성 없음") }
@@ -81,7 +85,8 @@ fun OfficialDemoScreen(onBack: () -> Unit, model: OfficialDemoViewModel = shared
                 OutlinedButton(onClick = { compare = !compare }, modifier = Modifier.testTag("officialDemoCompare")) { Text("원본/결과 비교") }
             }
             val displayed = if (compare || state.result == null) state.original else state.result
-            displayed?.let { AsyncImage(it.png, if (compare || state.result == null) "공식 예제 원본" else "새 요청 생성 결과",
+            displayed?.let { AsyncImage(it.png, if (compare || state.result == null) "공식 예제 원본"
+                else if (previousTrial) "이전에 생성한 결과" else "새 요청 생성 결과",
                 contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(320.dp).testTag("officialDemoImage")) }
             if (state.result != null) {
                 OutlinedButton(onClick = { save.launch("official-example-" + System.currentTimeMillis() + ".png") },

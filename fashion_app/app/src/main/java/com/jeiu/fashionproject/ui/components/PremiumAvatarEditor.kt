@@ -118,19 +118,21 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         val next=body.adjusted(selected,value)
                         if(next!=null)update(next) else message=body.copy(values=body.values+(selected to AvatarCm(value,AvatarValueOrigin.ADJUSTED))).issue() ?: "지원하지 않는 조합이에요. 현재 값은 유지했어요."
                     },{openInput()})
-                    Text("초기 추정 ${body.initial.getValue(selected)} cm · 실제 측정값에 맞게 조절해주세요.",style=MaterialTheme.typography.bodySmall)
-                    body.references[selected]?.let {Text("불러온 원본 ${it.cm} cm · ${it.origin.label}",style=MaterialTheme.typography.bodySmall)}
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
                     if(parsed==null)Text("초안 형식을 복원하지 못해 초기 미리보기를 사용해요. 저장된 원본은 유지했어요.")
-                    Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick={askReset=true}) {Text("초기 추정값 복원")}
-                        TextButton(onClick={json=initialJson;message=null}) {Text("불러온 설정 복원")}
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("3D 설정 저장")}
+                    TextButton(onClick={details=!details},modifier=Modifier.testTag("cmEditorAdvancedToggle")) {
+                        Text(if(details)"고급 설정 접기" else "고급 설정 · 복원 및 출처")
                     }
-                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("비교 후 3D 설정 저장")}
-                    if(onApplyToFitting!=null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
-                        modifier=Modifier.fillMaxWidth().testTag("cmApplyFitting")) {Text("저장 후 가상피팅에 적용")}
-                    TextButton(onClick={details=!details}) {Text(if(details)"출처·형상 가정 접기" else "출처·형상 가정 보기")}
                     if(details) {
+                        Text("초기 추정 ${body.initial.getValue(selected)} cm · 실제 측정값에 맞게 조절해주세요.",style=MaterialTheme.typography.bodySmall)
+                        body.references[selected]?.let {Text("불러온 원본 ${it.cm} cm · ${it.origin.label}",style=MaterialTheme.typography.bodySmall)}
+                        Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick={askReset=true}) {Text("초기 추정값 복원")}
+                            TextButton(onClick={json=initialJson;message=null}) {Text("불러온 설정 복원")}
+                        }
+                        if(onApplyToFitting!=null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
+                            modifier=Modifier.fillMaxWidth().testTag("cmApplyFitting")) {Text("저장 후 가상피팅에 적용")}
                         Text("키 ${body.heightCm} cm · 몸무게 ${body.weightKg} kg. 자동 초기값은 검증된 평균이 아닌 임시 형상이에요.")
                         Text("깊이는 타원 가정이며 실제 신체 스캔·의복 물리·정확한 착용 핏이 아니에요.")
                         Text("가슴은 기본 깊이/너비 0.72를 쓰고 어깨 폭을 넘으면 깊이를 늘려 둘레를 맞춰요(최대 1.6). 허리 0.70, 힙 0.76, 허벅지 0.92도 표시 가정이에요.")

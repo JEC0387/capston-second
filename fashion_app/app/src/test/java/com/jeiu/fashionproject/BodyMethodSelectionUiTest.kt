@@ -83,8 +83,10 @@ class BodyMethodSelectionUiTest {
 
     @Test fun avatarSetupGroupsAdjustmentsAndKeepsThreeSourceChoices() {
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
-        compose.onNodeWithTag("avatarShow").assertExists()
+        compose.onNodeWithTag("openCmAvatar").assertExists()
+        compose.onNodeWithTag("avatarShow").assertDoesNotExist()
         compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarShow").assertExists()
         compose.onNodeWithTag("avatarImportBmi").assertExists()
         compose.onNodeWithTag("avatarImportPhoto").assertIsNotEnabled()
         compose.onNodeWithTag("avatarImportManual").assertIsNotEnabled()
@@ -105,8 +107,9 @@ class BodyMethodSelectionUiTest {
                 BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {})
             }
         }
-        compose.onNodeWithTag("avatarShow").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("openCmAvatar").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarShow").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("avatarSave").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("avatarManualExpand").performScrollTo().assertIsDisplayed()
     }
