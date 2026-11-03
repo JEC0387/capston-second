@@ -1,0 +1,75 @@
+name: APK to branch
+
+# apk/** 브랜치에 올리면 디버그 APK 를 빌드해서 apk-output 브랜치에 파일로 올린다.
+# (Actions Artifacts 는 로그인해야 받을 수 있어서, 로그인 없이 받을 수 있게 브랜치에 둔다)
+# 서명 키는 android-debug-apk.yml 과 같은 캐시를 써서, 이전 APK 위에 덮어 설치할 수 있다. API 키는 넣지 않는다.
+on:
+  push:
+    branches:
+      - 'apk/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      ANDROID_USER_HOME: ${{ github.workspace }}/../android-user
+    defaults:
+      run:
+        shell: bash
+        working-directory: fashion_app
+    steps:
+      - name: Check out
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: |
+            fashion_app/**/*.gradle.kts
+            fashion_app/gradle.properties
+            fashion_app/gradle/libs.versions.toml
+            fashion_app/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install Android SDK packages
+        run: |
+          mkdir -p "$ANDROID_USER_HOME"
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            --sdk_root="$ANDROID_HOME" \
+            'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools'
+
+      - name: Same debug signing key as the main APK workflow
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ env.ANDROID_USER_HOME }}/debug.keystore
+          key: android-debug-keystore-${{ runner.os }}-v1
+
+      - name: Build debug APK
+        run: set -o pipefail; bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Show errors as annotations
+        if: failure()
+        run: grep -E "^e: |error:|FAILED|What went wrong" -A3 "$RUNNER_TEMP/build.log" | head -40 | sed 's/^/::error::/' || true
+
+      - name: Push APK to apk-output branch
+        run: |
+          out="$RUNNER_TEMP/apk-output"
+          mkdir -p "$out"
+          cp app/build/outputs/apk/debug/app-debug.apk "$out/FashionAI-debug.apk"
+          sha256sum "$out/FashionAI-debug.apk" > "$out/SHA256.txt"
+          echo "${GITHUB_SHA}" > "$out/COMMIT.txt"
+          cd "$out"
+          git init -q -b apk-output
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A && git commit -q -m "Debug APK from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk-output
