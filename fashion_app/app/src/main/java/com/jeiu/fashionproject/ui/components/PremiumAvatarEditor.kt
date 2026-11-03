@@ -118,7 +118,11 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         modifier=Modifier.testTag("cmPartLabel"))
                     Text(body.values.getValue(selected).origin.label,style=MaterialTheme.typography.bodySmall,
                         modifier=Modifier.testTag("cmValueOrigin"))
-                    CmRuler(body[selected],range,"${selected.label} ${selected.unit}",::adjust,::openInput)
+                    // A body-part switch must replace the ruler's pointer and semantics
+                    // nodes, while the unsaved cm draft above remains shared.
+                    key(selected) {
+                        CmRuler(body[selected],range,"${selected.label} ${selected.unit}",::adjust,::openInput)
+                    }
                     Text("초기 추정 ${body.initial.getValue(selected)} cm · 실제 측정값에 맞게 조절해주세요.",style=MaterialTheme.typography.bodySmall)
                     body.references[selected]?.let {Text("불러온 원본 ${it.cm} cm · ${it.origin.label}",style=MaterialTheme.typography.bodySmall)}
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
