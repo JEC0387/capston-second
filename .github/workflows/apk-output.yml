@@ -1,7 +1,7 @@
-name: APK to branch
+name: APK release
 
-# apk/** 브랜치에 올리면 디버그 APK 를 빌드해서 apk-output 브랜치에 파일로 올린다.
-# (Actions Artifacts 는 로그인해야 받을 수 있어서, 로그인 없이 받을 수 있게 브랜치에 둔다)
+# apk/** 브랜치에 올리면 디버그 APK 를 빌드해서 GitHub Releases 에 올린다.
+# (Actions Artifacts 는 로그인해야 받을 수 있고, APK 가 100MB 를 넘어 커밋으로도 못 올리므로 Releases 에 둔다)
 # 서명 키는 android-debug-apk.yml 과 같은 캐시를 써서, 이전 APK 위에 덮어 설치할 수 있다. API 키는 넣지 않는다.
 on:
   push:
@@ -61,22 +61,43 @@ jobs:
         run: |
           grep -E "^e: |error:|FAILED|What went wrong" -A3 "$RUNNER_TEMP/build.log" | head -40 | sed 's/^/::error::/' || true
 
-      - name: Push APK to apk-output branch
+      - name: Publish APK as a GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           fail() { echo "::error::$1"; exit 1; }
           apk=$(ls app/build/outputs/apk/debug/*.apk 2>/dev/null | head -1)
-          [ -n "$apk" ] || fail "APK 파일 없음: $(ls -R app/build/outputs 2>&1 | head -20 | tr '\n' ' ')"
-          out="$RUNNER_TEMP/apk-output"
-          mkdir -p "$out"
-          # GitHub 파일 한도(100MB)를 넘으므로 90MB 조각으로 나눠 올린다 (받은 뒤 cat 으로 합침)
-          sha256sum "$apk" | sed 's#  .*#  FashionAI-debug.apk#' > "$out/SHA256.txt"
-          split -b 90m -d "$apk" "$out/FashionAI-debug.apk.part"
-          echo "${GITHUB_SHA}" > "$out/COMMIT.txt"
-          cd "$out"
-          git init -q -b apk-output
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A && git commit -q -m "Debug APK from ${GITHUB_SHA::7}"
-          if ! msg=$(git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" apk-output 2>&1); then
-            fail "push 실패: $(echo "$msg" | tr '\n' ' ' | sed 's/x-access-token:[^@]*@/***@/g')"
-          fi
+          [ -n "$apk" ] || fail "APK 파일 없음"
+          cp "$apk" "$RUNNER_TEMP/FashionAI-debug.apk"
+          sum=$(sha256sum "$RUNNER_TEMP/FashionAI-debug.apk" | cut -d' ' -f1)
+          size=$(du -m "$RUNNER_TEMP/FashionAI-debug.apk" | cut -f1)
+          day=$(TZ=Asia/Seoul date +%Y-%m-%d)
+          tag="apk-$(TZ=Asia/Seoul date +%Y%m%d)-${GITHUB_SHA::7}"
+          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          FashionAI(STYLE AI) 안드로이드 앱 디버그 APK — ${day} main 브랜치 기준 빌드.
+
+          ## 설치
+          1. 폰에서 아래 **FashionAI-debug.apk** 를 내려받아 열기
+          2. "출처를 알 수 없는 앱 설치" 허용
+          3. 예전에 GitHub Actions 에서 받은 APK 위에는 덮어 설치됨 (서명 키 같음). Android Studio 로 설치한 앱이 있으면 지운 뒤 설치
+
+          ## 이번 빌드에 들어간 기능
+          - 로그인: Google · 카카오 · Facebook · Apple (각 키를 설정해야 버튼이 켜짐) · 로그인 없이 둘러보기
+          - 선호 스타일 8가지 (온보딩 · 마이페이지에서 변경) → 코디 추천에 반영
+          - 성별 맞춤 추천, 스타일 취향 학습(8가지 · 실제 코디 사진) 반영
+          - 옷장 AI 등록 배경 자동 제거 · 사진 통일, 기존 옷 사진 정리
+          - 가상피팅 5단계 (자세 추정 → AI 생성 → 얼굴 합성)
+          - 쇼핑 검색은 옷 관련만, 추천 상품은 내 옷장 · 취향으로 순서와 이유 표시
+          - 체형 맞춤 스타일 제안 · 상품 상세 · 스타일 분석 실제 데이터로
+
+          ## 참고
+          - API 키를 넣지 않은 빌드: 날씨 · 이미지 검색 · 옷 분류는 Railway 서버를 거쳐 동작, 구글 로그인 · AI 가상피팅(FASHN)은 꺼져 있음
+          - 크기 ${size}MB · SHA-256 \`${sum}\`
+          - 빌드 커밋 ${GITHUB_SHA}
+          NOTES
+          sed -i 's/^          //' "$RUNNER_TEMP/notes.md"
+          gh release create "$tag" "$RUNNER_TEMP/FashionAI-debug.apk" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "FashionAI 디버그 APK (${day})" --notes-file "$RUNNER_TEMP/notes.md" --latest \
+            || fail "릴리스 만들기 실패"
+          echo "::notice::https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
