@@ -1,11 +1,50 @@
 # P16 device stability — 2026-11-04
 
+## Latest verified state (CI/APK checkpoint)
+
+**Code/CI/APK verification passed; physical UI testing is waiting for the phone to be unlocked. Do not report P16 device interaction or 16KB runtime verification as complete.**
+
+- Execution commit: `94e4e3a7b5b0a5017f934e50ab840260b067fba7`.
+- [Final CI 41726982899](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899): all **7 jobs successful**.
+- Android **440 passed**, Preview **204 passed**; each 0 failed/errors/skipped. Backend **151 passed + 8 subtests**, 7 warnings. Release/native safety **10 passed**. Lint **0 errors, 165 warnings, 2 hints**.
+- Instrumentation sources/APKs compiled and signed. Physical instrumentation **not executed yet**: S25+ is ADB-authorized but `showing=true`, `inputRestricted=true`, screen off. User unlocked earlier, but it automatically locked again during CI. A second unlock request is pending; no lock bypass/settings changes.
+- Preview `com.jeiu.fashionproject.preview`, `1.1.79.1-preview`, **17901**; [APK artifact 13276820721](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899/artifacts/13276820721).
+- APK SHA-256: `95060779ed1af0804762b1c039da2e28d51ea9ba01b53a44b90148b0563e0119`.
+- Local APK: `C:\Users\USER\Documents\ChatGPT\capston\p16-device-20261104\fashion_app\build\p16-release\fashionai-1.1.79.1-preview-vc17901-94e4e3a7.apk`.
+- Package/version, existing trusted certificate, clean source SHA, embedded identity, SHA256SUMS and full ZIP CRC independently verified locally. CI native reports match those exact downloaded APK hashes: **9/9 ELF64 libraries pass, ZIP passes, all four ABIs retained**, for both Preview and QA.
+- Only the separate **FashionAI QA P16** app (`com.jeiu.fashionproject.preview.qa`) and its `.test` package were installed successfully. Their signer and exact instrumentation target were checked. No test fixture was executed/written yet.
+- Existing Preview remains **17701 / 1.1.77.1-preview**; no user-app update/uninstall/clear. After QA installation, all **22 existing Preview data file hashes unchanged**, 0 missing/changed, 0 new files. Original app, photos, profiles, queue, journal and backups untouched.
+- QA APK SHA-256: `c12e6e473e6b47e6c1e509491eaca390ecf4561a5104efe8f707702739504de1`; [separate QA artifact 13276252269](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899/artifacts/13276252269). It is not a Preview update.
+
+| Required area | Final verified scope | Remaining physical check |
+|---|---|---|
+| Home/body readability | Exact long weather fixture at 384dp passed, no Home production change; draft/UI regressions passed | P16 body editor visibility on S25+; historical Home onset remains unknown |
+| Seven parts / 0.5cm ruler | Automated regression passed; no unsupported ruler math rewrite | Guarded seven-part touch/input test |
+| Garment selection/pan/scale/rotation | Selection/bounds/UI tests passed | Synthetic S25+ gestures |
+| Auto-fit/undo | Reproduced original drift and corrected; repeat/no-op tests passed | Actual touch + repeated auto-fit + undo |
+| Save/process restart | Guarded two-phase instrumentation ready and compiled | Execute both phases with different QA process IDs; not yet verified |
+| Camera/photo analysis | Full automated regression passed; native smoke prepared | Actual bundled model smoke and camera capture; no real photo processed |
+| 16KB | Final ELF/ZIP checks passed | Real 16KB runtime unavailable; S25+ is 4096-byte pages |
+| P15 public AI | Existing input/privacy/request limits preserved; reentry label mock passed; existing journal files unchanged | P16 screen reentry, compare/save without generating again |
+| Personal-photo VTON | No private input uploaded, no paid resource | Authorized private GPU, weights/licenses, approved input and server privacy setup still required |
+
+### Resume exactly here
+
+1. Do **not** rerun successful CI/tests, rebuild identical APKs, clear data or repeat public AI generation. Confirm branch/worktree and retain all ignored evidence.
+2. After user unlocks, verify S25+ `device` and unlocked status with explicit serial. The QA app/tests are already installed; do not reinstall/reset automatically.
+3. Run private helper `fashion_app/build/p16-private/run_device_qa.py first` with the existing Python environment. It targets only `.preview.qa`, refuses old output, checks unlock, runs `P16DeviceQaTest#editManipulateAndSaveSyntheticFixtures`, and saves output/evidence. Optional `capture_qa.py` captures only when QA has foreground focus.
+4. If first phase succeeds, stop **only** `com.jeiu.fashionproject.preview.qa`, then run helper argument `restore`. If it fails, preserve partial JSON/logs and distinguish a test harness issue from an application issue before retrying; never weaken assertions.
+5. Only after device QA is satisfactory: fingerprint current Preview with `device_audit.py preupdate`, verify it is still the known 17701 package/APK, and perform compatible `adb -s <S25 serial> install -r <verified Preview APK>` without `-d`, uninstall or clear. Fingerprint with `device_audit.py after`, inspect actual installed metadata and minimal P16 UI. The old 17701 APK remains preserved.
+6. Append real outcomes and final documentation commit SHA here. Documentation-only update does not require a new APK/CI run.
+
+Private evidence: `fashion_app/build/p16-private/{baseline-build.json,s25-data-before.json,qa-install-preservation.json,verify_download.py,run_device_qa.py,capture_qa.py}`; verified APK metadata in `p16-release/LOCAL_VERIFICATION.json` and `p16-qa-release/LOCAL_VERIFICATION.json`; final XML/native reports in `p16-ci-final-reports`. None are committed. Low PC disk space (~400MB remaining) means do not start another local full build or emulator image download.
+
 ## Checkpoint and safety
 
 - Work branch: `codex/fashionai-p16-device-stability-20261104`.
 - Base: P15 `1e0f66cad2a24ab9140584860299c33a6cc06311`; installed baseline Preview 17701, execution SHA `14beaef75b8504c4ca985a0550c89a49cbf9aa79`.
 - Existing branches, worktrees, backups, private P15 result and user data retained. No production server/DB changes, paid calls, new public inference, personal-image transmission, clear/uninstall or signing-key rotation.
-- Final CI/APK/device results are pending at this implementation checkpoint; do not treat the test harness as execution evidence.
+- The sections below preserve implementation-checkpoint history. The latest verified state above supersedes their earlier pending statuses; test source remains distinct from actual execution evidence.
 
 ## Findings and changes
 
