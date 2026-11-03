@@ -97,4 +97,16 @@ class LocalVtonRepositoryTest {
         try {LocalVtonRepository.validatePng(truncated);fail("Truncated PNG must not be shown as a generated result")}
         catch(_:TryOnFailure) {}
     }
+    @Test fun ownPreviewSampleGarmentCanBePreparedWithoutOpeningAWebRoute()=runBlocking {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        WardrobeStore.load(app)
+        val sample=WardrobeStore.items.value.first {it.imageUri.startsWith("android.resource://")}
+        val prepared=LocalVtonRepository.prepare(app,sample.imageUri,TryOnInputRole.GARMENT)
+        assertTrue(prepared.data.startsWith("data:image/jpeg;base64,"))
+        assertEquals(0,server.requestCount)
+        try {
+            LocalVtonRepository.prepare(app,"android.resource://another.app/drawable/sample_01",TryOnInputRole.GARMENT)
+            fail("Only this app's bundled sample may be used")
+        } catch(_:TryOnFailure) {}
+    }
 }

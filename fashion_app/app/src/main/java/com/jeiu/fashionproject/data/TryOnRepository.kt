@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.data
 
+import com.jeiu.fashionproject.BuildConfig
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -73,7 +74,9 @@ object TryOnRepository : TryOnGateway {
         var transformed: Bitmap? = null
         var original: Bitmap? = null
         try {
-            bitmap = if (Build.VERSION.SDK_INT >= 28) {
+            // BitmapFactory's stream path also works for bundled drawable URIs
+            // whose ImageDecoder source is unavailable on some Android providers.
+            bitmap = if (Build.VERSION.SDK_INT >= 28 && uri.scheme != "android.resource") {
                 ImageDecoder.decodeBitmap(ImageDecoder.createSource(context.contentResolver, uri)) { decoder, info, _ ->
                     if (info.isAnimated) throw TryOnFailure("움직이는 사진 대신 정지 사진을 선택해주세요.")
                     if (info.size.width.toLong() * info.size.height > 20_000_000L) throw TryOnFailure("사진은 2천만 화소 이하로 선택해주세요.")
@@ -159,7 +162,10 @@ object TryOnRepository : TryOnGateway {
     private suspend fun prepareSource(context: Context, source: String, role: TryOnInputRole?): PreparedTryOnImage {
         val uri = Uri.parse(source)
         if (uri.scheme != "https") {
-            if (uri.scheme !in setOf("content", "file")) throw TryOnFailure("사진은 갤러리·카메라 또는 HTTPS 원본에서 선택해주세요.")
+            if (uri.scheme !in setOf("content", "file", "android.resource"))
+                throw TryOnFailure("사진은 갤러리·카메라·앱 샘플 또는 HTTPS 원본에서 선택해주세요.")
+            if (uri.scheme == "android.resource" && uri.authority != BuildConfig.APPLICATION_ID)
+                throw TryOnFailure("이 앱의 샘플 의류 사진만 사용할 수 있어요.")
             return prepareUri(context, uri, role)
         }
         return withContext(Dispatchers.IO) {
