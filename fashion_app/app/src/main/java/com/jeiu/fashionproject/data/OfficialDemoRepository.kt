@@ -8,7 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
@@ -143,8 +143,16 @@ class OfficialDemoRepository internal constructor(private val client: OkHttpClie
         throw DemoFailure("image_invalid")
     }
     override suspend fun submit(id: String): String {
+        val payload = OfficialDemoContract.body(id).toByteArray(Charsets.UTF_8)
+        val oneShot = object : RequestBody() {
+            override fun contentType() = "application/json".toMediaType()
+            override fun contentLength() = payload.size.toLong()
+            // retryOnConnectionFailure(false) alone does NOT prevent a 503/Retry-After: 0 follow-up.
+            override fun isOneShot() = true
+            override fun writeTo(sink: okio.BufferedSink) { sink.write(payload) }
+        }
         val request = Request.Builder().url(OfficialDemoContract.ORIGIN + "/gradio_api/call/try_on")
-            .post(OfficialDemoContract.body(id).toRequestBody("application/json".toMediaType())).build()
+            .post(oneShot).build()
         val value = JSONObject(bytes(request, 16 * 1024).toString(Charsets.UTF_8)).getString("event_id")
         OfficialDemoContract.eventId(value)
         return value

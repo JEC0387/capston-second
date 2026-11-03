@@ -41,3 +41,7 @@ S25+는 작업 PC의 로컬 SDK ADB에서 `device` 상태로 확인했다. 실�
 진행 중: 전체 CI → 서명·버전·무결성 확인 → S25+ 안전 업데이트 → 공식 예제 실제 요청 1회 → 표시/비교/저장 및 데이터 해시 비교. 실제 외부 추론은 아직 이번 P15에서 실행하지 않았다. 아래 결과는 완료 후 실제 증거로 갱신한다.
 
 GPU 모델/순수 추론 시간/peak VRAM은 API가 제공하지 않으면 미확인으로 남긴다. 결과가 P14와 같더라도 새 요청의 event ID와 실행·수신 기록으로 판단하며 파일 차이만을 성공 기준으로 삼지 않는다.
+
+### 전송 1회 보강
+
+최초 CI 코드 `a172c9e` 검토 중 [OkHttp 4.12 공식 구현](https://github.com/square/okhttp/blob/parent-4.12.0/okhttp/src/main/kotlin/okhttp3/internal/http/RetryAndFollowUpInterceptor.kt)에서 `503 + Retry-After: 0`은 연결 재시도 비활성만으로 막히지 않는 것을 확인했다. 실제 외부 요청 전 RequestBody를 `isOneShot=true`로 바꾸고, 503 뒤 성공 응답이 있어도 POST가 정확히 1회인지 MockWebServer 검사로 보강했다. 최초 CI는 중단하지 않되 그 APK는 실기기 설치 대상으로 사용하지 않는다. 수정한 최종 SHA의 전체 CI만 최종 배포 근거로 삼는다.

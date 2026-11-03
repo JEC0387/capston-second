@@ -211,6 +211,20 @@ class OfficialDemoTest {
             assertEquals(3, server.requestCount)
         } finally { server.shutdown() }
     }
+    @Test fun retryAfterZeroCannotRepeatGenerationPost() = runBlocking {
+        val server = MockWebServer(); server.start()
+        try {
+            val client = OkHttpClient.Builder().retryOnConnectionFailure(false).followRedirects(false)
+                .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().url(server.url(chain.request().url.encodedPath)).build()) }.build()
+            val repo = OfficialDemoRepository(client)
+            server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "0"))
+            server.enqueue(MockResponse().setBody("{\"event_id\":\"$ID\"}"))
+            try { repo.submit(OfficialDemoContract.EXAMPLE); fail("A generation POST was repeated") }
+            catch (e: DemoFailure) { assertEquals("unavailable", e.kind) }
+            assertEquals(1, server.requestCount)
+            assertEquals("POST", server.takeRequest().method)
+        } finally { server.shutdown() }
+    }
     class MemoryJournal : DemoJournal {
         var value: String? = null; var fail = false
         override fun read() = value
