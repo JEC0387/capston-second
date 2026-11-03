@@ -87,4 +87,43 @@ PNG: `C:\Users\USER\Documents\ChatGPT\capston\p14-demo-20261104\backend\local_vt
 
 ## 자동 검증 및 GitHub
 
-P13 기준 CI `41682578374` 및 APK17401은 보존한다. P14는 앱/서버 소스 변경 없이 요청한 전체 CI를 별도 실행하여 Android/Preview/Backend/Lint/서명·버전을 확인한다. 결과와 최종 APK 경로는 완료 후 이 문서에 기록한다. 실제 생성 이미지는 CI fixture나 APK 자산으로 사용하지 않는다.
+P13 기준 CI `41682578374` 및 APK17401은 보존했다. P14 [전체 CI 41692637427](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41692637427)의 **7개 Job 모두 성공**을 확인했다. 실제 생성 이미지는 CI fixture나 APK 자산으로 사용하지 않았다.
+
+| 검증 | 실제 결과 |
+|---|---|
+| Android 전체 단위 테스트 | 413개, 실패/오류/건너뜀 0 |
+| Preview 회귀 테스트 | 177개, 실패/오류/건너뜀 0 |
+| Backend | 151개 및 하위 검사 8개 통과, 경고 7개 |
+| APK 배포 안전성 단위 테스트 | 3개 통과 |
+| Lint | 오류 0, Warning 168, Hint 2. 경고가 없는 프로젝트라고 주장하지 않음 |
+| Android 기기 테스트 코드 | Kotlin 컴파일 성공. 실제 기기 실행 아님 |
+| 서버 시작 | Windows Python 3.11/3.12/3.13/3.14 및 Linux 3.12 모두 성공 |
+| 아바타 비교 렌더링 | CI CPU 렌더링 성공. S25+ OpenGL 실행 아님 |
+| 실제 자체 GPU/Android 결과 흐름 | 미검증. CI 모의 추론 성공으로 대체하지 않음 |
+
+XML 보고서를 다운로드하여 실제 개수를 집계했다. 로컬 보고서: `fashion_app/build/p14-ci-reports/` (Git 제외). 이미 통과한 테스트를 로컬에서 중복 실행하지 않았다.
+
+### 검증된 Preview APK
+
+- [APK 다운로드](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41692637427/artifacts/13262065991): 비공개 저장소 접근 권한 필요. Artifact 만료 예정 2026-12-03 UTC.
+- 버전 `1.1.75.1-preview`, versionCode **17501**, 패키지 `com.jeiu.fashionproject.preview`.
+- APK 코드/CI SHA: `384b0dcb90be3b8ebfa30b0b6a1c751e2cf0a0f5`.
+- 인증서 SHA-256: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`.
+- APK SHA-256: `a53712afdf81f16fbd98d1e27eb1d47cb6c42457c5c7b5c6c572045aaa512e3e`.
+- 정확한 로컬 APK: `C:\Users\USER\Documents\ChatGPT\capston\p14-demo-20261104\fashion_app\build\p14-final-apk\fashionai-1.1.75.1-preview-vc17501-384b0dcb.apk`.
+- 같은 폴더의 `BUILD_INFO.json`, `BUILD_INFO.txt`, `SHA256SUMS.txt` 보존. CI의 `distributionVerified=true`, `sourceDirty=false` 확인.
+
+보존한 P13 APK17401 파일과 직접 비교하여 동일 패키지·동일 인증서·상향 버전을 확인했다. 다운로드 APK의 apksigner 검증, ZIP CRC, SHA-256, manifest와 내장 `assets/build_identity.json` 및 BUILD_INFO 일치, 필수 DEX 기능 표식, 개인 설정/키 파일 제외 검사를 통과했다. 공식 예제/생성물 4개 파일과 APK 이미지 엔트리의 해시를 비교하여 해당 증거 이미지가 포함되지 않았음을 확인했다. 별도 로컬 검증 모드의 임시 메타데이터는 `distributionVerified=false`로 출력하지만 원본 CI 배포 메타데이터는 수정하지 않았다.
+
+**업데이트 방법:** ZIP을 풀어 위 APK를 기존 **FashionAI Preview**에 업데이트한다. 기존 앱 삭제/초기화는 하지 않는다. 설치 후 마이페이지에서 `1.1.75.1-preview / 17501 / 384b0dcb`를 확인하고 위 시연 순서의 데이터 보존·저장 복원을 먼저 점검한다. 이 비교는 P13 Preview17401 기준이며, 과거 다른 서명으로 설치된 기본 FashionAI 앱을 덮어쓸 수 있다는 의미가 아니다. 설치 거부 시 중단하고 설치본 패키지·서명·버전을 읽기 전용으로 확인한다. 이번 세션에서는 설치/업데이트/복원을 실행하지 않았다.
+
+### 최종 인수인계 및 다음 순서
+
+수정 파일은 이 문서와 `docs/README.md` **2개뿐**이다. 앱/백엔드/배포 스크립트는 기준 P13과 동일하다. 실제 추론 스크립트와 원본 응답은 위 비공개 증거 폴더에만 보존한다. P14 브랜치에 생성 증거 커밋 `384b0dc`를 Push하고 전체 CI를 완료했으며, 이 검증 결과를 추가한 후속 커밋은 문서만 변경한다. 최종 문서 커밋 SHA는 `git rev-parse HEAD` 또는 브랜치에서 확인하며 APK 내부 SHA와 구분한다. 문서만 갱신한 뒤 이미 성공한 전체 CI를 다시 실행하지 않는다.
+
+1. S25+가 다시 ADB 인증된 상태에서 연결되면 설치본 버전/서명을 읽기 전용 확인한다. 기기 작업을 허용받은 범위에서만 Preview 업데이트와 위 리허설을 진행한다.
+2. 발표에서 공식 데모의 실제 생성 결과와 앱의 자체 서버 미연결 상태를 분리해 설명한다. 공용 데모의 실시간 응답이나 무료 GPU 할당을 필수 시연 경로로 삼지 않는다.
+3. 학교·팀의 허가된 GPU를 확보하면 기존 자체 서버 배포 문서에 따라 가중치/checksum, Parser 연구·평가 라이선스, HTTPS/인증/작업 격리/만료 정책을 확인한다. 비용 발생은 별도 승인 대상이다.
+4. 공식 예제의 허용 범위 안에서 상의 한 벌 자체 GPU 추론을 검증하고 실제 GPU명/peak VRAM/모델 로딩·추론 시간/PNG 해시를 기록한다. 그 뒤 Android의 요청→조회→표시→비교→저장 및 취소/실패를 실기기 검증한다.
+
+남은 위험: 자체 GPU 미확보, 실제 앱 생성·저장 미검증, S25+ 리허설 미실시, Lint 경고, 공용 데모의 할당량·보관 정책, 결과의 의류 질감/신체 경계 변화. 운영 배포·DB 변경·사용자 사진 전송·데이터 이전·유료 호출은 하지 않았다.
