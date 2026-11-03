@@ -88,7 +88,7 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
 /** Reuses the same real GLES mesh inside the fitting canvas. Touch rotates; pinch zooms. */
 @Composable
 fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier,resetKey:Int=0,
-    cameraYaw:Float?=null,onRotation:((Float)->Unit)?=null,fitModel:Boolean=false) {
+    cameraYaw:Float?=null,onRotation:((Float)->Unit)?=null,fitModel:Boolean=false,allowTouch:Boolean=true) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var yaw by remember { mutableFloatStateOf(0f) }
@@ -112,7 +112,7 @@ fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier
         Text("이 기기에서 3D 모델을 표시하지 못했어요. 저장된 설정은 유지돼요.", modifier = modifier)
     } else {
         AndroidView(factory = { ctx -> AvatarSurface(ctx, { yaw = it;onRotation?.invoke(it) }, { zoom = it }, { failed = true }).also { surface = it } },
-            update = { it.update(parameters, 1f, 1f, 1f, cameraYaw ?: yaw, zoom, thighScale,fitModel) }, modifier = modifier)
+            update = { it.update(parameters, 1f, 1f, 1f, cameraYaw ?: yaw, zoom, thighScale,fitModel,allowTouch) }, modifier = modifier)
     }
 }
 
@@ -121,6 +121,9 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
     private var lastX=0f
     private var yawValue=0f
     private var zoomValue=1f
+    // Flat garment overlays remain front-facing. Disable GL touch rotation while
+    // they are visible so the mannequin cannot turn without its 2D garments.
+    private var touchEnabled=true
     private var geometry:List<Any>?=null
     private data class Request(val key:List<Any>,val p:AvatarParameters,val s:Float,val w:Float,val h:Float,val thigh:Float)
     private var scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
@@ -157,7 +160,8 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
         super.onAttachedToWindow()
         if(!scope.isActive) {scope=CoroutineScope(SupervisorJob()+Dispatchers.Default);requests=Channel(Channel.CONFLATED);startWorker();latest?.let {requests.trySend(it)}}
     }
-    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float,thigh:Float = 1f,fit:Boolean=false) {
+    fun update(parameters:AvatarParameters,shoulder:Float,waist:Float,hip:Float,yaw:Float,zoom:Float,thigh:Float = 1f,fit:Boolean=false,touchEnabled:Boolean=true) {
+        this.touchEnabled=touchEnabled
         val key=listOf(parameters,shoulder,waist,hip,thigh)
         if(key!=geometry) {
             geometry=key
@@ -168,6 +172,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
         requestRender()
     }
     override fun onTouchEvent(event:MotionEvent):Boolean {
+        if(!touchEnabled)return false
         parent?.requestDisallowInterceptTouchEvent(true)
         pinch.onTouchEvent(event)
         when(event.actionMasked) {
