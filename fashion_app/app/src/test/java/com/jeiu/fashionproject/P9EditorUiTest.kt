@@ -137,6 +137,7 @@ class P9EditorUiTest {
         compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
         compose.onNodeWithTag("premiumAvatarEditor").assertIsDisplayed()
         compose.onNodeWithContentDescription("3D 조절 닫기").performClick()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(body,AvatarProfileStore.current.value!!.centimeters)}
     }
