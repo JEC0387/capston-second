@@ -31,6 +31,7 @@ class P7AvatarUiTest {
     } }}
     @Test fun cancellationPreservesPriorProfileAndApprovalIsNotAutomaticSave() {
         val prior=AvatarProfile(175f,72f);assertTrue(AvatarProfileStore.save(app,prior));show()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarImportPhoto").performScrollTo().performClick()
         compose.onNodeWithTag("avatarApplyCancel").performClick()
         compose.runOnIdle {assertEquals(prior,AvatarProfileStore.current.value)}
