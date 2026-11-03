@@ -148,9 +148,12 @@ jobs:
             --tests '*BodyPhotoEntryUiTest' --tests '*BodyAnalysisResultUiTest' \
             --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
-            --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*P7*' \
+            --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*OfficialDemoTest' --tests '*P7*' \
             --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Build Preview instrumentation harness (no device or live service execution)
+        run: bash gradlew :app:assembleDebugAndroidTest -PfashionPreview=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Render synthetic P9 and P10 mesh comparisons (CPU only)
         working-directory: .
@@ -190,6 +193,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+
+      - name: Upload opt-in Preview instrumentation harness
+        if: success() && steps.distribution.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fashionai-preview-instrumentation-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
+          path: fashion_app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload validation metadata (contains no APK or signing key)
         if: success()

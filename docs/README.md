@@ -68,3 +68,6 @@ P11 안정화 후속: [P11_STABILITY_FINAL_20261103.md](P11_STABILITY_FINAL_2026
   AI 성능 측정 [`backend/evaluation/README.md`](../backend/evaluation/README.md)
 - 앱: [`fashion_app/FEATURES.md`](../fashion_app/FEATURES.md), [`fashion_app/BACKEND_CONNECTION.md`](../fashion_app/BACKEND_CONNECTION.md),
   [`fashion_app/MEDIAPIPE_SETUP.md`](../fashion_app/MEDIAPIPE_SETUP.md), 기획 [`fashion_app/plans/`](../fashion_app/plans/)
+# P15
+
+- [공식 예제 전용 앱 연결 및 검증 경계](P15_APP_VTON_HANDOFF_20261104.md)

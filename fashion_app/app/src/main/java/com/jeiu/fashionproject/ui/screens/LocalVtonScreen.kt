@@ -51,6 +51,7 @@ fun sharedLocalVtonViewModel(): TryOnViewModel {
 fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -> Unit,
     model: TryOnViewModel=sharedLocalVtonViewModel()) {
     check(model.localMode) { "A separate local engine ViewModel is required" }
+    var showOfficialDemo by rememberSaveable { mutableStateOf(false) }
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
     val state=model.state
@@ -111,6 +112,12 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     val pngPicker=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { save(it,true) }
     val jpgPicker=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { save(it,false) }
 
+    // Keep the private-server screen's input draft remembered while visiting the separate public mode.
+    if (BuildConfig.DEBUG && BuildConfig.PREVIEW_BUILD && showOfficialDemo) {
+        OfficialDemoScreen(onBack = { showOfficialDemo = false })
+        return
+    }
+
     if(connect) AlertDialog(onDismissRequest={token="";connect=false},title={Text("자체 AI 서버 연결")},
         text={Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("별도 개발 GPU 서버 주소와 자체 서버 전용 개인 토큰을 입력해요. FASHN API 키나 기존 백업 복구 코드를 입력하지 마세요. 토큰은 메모리에만 보관해요.")
@@ -148,6 +155,10 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             Text("자체 AI 착장 이미지 생성",style=MaterialTheme.typography.titleLarge,color=Brown,
                 modifier=Modifier.testTag("localVtonTitle"))
             Text("FASHN VTON v1.5 · 별도 개발 서버 · 유료 API 자동 호출 없음")
+            if (BuildConfig.DEBUG && BuildConfig.PREVIEW_BUILD) OutlinedButton(
+                onClick = { showOfficialDemo = true }, modifier = Modifier.testTag("officialDemoEntry")) {
+                Text("공식 공개 데모 연동 · 예제 전용")
+            }
             Text("전신 사진 → 옷장에서 한 벌 → 서버 준비 확인 → 전송 동의 → 생성·비교·저장",
                 style=MaterialTheme.typography.bodySmall,color=Brown)
             Text("마법봉의 2D 위치 맞춤과 다른 모델 생성 경로예요. 결과가 없으면 생성 성공으로 표시하지 않아요.")
