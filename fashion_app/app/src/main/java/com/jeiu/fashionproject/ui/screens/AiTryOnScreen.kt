@@ -129,12 +129,14 @@ fun AiTryOnScreen(
             Text("AI로 입어보기", style = MaterialTheme.typography.titleLarge, color = Brown, modifier = Modifier.padding(top = 10.dp))
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("모드 C · 기존 외부 AI 서비스 (유료 FASHN 프록시)", color = Brown)
+            Text("AI 착장 사진 생성 · 외부 FASHN 서비스(유료)", color = Brown)
+            Text("1. 전신 사진 선택  →  2. 옷장 의류 확인  →  3. AI 서버 연결  →  4. 생성 전 동의",
+                style = MaterialTheme.typography.bodySmall, color = MediumGray)
             OutlinedButton(onClick = { showLocalMode = true }, modifier = Modifier.testTag("openLocalVton")) {
-                Text("모드 B · 자체 AI 착장 이미지 생성")
+                Text("자체 AI 모델 사용하기 (별도 GPU 서버 필요)")
             }
-            Text(if (configured) "원본 사진과 선택한 옷으로 실제 AI 이미지를 생성해요."
-                else "AI 서비스 연결 전에는 수동 배치로 옷의 위치와 크기를 조절할 수 있어요.",
+            Text(if (configured) "외부 유료 AI 서버가 연결됐어요. 사진 전송 전 동의를 거친 뒤에만 생성해요."
+                else "현재 외부 AI 서버가 연결되지 않았어요. 사진·옷을 선택해도 실제 착장 이미지를 생성할 수는 없어요.",
                 color = Brown, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("aiTryOnGuide"))
             Text("관절 자동 정렬과 별도 기능이에요. 수동 드래그·회전 좌표는 AI에 전달되지 않아요.", color = MediumGray)
             OutlinedButton(enabled = !state.pending && !saving, onClick = {
@@ -152,7 +154,7 @@ fun AiTryOnScreen(
             selection.forEach { Text("${it.category} · ${it.name}", color = Brown) }
             if (plan.unsupported.isNotEmpty()) Text("신발·액세서리는 이번 AI 생성에서 제외돼요. 수동 배치는 계속 사용할 수 있어요.", color = MediumGray)
             plan.issue?.let { Text(it, color = Brown) }
-            if (!configured) Text("AI 피팅용 개인 접속 토큰이 이 실행에 설정되지 않았어요. 데이터 백업 인증과 별개이며 앱 종료 시 지워져요. AI 서버 연결 설정 후 사진 전송 동의와 생성 버튼이 필요해요. 수동 배치는 계속 사용할 수 있어요.",
+            if (!configured) Text("AI 생성에는 별도 서버 주소와 운영자가 발급한 개인 토큰이 필요해요. 서버가 준비되지 않았다면 생성 버튼이 비활성화되는 것이 정상이에요. 유료 서비스는 사용자 동의 없이 실행하지 않아요.",
                 color = Brown, modifier = Modifier.testTag("aiTryOnNotConfigured"))
             TextButton(enabled = !state.watching, onClick = { showConnection = true }) { Text("AI 서버 연결 설정") }
             if (configured) TextButton(enabled = !state.watching && !checkingConnection, onClick = {
