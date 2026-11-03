@@ -116,7 +116,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         modifier=Modifier.testTag("cmValueOrigin"))
                     CmRuler(body[selected],range,"${selected.label} ${selected.unit}",{ value ->
                         val next=body.adjusted(selected,value)
-                        if(next!=null)update(next) else message="이 표시 모델에서 지원하지 않는 조합이에요. 원본과 현재 값은 유지했어요."
+                        if(next!=null)update(next) else message=body.copy(values=body.values+(selected to AvatarCm(value,AvatarValueOrigin.ADJUSTED))).issue() ?: "지원하지 않는 조합이에요. 현재 값은 유지했어요."
                     },{openInput()})
                     Text("초기 추정 ${body.initial.getValue(selected)} cm · 실제 측정값에 맞게 조절해주세요.",style=MaterialTheme.typography.bodySmall)
                     body.references[selected]?.let {Text("불러온 원본 ${it.cm} cm · ${it.origin.label}",style=MaterialTheme.typography.bodySmall)}

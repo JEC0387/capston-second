@@ -15,7 +15,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -99,7 +101,8 @@ private data class WornGarment(
     val center: Offset,
     val baseWidth: Float,     // 자동으로 맞춘 너비
     val scale: Float = 1f,    // 사용자가 조절한 배율
-    val rotation: Float = 0f  // 도(°)
+    val rotation: Float = 0f,  // 도(°)
+    val region: GarmentRegion? = null
 )
 
 internal data class Placement(val center: Offset, val width: Float, val rotation: Float)
@@ -205,8 +208,8 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
     val h = p.heightCm / 100f
     val joints=p.joints();val hipY=joints.hipY;val shoulderY=joints.shoulderY
     fun screenY(modelY: Float) = canvas.height / 2f - (modelY - h / 2f) * pixelsPerMeter
-    fun place(topY: Float, width: Float): Placement {
-        val safeWidth = width.coerceIn(canvas.width * .08f, canvas.width * .85f)
+    fun place(topY: Float, width: Float, maxHeight:Float=canvas.height*.82f): Placement {
+        val safeWidth = minOf(width,maxHeight/aspect.coerceAtLeast(.1f)).coerceIn(canvas.width * .04f, canvas.width * .85f)
         return Placement(Offset(canvas.width / 2f,
             (topY + safeWidth * aspect / 2f).coerceIn(-canvas.height, canvas.height * 2f)), safeWidth, 0f)
     }
@@ -221,11 +224,11 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
                 hipWidth * 1.35f,
                 (screenY(hipY * .52f) - topY) / aspect.coerceAtLeast(.4f))
                 else torsoWidth * 1.25f
-            place(topY, dressWidth)
+            place(topY, dressWidth, if(isDress) screenY(h*.08f)-topY else (screenY(hipY)-topY)*1.15f)
         }
-        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, torsoWidth * 1.45f)
+        FitSlot.OUTER -> place(screenY(shoulderY) - shoulderWidth * .36f, torsoWidth * 1.45f,(screenY(hipY)-screenY(shoulderY)+shoulderWidth*.36f)*1.3f)
         FitSlot.BOTTOM -> place(screenY(hipY) - hipWidth * .35f,
-            hipWidth * if (item.subCategory == "치마") 1.75f else 1.35f)
+            hipWidth * if (item.subCategory == "치마") 1.75f else 1.35f,screenY(h*.02f)-screenY(hipY)+hipWidth*.35f)
         FitSlot.SHOES -> place(screenY(h * .05f), hipWidth * 1.2f)
         FitSlot.ACCESSORY -> place(screenY(shoulderY) - shoulderWidth * .4f, shoulderWidth * .8f)
     }
@@ -245,6 +248,7 @@ private class ManualFittingViewModel : ViewModel() {
     var avatarMode by mutableStateOf(false)
     var activeSlot by mutableStateOf<FitSlot?>(null)
     var overlayAlpha by mutableFloatStateOf(0.9f)
+    val selectionRequests = mutableMapOf<FitSlot,Long>()
     var showAi by mutableStateOf(false)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
 }
@@ -282,6 +286,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var overlayAlpha by manual::overlayAlpha
     var inputNotice by remember { mutableStateOf<String?>(null) }
     var avatarCameraReset by remember { mutableIntStateOf(0) }
+    var inspectAvatar by remember { mutableStateOf(false) }
+    var fittingHelp by remember { mutableStateOf(false) }
+    var undoAvatar by remember { mutableStateOf<Map<FitSlot,WornGarment>?>(null) }
     var lastProfile by remember {mutableStateOf(avatarProfile)}
     LaunchedEffect(avatarProfile) {
         if(lastProfile!=null && lastProfile!=avatarProfile && manual.avatarWorn.isNotEmpty())
@@ -306,12 +313,14 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         entries.forEach { entry ->
             val item = wardrobeItems.firstOrNull { it.id == entry.itemId } ?: return@forEach
             val slot = slotOf(item)
-            val uri = fittingUri(item)
-            val aspect = FittingPoseDetector.imageSize(context.applicationContext, uri)
-                ?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
+            val image = GarmentGeometry.load(context.applicationContext,item)
+            val uri = image?.uri ?: fittingUri(item)
+            val aspect = image?.aspect ?: 1.2f
+            // A slow image read must not replace a newer user selection or removal.
+            if(manual.avatarWorn.containsKey(slot) || manual.selectionRequests.containsKey(slot))return@forEach
             manual.avatarWorn[slot] = WornGarment(item, uri, aspect,
                 Offset(entry.centerX * canvasSize.width, entry.centerY * canvasSize.height),
-                entry.width * canvasSize.width, entry.scale, entry.rotation)
+                entry.width * canvasSize.width, entry.scale, entry.rotation, image?.region)
         }
         restoredAvatar = true
     }
@@ -342,13 +351,21 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 return
             }
             val previous = worn.toMap()
-            avatarCameraReset++
-            worn.keys.toList().forEach { refit(it) }
-            val changed = worn.any { (slot, current) -> previous[slot] != current }
-            inputNotice = if (changed)
-                "선택한 옷 ${worn.size}개를 아바타의 정면 기준 위치로 다시 맞췄어요. 사진 오버레이이며 3D 옷감 시뮬레이션은 아니에요."
-            else
-                "이미 자동 정렬된 위치예요. 옷을 손가락으로 옮기거나 아래 이동 버튼으로 조절한 뒤 다시 누르면 기본 위치로 돌아와요."
+            val placements=worn.mapNotNull { (slot,g) ->
+                val region=g.region ?: return@mapNotNull null
+                val content=fitAvatar(slot,g.item,g.aspect*region.height/region.width,canvasSize,avatarProfile!!)
+                val p=region.expand(content,g.aspect)
+                if(p.width>canvasSize.width*2f) null else slot to p
+            }
+            if(placements.isEmpty()) {
+                inputNotice="투명 의류 영역을 확인하지 못했어요. 기존 배치는 유지했어요. 옷장 사진을 확인하거나 수동으로 조절해주세요."
+                return
+            }
+            undoAvatar=previous; inspectAvatar=false; avatarCameraReset++
+            placements.forEach { (slot,p) -> worn[slot]?.let {g -> worn[slot]=g.copy(center=p.center,baseWidth=p.width,rotation=p.rotation,scale=1f)} }
+            val changed=worn.toMap()!=previous
+            inputNotice=(if(changed) "의류 영역 기준으로 정면 위치와 크기를 맞췄어요." else "이미 자동 정렬된 위치예요.")+
+                if(placements.size<worn.size) " 영역을 확인하지 못한 옷은 기존 배치를 유지했어요." else ""
             return
         }
         if (bodyPhoto == null) {
@@ -410,19 +427,32 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
         val slot = slotOf(item)
         if (worn[slot]?.item?.id == item.id) {
+            manual.selectionRequests[slot]=(manual.selectionRequests[slot] ?: 0L)+1
             worn.remove(slot)
             if (activeSlot == slot) activeSlot = worn.keys.maxByOrNull { it.ordinal }
             return
         }
-        if (avatarMode) avatarCameraReset++ // A 2D garment is only aligned in the avatar's front view.
+        val targetAvatar=avatarMode
+        val target=worn
+        val request=(manual.selectionRequests[slot] ?: 0L)+1
+        manual.selectionRequests[slot]=request
+        if (targetAvatar) {inspectAvatar=false;avatarCameraReset++}
         scope.launch {
-            val uri = fittingUri(item)
-            val aspect = FittingPoseDetector.imageSize(context.applicationContext, uri)?.let { (w, h) -> h.toFloat() / w } ?: 1.2f
-            val p = if (avatarMode && avatarProfile != null)
-                fitAvatar(slot, item, aspect, canvasSize, avatarProfile!!)
-                else fit(slot, item, aspect, canvasSize, body)
-            worn[slot] = WornGarment(item, uri, aspect, p.center, p.width, rotation = p.rotation)
-            activeSlot = slot
+            val image=GarmentGeometry.load(context.applicationContext,item)
+            if(manual.selectionRequests[slot]!=request)return@launch
+            val uri=image?.uri ?: fittingUri(item)
+            val aspect=image?.aspect ?: 1.2f
+            val region=image?.region
+            val content=if(targetAvatar && avatarProfile!=null)
+                fitAvatar(slot,item,aspect*(region?.height ?: 1f)/(region?.width ?: 1f),canvasSize,avatarProfile!!)
+                else fit(slot,item,aspect,canvasSize,body)
+            val p=if(targetAvatar && region!=null)region.expand(content,aspect) else content
+            target[slot]=WornGarment(item,uri,aspect,p.center,p.width.coerceAtMost(canvasSize.width*2f),rotation=p.rotation,region=region)
+            if(avatarMode==targetAvatar) {
+                activeSlot=slot
+                if(region==null)inputNotice="유효한 투명 의류 영역이 없어요. 원본 배경이 보일 수 있어요. 수동으로 배치하거나 옷장 사진을 확인해주세요."
+            }
+
         }
     }
 
@@ -476,7 +506,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !avatarMode, onClick = {
-                avatarMode = false; activeSlot = manual.worn.keys.maxByOrNull { it.ordinal }
+                avatarMode = false; inspectAvatar=false; activeSlot = manual.worn.keys.maxByOrNull { it.ordinal }
             }, label = { Text("내 전신 사진") }, modifier = Modifier.testTag("fittingPhotoMode"))
             FilterChip(selected = avatarMode, onClick = {
                 avatarMode = true; activeSlot = manual.avatarWorn.keys.maxByOrNull { it.ordinal }
@@ -516,9 +546,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!compact) Text(if (avatarMode) "옷을 올리면 모델은 정면으로 고정돼요. 옷 사진을 드래그하거나 아래 이동 버튼으로 조절하세요. 3D 의복 시뮬레이션은 아니에요."
-                else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
-                color = Brown, style = MaterialTheme.typography.bodySmall)
             if (!avatarMode) TextButton(onClick = {
                 inputNotice = when {
                     aiModel.state.pending -> null // re-open the existing job without generating
@@ -554,6 +581,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     val old = canvasSize
                     val updated = Size(size.width.toFloat(), size.height.toFloat())
                     if (old.width > 0f && old.height > 0f && old != updated) {
+                        undoAvatar=undoAvatar?.mapValues { (_,g) -> g.copy(center=Offset(g.center.x*updated.width/old.width,g.center.y*updated.height/old.height),baseWidth=g.baseWidth*updated.width/old.width) }
                         // Keep BOTH photo overlays and avatar overlays anchored when
                         // the canvas changes height (e.g. text/notice/keyboard changes).
                         // Resizing only avatarWorn made photo auto-fit appear to drift.
@@ -603,31 +631,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     avatarProfile?.let { profile ->
                         BodyAvatarViewport(profile.parameters(), profile.thigh,
                             Modifier.fillMaxSize().testTag("fittingAvatarViewport"),
-                            resetKey=avatarCameraReset,allowTouch=worn.isEmpty())
+                            resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty())
                     }
                 } else {
                     AsyncImage(model = bodyPhoto, contentDescription = "전신 사진",
                         modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 }
-                // When any garment is worn, this foreground Compose layer receives
-                // drags before the native GLSurfaceView below it can consume touch.
-                // It also permits dragging the active garment from an empty canvas area.
-                if (worn.isNotEmpty()) {
-                    Box(Modifier.matchParentSize().testTag("fittingGestureLayer")
-                        .pointerInput(avatarMode, activeSlot) {
-                            detectTransformGestures { _, pan, zoom, rotation ->
-                                val slot = activeSlot ?: return@detectTransformGestures
-                                val current = worn[slot] ?: return@detectTransformGestures
-                                worn[slot] = current.copy(
-                                    center = current.center + pan,
-                                    scale = (current.scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE),
-                                    rotation = current.rotation + rotation)
-                            }
-                        })
-                }
                 // Render back-to-front; each garment also has its own direct
                 // gesture detector so a drag targets the touched garment.
-                worn.values.sortedBy { slotOf(it.item).ordinal }.forEach { g ->
+                (if(inspectAvatar && avatarMode) emptyList() else worn.values.toList()).sortedBy { slotOf(it.item).ordinal }.forEach { g ->
                     val w = g.baseWidth * g.scale
                     val h = w * g.aspect
                     AsyncImage(
@@ -637,25 +649,41 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .offset { IntOffset((g.center.x - w / 2).roundToInt(), (g.center.y - h / 2).roundToInt()) }
-                            .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+                            .wrapContentSize(Alignment.TopStart,unbounded=true)
+                            .requiredSize(with(density) { w.toDp() }, with(density) { h.toDp() })
                             .graphicsLayer(rotationZ = g.rotation, alpha = overlayAlpha)
                             .testTag("fittingOverlay-${g.item.id}")
-                            .pointerInput(avatarMode, g.item.id) {
-                                detectTransformGestures { _, pan, zoom, rotation ->
-                                    val slot = slotOf(g.item)
-                                    val current = worn[slot] ?: return@detectTransformGestures
-                                    if (current.item.id != g.item.id) return@detectTransformGestures
-                                    activeSlot = slot
-                                    worn[slot] = current.copy(
-                                        center = current.center + pan,
-                                        scale = (current.scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE),
-                                        rotation = current.rotation + rotation)
-                                }
-                            }
-                            .pointerInput(avatarMode, g.item.id) {
-                                detectTapGestures(onTap = { activeSlot = slotOf(g.item) })
-                            }
+
                     )
+                }
+                // One stable canvas-space receiver above images and the native Surface.
+                // Moving/rotating an image cannot change the coordinates of its own gesture detector.
+                if(worn.isNotEmpty() && !inspectAvatar) {
+                    Box(Modifier.matchParentSize().testTag("fittingGestureLayer")
+                        .pointerInput(avatarMode) {
+                            awaitEachGesture {
+                                val down=awaitFirstDown(requireUnconsumed=false)
+                                val hit=worn.values.sortedByDescending {slotOf(it.item).ordinal}.firstOrNull {g ->
+                                    val d=down.position-g.center
+                                    val r=Math.toRadians(-g.rotation.toDouble())
+                                    val x=(d.x*kotlin.math.cos(r)-d.y*kotlin.math.sin(r)).toFloat()
+                                    val y=(d.x*kotlin.math.sin(r)+d.y*kotlin.math.cos(r)).toFloat()
+                                    val width=g.baseWidth*g.scale;val height=width*g.aspect
+                                    val bounds=g.region ?: GarmentRegion(0f,0f,1f,1f)
+                                    x in (bounds.left-.5f)*width..(bounds.left+bounds.width-.5f)*width &&
+                                        y in (bounds.top-.5f)*height..(bounds.top+bounds.height-.5f)*height
+                                }
+                                if(hit!=null)manual.activeSlot=slotOf(hit.item)
+                                waitForUpOrCancellation()
+                            }
+                        }
+                        .pointerInput(avatarMode) {
+                            detectTransformGestures {_,pan,zoom,rotation ->
+                                val slot=manual.activeSlot ?: return@detectTransformGestures
+                                worn[slot]?.let {g -> worn[slot]=g.copy(center=g.center+pan,
+                                    scale=(g.scale*zoom).coerceIn(MIN_SCALE,MAX_SCALE),rotation=g.rotation+rotation)}
+                            }
+                        })
                 }
                 // 누끼 사진이 없는 옷 안내
                 active?.takeIf { !hasCutout(it.item) }?.let {
@@ -682,6 +710,23 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(rememberScrollState()).testTag("manualFittingControls")) {
+        if(avatarMode) {
+            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
+                TextButton(onClick={inspectAvatar=!inspectAvatar;if(!inspectAvatar)avatarCameraReset++},modifier=Modifier.testTag("fittingInspectModel")) {
+                    Text(if(inspectAvatar) "옷 조작으로 돌아가기" else "모델 회전 확인")
+                }
+                if(undoAvatar!=null)TextButton(onClick={
+                    manual.avatarWorn.clear();manual.avatarWorn.putAll(undoAvatar!!);undoAvatar=null
+                    inputNotice="자동 정렬 전 배치로 되돌렸어요. 저장값은 별도로 유지돼요."
+                },modifier=Modifier.testTag("avatarUndoFit")) {Text("자동 정렬 되돌리기")}
+            }
+            Text(if(inspectAvatar) "모델 확인 중 · 옷은 숨겼어요. 저장된 배치는 유지돼요." else "정면 2D 의류 합성 · 옷 조작 중 모델 회전은 잠겨 있어요.",
+                modifier=Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall,color=Brown)
+        }
+            TextButton(onClick={fittingHelp=!fittingHelp}) {Text(if(fittingHelp) "조작 안내 접기" else "조작 안내")}
+            if (fittingHelp) Text(if (avatarMode) "옷을 올리면 모델은 정면으로 고정돼요. 옷 사진을 드래그하거나 아래 이동 버튼으로 조절하세요. 3D 의복 시뮬레이션은 아니에요."
+                else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
+                color = Brown, style = MaterialTheme.typography.bodySmall)
         if (avatarMode && compact) Text("의류 이미지 오버레이 · 3D 의복 시뮬레이션 아님",
             modifier = Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.labelSmall,
             color = Brown)
@@ -722,7 +767,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
         // 크기 · 투명도 (고를 옷이 없으면 비활성)
         if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
-            val enabled = active != null
+            val enabled = active != null && !inspectAvatar
             fun moveActive(dx: Float, dy: Float) {
                 val slot = activeSlot ?: return
                 val current = worn[slot] ?: return

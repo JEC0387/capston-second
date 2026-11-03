@@ -67,9 +67,27 @@ class P9FittingUiTest {
         val dragged = AvatarFittingStore.load(app).single()
         assertTrue("A swipe must change the avatar garment X position", dragged.centerX > before.centerX)
 
+        compose.onNodeWithTag("fittingGestureLayer").performTouchInput {
+            down(0,center+androidx.compose.ui.geometry.Offset(-25f,0f))
+            down(1,center+androidx.compose.ui.geometry.Offset(25f,0f))
+            moveTo(0,center+androidx.compose.ui.geometry.Offset(-60f,-20f))
+            moveTo(1,center+androidx.compose.ui.geometry.Offset(60f,20f))
+            up(0);up(1)
+        }
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val transformed=AvatarFittingStore.load(app).single()
+        assertTrue(transformed.scale>dragged.scale)
+        assertTrue(kotlin.math.abs(transformed.rotation-dragged.rotation)>1f)
+
         compose.onNodeWithTag("fittingMoveRight").performScrollTo().performClick()
         compose.onNodeWithTag("avatarSaveFitting").performClick()
         val nudged = AvatarFittingStore.load(app).single()
+        compose.onNodeWithTag("fittingInspectModel").performScrollTo().performClick()
+        compose.onNodeWithTag("fittingGestureLayer").assertDoesNotExist()
+        compose.onNodeWithTag("fittingOverlay-${item.id}").assertDoesNotExist()
+        compose.onNodeWithTag("fittingAvatarViewport").assertExists()
+        compose.onNodeWithTag("fittingInspectModel").performScrollTo().performClick()
+        compose.onNodeWithTag("fittingGestureLayer").assertExists()
         assertTrue("The position fallback button must move the same garment", nudged.centerX > dragged.centerX)
 
         compose.onNodeWithTag("avatarAutoFit").performClick()
@@ -77,5 +95,35 @@ class P9FittingUiTest {
         val restored = AvatarFittingStore.load(app).single()
         assertEquals("Magic wand should restore calculated front placement", before.centerX, restored.centerX, .002f)
         assertEquals(1f, restored.scale, .001f)
+        compose.onNodeWithTag("avatarUndoFit").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val undone=AvatarFittingStore.load(app).single()
+        assertEquals(nudged.centerX,undone.centerX,.002f)
+        assertEquals(nudged.scale,undone.scale,.001f)
+    }
+    @Test fun topAndBottomCanBeSelectedAndMovedIndependently() {
+        WardrobeStore.load(app)
+        val top=WardrobeStore.items.value.first {it.category=="상의"}
+        val bottom=WardrobeStore.items.value.first {it.category=="하의" && it.garmentUri!=null}
+        AvatarProfileStore.save(app,AvatarProfile(170f,65f,centimeters=body))
+        compose.setContent {VirtualFittingScreen(startAvatar=true,onBack={})}
+        for(item in listOf(top,bottom)) {
+            compose.onNodeWithTag("manualWardrobe").performScrollTo().performScrollToNode(hasTestTag("manualGarment-${item.id}"))
+            compose.onNodeWithTag("manualGarment-${item.id}").performClick()
+            compose.waitUntil(5000) {compose.onAllNodesWithTag("fittingOverlay-${item.id}").fetchSemanticsNodes().isNotEmpty()}
+        }
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val before=AvatarFittingStore.load(app).associateBy {it.itemId}
+        compose.onNodeWithTag("fittingMoveRight").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val after=AvatarFittingStore.load(app).associateBy {it.itemId}
+        assertEquals(before.getValue(top.id).centerX,after.getValue(top.id).centerX,.002f)
+        assertTrue(after.getValue(bottom.id).centerX>before.getValue(bottom.id).centerX)
+        compose.onNodeWithTag("fittingOverlay-${top.id}").performTouchInput {click()}
+        compose.onNodeWithTag("fittingMoveLeft").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val selectedTop=AvatarFittingStore.load(app).associateBy {it.itemId}
+        assertTrue(selectedTop.getValue(top.id).centerX<after.getValue(top.id).centerX)
+        assertEquals(after.getValue(bottom.id).centerX,selectedTop.getValue(bottom.id).centerX,.002f)
     }
 }
