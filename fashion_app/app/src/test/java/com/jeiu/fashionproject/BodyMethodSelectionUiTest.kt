@@ -84,6 +84,7 @@ class BodyMethodSelectionUiTest {
     @Test fun avatarSetupGroupsAdjustmentsAndKeepsThreeSourceChoices() {
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
         compose.onNodeWithTag("avatarShow").assertExists()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarImportBmi").assertExists()
         compose.onNodeWithTag("avatarImportPhoto").assertIsNotEnabled()
         compose.onNodeWithTag("avatarImportManual").assertIsNotEnabled()
@@ -105,6 +106,7 @@ class BodyMethodSelectionUiTest {
             }
         }
         compose.onNodeWithTag("avatarShow").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarSave").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("avatarManualExpand").performScrollTo().assertIsDisplayed()
     }
@@ -115,6 +117,7 @@ class BodyMethodSelectionUiTest {
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
         compose.onNodeWithTag("avatarHeight").performTextReplacement("175")
         compose.onNodeWithTag("avatarWeight").performTextReplacement("72")
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(175f, AvatarProfileStore.current.value?.heightCm)
