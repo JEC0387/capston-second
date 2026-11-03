@@ -70,6 +70,25 @@ def inspect(apk):
             "certificateSha256": certificates[0].lower()}
 
 
+def verify_instrumentation(apk, target_package, certificate):
+    """Test APKs may omit version fields; verify their package, target and signer instead.
+
+    This is deliberately separate from inspect(): application update version checks stay strict.
+    """
+    badging = subprocess.check_output([tool("aapt"), "dump", "badging", str(apk)], text=True, encoding="utf-8")
+    package = re.search(r"package: name='([^']+)'", badging)
+    manifest = subprocess.check_output([tool("aapt"), "dump", "xmltree", str(apk), "AndroidManifest.xml"],
+                                       text=True, encoding="utf-8")
+    targets = re.findall(r'android:targetPackage[^=]*="([^"]+)"', manifest)
+    signature = subprocess.check_output([tool("apksigner"), "verify", "--verbose", "--print-certs", str(apk)], text=True)
+    certificates = re.findall(r"Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]+)", signature)
+    if not package or package[1] != target_package + ".test" or targets != [target_package]:
+        raise ValueError("Instrumentation package/target mismatch")
+    if not re.fullmatch(r"[a-f0-9]{64}", certificate) or [c.lower() for c in certificates] != [certificate]:
+        raise ValueError("Instrumentation trusted signer mismatch")
+    return {"packageName": package[1], "targetPackage": target_package, "certificateSha256": certificate}
+
+
 def verify(apk, output, distribution=False, preview=False, device_qa=False):
     if device_qa and (distribution or not preview):
         raise ValueError("Device QA is a separate isolated test app, never a Preview update distribution")

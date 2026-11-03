@@ -63,6 +63,12 @@
 
 ## Private evidence and next steps
 
+### First CI and release-check correction
+
+Run [41723404080](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41723404080), code `ac9ad3e0fdd04c858ba2172c5bbc8f4cf4ff9266`: Android **440/440**, Preview **204/204**, no failures/skips; backend **151 + 8 subtests**; five server-start configurations successful. Lint XML: 0 errors/fatal, 165 warnings. Both final Preview and QA APKs passed all ELF64/ZIP checks with all four original ABIs retained.
+
+Publication correctly stopped at the final instrumentation verifier: Android test APK omits version fields, while the application verifier requires them. No APK artifact was published or installed. Added a separate instrumentation verifier checking exact test package, target package and trusted certificate; normal application version checks remain strict. Regression also rejects wrong target/signer/package and proves a versionless test APK still cannot pass normal application inspection. Tools tests now **10 passed**. A new CI run is required for this actual release-gate correction; this is not a documentation-only rebuild.
+
 Local ignored folders under `fashion_app/build/`: `p16-private` (file fingerprints, minimal device screenshots), `p16-baseline` (original failing XML), `p16-native` (LLVM/AAR alignment and provenance). Do not commit them or user pictures.
 
 1. Finish focused tests and instrumented-source compile; fix only evidenced failures.

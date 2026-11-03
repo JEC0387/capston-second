@@ -211,13 +211,11 @@ jobs:
           python - <<'PY'
           import hashlib, json, shutil
           from pathlib import Path
-          from tools.apk_release import inspect
+          from tools.apk_release import verify_instrumentation
           target = Path('qa-artifact')
           meta = json.loads((target / 'BUILD_INFO.json').read_text())
           test = Path('fashion_app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
-          info = inspect(test)
-          assert info['packageName'] == 'com.jeiu.fashionproject.preview.qa.test'
-          assert info['certificateSha256'] == meta['certificateSha256']
+          verify_instrumentation(test, 'com.jeiu.fashionproject.preview.qa', meta['certificateSha256'])
           destination = target / 'fashionai-device-qa-tests.apk'
           shutil.copy2(test, destination)
           with (target / 'SHA256SUMS.txt').open('a') as sums:
