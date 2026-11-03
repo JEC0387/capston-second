@@ -5,6 +5,8 @@
 
 ## 발표 준비
 
+P14 실제 공식 예제 생성 증거, 자체 API/실기기 미검증 구분과 11월 10일 시연 순서는 [P14 인수인계](P14_AI_DEMO_HANDOFF_20261104.md)를 확인하세요.
+
 P9 cm 줄자·새 마네킹과 최신 검증 결과는 [P9 아바타 인수인계](P9_PREMIUM_AVATAR_HANDOFF_20261102.md)를 확인하세요.
 
 최신 빌드 오류 수정·검증·APK는 [2026-11-02 Preview 빌드 인수인계](PREVIEW_BUILD_FIX_HANDOFF_20261102.md)를 확인하세요.
