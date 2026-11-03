@@ -47,4 +47,34 @@ class P9FittingUiTest {
         compose.onNodeWithTag("avatarAutoFit").performClick();compose.onNodeWithTag("avatarSaveFitting").performClick()
         compose.runOnIdle {assertEquals(1f,AvatarFittingStore.load(app).single().scale,.001f)}
     }
+    @Test fun avatarGarmentDragAndMoveControlsPersistAndMagicWandRestoresFrontPosition() {
+        WardrobeStore.load(app)
+        val item = WardrobeStore.items.value.first()
+        assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f, centimeters=body)))
+        compose.setContent { VirtualFittingScreen(startAvatar=true, onBack={}) }
+        compose.onNodeWithTag("fittingCanvas").assertIsDisplayed()
+        compose.onNodeWithTag("manualGarment-${item.id}").performScrollTo().performClick()
+        compose.waitUntil(5000) {
+            compose.onAllNodesWithTag("fittingOverlay-${item.id}").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val before = AvatarFittingStore.load(app).single()
+
+        // Foreground gestures work even with the native GL mannequin underneath.
+        compose.onNodeWithTag("fittingGestureLayer").performTouchInput { swipeRight() }
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val dragged = AvatarFittingStore.load(app).single()
+        assertTrue("A swipe must change the avatar garment X position", dragged.centerX > before.centerX)
+
+        compose.onNodeWithTag("fittingMoveRight").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val nudged = AvatarFittingStore.load(app).single()
+        assertTrue("The position fallback button must move the same garment", nudged.centerX > dragged.centerX)
+
+        compose.onNodeWithTag("avatarAutoFit").performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        val restored = AvatarFittingStore.load(app).single()
+        assertEquals("Magic wand should restore calculated front placement", before.centerX, restored.centerX, .002f)
+        assertEquals(1f, restored.scale, .001f)
+    }
 }
