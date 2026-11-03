@@ -65,6 +65,7 @@ class BodyAnalysisResultUiTest {
             compose.onAllNodesWithTag("avatarApplyCancel").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("avatarApplyCancel").performClick()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarImportPhoto").assertExists()
     }
 
