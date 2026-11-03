@@ -145,7 +145,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
         TextButton(onClick=onBack) {Text("외부 AI/수동 모드로 돌아가기")}
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text("자체 AI로 입어보기",style=MaterialTheme.typography.titleLarge,color=Brown,
+            Text("자체 AI 착장 이미지 생성",style=MaterialTheme.typography.titleLarge,color=Brown,
                 modifier=Modifier.testTag("localVtonTitle"))
             Text("FASHN VTON v1.5 · 별도 개발 서버 · 유료 API 자동 호출 없음")
             Text("전신 사진 → 옷장에서 한 벌 → 서버 준비 확인 → 전송 동의 → 생성·비교·저장",
