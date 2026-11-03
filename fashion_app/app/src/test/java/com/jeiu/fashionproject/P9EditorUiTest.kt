@@ -50,6 +50,51 @@ class P9EditorUiTest {
         compose.onNodeWithTag("avatarApplyApprove").performClick()
         compose.runOnIdle {assertEquals(1,writes);assertEquals(final,captured!!.centimeters!![AvatarPart.WAIST])}
     }
+    @Test fun switchingBodyPartsPreservesEveryUnsavedMeasurementUntilExplicitSave() {
+        var captured:AvatarProfile?=null
+        compose.setContent { PremiumAvatarEditor(initial,null,{},onSave={captured=it;true}) }
+        val waist=body[AvatarPart.WAIST]+.5f
+        compose.onNodeWithTag("rulerPlus").performScrollTo().performClick()
+        assertEquals(waist,value())
+        compose.onNodeWithTag("cmPart-SHOULDER").performScrollTo().performClick()
+        val shoulder=body[AvatarPart.SHOULDER]+.5f
+        compose.onNodeWithTag("rulerPlus").performScrollTo().performClick()
+        assertEquals(shoulder,value())
+        compose.onNodeWithTag("cmPart-CHEST").performScrollTo().performClick()
+        val chest=body[AvatarPart.CHEST]+.5f
+        compose.onNodeWithTag("rulerPlus").performScrollTo().performClick()
+        assertEquals(chest,value())
+        compose.onNodeWithTag("cmPart-WAIST").performScrollTo().performClick()
+        assertEquals(waist,value())
+        compose.onNodeWithTag("cmPart-SHOULDER").performScrollTo().performClick()
+        assertEquals(shoulder,value())
+        compose.onNodeWithTag("cmPart-CHEST").performScrollTo().performClick()
+        assertEquals(chest,value())
+        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarApplyApprove").performClick()
+        compose.runOnIdle {
+            val saved=checkNotNull(captured?.centimeters)
+            assertEquals(waist,saved[AvatarPart.WAIST])
+            assertEquals(shoulder,saved[AvatarPart.SHOULDER])
+            assertEquals(chest,saved[AvatarPart.CHEST])
+        }
+    }
+
+    @Test fun rulerCanStillDragAfterMultipleBodyPartChanges() {
+        compose.setContent {PremiumAvatarEditor(initial,null,{},onSave={true})}
+        compose.onNodeWithTag("cmPart-HIP").performScrollTo().performClick()
+        val hipBefore=value()
+        compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput { swipeLeft() }
+        val hipAfter=value()
+        assertTrue("Dragging HIP ruler should update cm",hipAfter>hipBefore)
+        compose.onNodeWithTag("cmPart-WAIST").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput { swipeLeft() }
+        val waistAfter=value()
+        assertTrue("Dragging WAIST ruler should update cm",waistAfter>body[AvatarPart.WAIST])
+        compose.onNodeWithTag("cmPart-HIP").performScrollTo().performClick()
+        assertEquals(hipAfter,value())
+    }
+
     @Test fun invalidKeyboardValueCannotChangeTheRuler() {
         compose.setContent {PremiumAvatarEditor(initial,null,{},onSave={false})}
         compose.onNodeWithTag("rulerDirectInput").performScrollTo().performClick()
