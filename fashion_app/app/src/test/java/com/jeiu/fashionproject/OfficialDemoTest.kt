@@ -121,6 +121,19 @@ class OfficialDemoTest {
         journal.fail = true; ready(); start(); done()
         assertEquals(0, fake.posts); assertEquals("storage", model.state.phase)
     }
+    @Test fun interruptedAtomicWriteRecoversBackupInsteadOfAllowingAnotherPost() {
+        val store = PrivateDemoJournal(app)
+        val value = JSONObject().put("engine", OfficialDemoContract.ENGINE).put("phase", "submitting")
+            .put("startedAt", 1000L).toString()
+        store.write(value)
+        val base = File(app.noBackupFilesDir, "official-demo-job.json")
+        assertTrue(base.renameTo(File(base.path + ".bak")))
+        assertEquals(value, store.read())
+        val recovered = OfficialDemoViewModel(fake, store, true)
+        assertFalse(recovered.canStart)
+        compose.runOnIdle { recovered.start(OfficialDemoContract.EXAMPLE, true); recovered.viewModelScope.cancel() }
+        assertEquals(0, fake.posts)
+    }
     @Test fun disconnectRestoresSameEventAfterProcessRecreationUsingGetOnly() {
         fake.awaitError = DemoFailure("stream_closed"); ready(); start(); done()
         val restored = OfficialDemoViewModel(fake, journal, true)

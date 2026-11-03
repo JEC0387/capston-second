@@ -18,11 +18,22 @@ import java.util.UUID
 interface DemoJournal { fun read(): String?; fun write(value: String) }
 class PrivateDemoJournal(context: Context) : DemoJournal {
     private val file = AtomicFile(File(context.noBackupFilesDir, "official-demo-job.json"))
-    override fun read(): String? = if (file.baseFile.exists()) file.openRead().bufferedReader().use { it.readText() } else null
+    override fun read(): String? = try {
+        // openRead restores a legacy .bak even when the base file disappeared during an interrupted write.
+        file.openRead().bufferedReader().use { it.readText() }
+    } catch (e: java.io.FileNotFoundException) {
+        if (file.baseFile.exists() || File(file.baseFile.path + ".bak").exists()) throw e
+        null
+    }
     override fun write(value: String) {
         val stream = file.startWrite()
-        try { stream.write(value.toByteArray(Charsets.UTF_8)); file.finishWrite(stream) }
+        try {
+            stream.write(value.toByteArray(Charsets.UTF_8)); stream.fd.sync()
+        }
         catch (e: Exception) { file.failWrite(stream); throw e }
+        file.finishWrite(stream)
+        // Do not call failWrite after finishing: preserve the last durable record on verification failure.
+        if (read() != value) throw java.io.IOException("Journal commit failed")
     }
 }
 data class DemoUiState(
