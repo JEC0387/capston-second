@@ -238,13 +238,23 @@ class LocalVtonService:
 
     def purge(self):
         now = time.time()
+        changed = False
         for id, (_, expiry) in list(self.results.items()):
             if expiry <= now:
                 self.results.pop(id, None)
                 self.jobs[id].update(status='expired', error='result_expired')
+                changed = True
         stale = [id for id,j in self.jobs.items() if j['status'] in TERMINAL and j['created'] < now-86400]
         for id in stale:
             self.jobs.pop(id, None);self.results.pop(id, None)
+            changed = True
+        # Expiry is a durable terminal state. Without this write, a restart can
+        # resurrect "completed" in the journal even though the PNG is gone.
+        if changed and self.journal_ready:
+            try:
+                self.persist()
+            except OSError:
+                self.journal_ready = False
 
     def owned(self, id, owner):
         self.purge()

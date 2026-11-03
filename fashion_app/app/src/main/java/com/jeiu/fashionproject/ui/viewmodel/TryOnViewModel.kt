@@ -39,6 +39,8 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     private var operation: Job? = null
     private var connection: TryOnConnection? = null
     private var submitted = false
+    private var submitting = false
+    private var cancelAfterSubmit = false
     val requestId: String? get() = saved["requestId"]
 
     fun generate(context: Context, person: Uri?, garments: List<TryOnGarment>, approved: Boolean) {
@@ -61,6 +63,8 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
         selectedPerson = person
         connection = config
         submitted = false
+        submitting = false
+        cancelAfterSubmit = false
         saved.remove<String>("requestId")
         // Synchronous guard before launching, shared by both entry points.
         state = state.copy(pending = true, watching = true, progress = "사진·자세 확인 중…", error = null,
@@ -81,16 +85,28 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                 saved["base"] = config.base
                 saved["person"] = person.toString() // URI metadata only; no images or credentials
                 submitted = true // outcome may be unknown once HTTP transmission starts
-                gateway.submit(config, id, input.data, prepared.map { it.first to it.second.data }) // exactly one POST; no retry interceptor
+                submitting = true
+                try {
+                    gateway.submit(config, id, input.data, prepared.map { it.first to it.second.data }) // exactly one POST
+                } finally { submitting = false }
                 accepted = true
+                // A DELETE racing an unfinished POST can return 404 while the GPU job
+                // is still being created. For the local engine, send it after acceptance.
+                if (localMode && cancelAfterSubmit) {
+                    cancelAfterSubmit = false
+                    gateway.cancel(config, id)
+                }
                 watch(config, id)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (failure: Exception) {
                 val rejected = !accepted && failure is TryOnHttpFailure && failure.code in setOf(400, 401, 403, 413, 422, 429, 503)
                 val uncertain = submitted && !rejected
+                val cancellationUnconfirmed = localMode && cancelAfterSubmit && uncertain
+                cancelAfterSubmit = false
                 if (!uncertain) saved.remove<String>("requestId")
                 state = state.copy(pending = uncertain, watching = false, progress = null,
-                    error = failure.message?.takeIf { failure is TryOnFailure || failure is TryOnHttpFailure }
+                    error = if (cancellationUnconfirmed) "전송·취소 결과를 확인하지 못했어요. 기존 작업을 조회하거나 취소를 다시 요청해주세요. 새 생성은 보내지 않았어요."
+                        else failure.message?.takeIf { failure is TryOnFailure || failure is TryOnHttpFailure }
                         ?: if (uncertain) "응답을 받지 못했어요. 기존 작업 상태만 다시 확인해주세요. 생성 요청을 반복하지 않았어요."
                         else "사진 준비 또는 서버 연결에 실패했어요. 입력 사진과 연결 설정을 확인해주세요.")
             }
@@ -124,7 +140,11 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                 val job = gateway.status(config, id)
                 when (job.status) {
                     "completed" -> {
-                        val bytes = if (job.resultAvailable) gateway.result(config, id) else null
+                        val bytes = if (job.resultAvailable) try { gateway.result(config, id) }
+                            catch (failure: TryOnHttpFailure) {
+                                if (localMode && failure.code == 410) null else throw failure
+                            } else null
+                        if (localMode && bytes == null) saved.remove<String>("requestId")
                         state = state.copy(pending = false, watching = false, progress = null,
                             error = if (bytes == null) message("result_expired") else null,
                             result = bytes ?: state.result, resultPerson = if (bytes != null) saved["person"] else state.resultPerson,
@@ -132,6 +152,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         return@withTimeoutOrNull true
                     }
                     "failed", "timeout", "cancelled", "interrupted", "expired" -> {
+                        if (localMode) saved.remove<String>("requestId")
                         state = state.copy(pending = false, watching = false, progress = null, error = message(job.error))
                         return@withTimeoutOrNull true
                     }
@@ -147,6 +168,11 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
 
     fun cancel() {
         if (!state.pending) return
+        if (localMode && submitting) {
+            cancelAfterSubmit = true
+            state = state.copy(error = "요청 전송 결과를 확인한 뒤 서버에 취소를 전달해요.")
+            return
+        }
         if (!submitted && requestId == null) {
             operation?.cancel()
             state = state.copy(pending = false, watching = false, progress = null, error = "전송 전에 취소했어요.")

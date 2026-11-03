@@ -146,6 +146,9 @@ async def test_ttl_and_explicit_delete_remove_result(setup):
     service.test_clock.advance(service.settings.result_ttl/2+.001)
     assert (await client.get('/api/local-vton/jobs/'+data['request_id']+'/result')).status_code==410
     assert (await client.get('/api/local-vton/jobs/'+data['request_id'])).json()['status']=='expired'
+    journal=json.loads(open(service.settings.journal).read())
+    assert journal[data['request_id']]['status']=='expired'
+    assert journal[data['request_id']]['error']=='result_expired'
 
 @pytest.mark.anyio
 async def test_unavailable_model_is_reported_without_accepting_images(settings):

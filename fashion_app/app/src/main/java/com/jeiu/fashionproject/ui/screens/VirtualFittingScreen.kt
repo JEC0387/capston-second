@@ -250,6 +250,7 @@ private class ManualFittingViewModel : ViewModel() {
     var overlayAlpha by mutableFloatStateOf(0.9f)
     val selectionRequests = mutableMapOf<FitSlot,Long>()
     var showAi by mutableStateOf(false)
+    var showLocalAi by mutableStateOf(false)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
 }
 
@@ -458,7 +459,20 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
     val active = activeSlot?.let { worn[it] }
     var showAi by manual::showAi
+    var showLocalAi by manual::showLocalAi
     var aiSelection by manual::aiSelection
+    if (showLocalAi) {
+        LocalVtonScreen(
+            defaultPhoto = bodyPhoto,
+            garments = wardrobeItems.filter { TryOnPlan.categoryFor(it.category) != null }.map { item ->
+                TryOnGarment(item.id, item.name, item.category,
+                    item.originalUri?.takeIf { it.isNotBlank() }
+                        ?: item.imageUri.ifBlank { item.garmentUri ?: item.cutoutUri.orEmpty() })
+            },
+            onBack = { showLocalAi = false }
+        )
+        return
+    }
     if (showAi) {
         AiTryOnScreen(
             defaultPhoto = bodyPhoto,
@@ -710,6 +724,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(rememberScrollState()).testTag("manualFittingControls")) {
+        TextButton(onClick = { showLocalAi = true },
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
+            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
+            Spacer(Modifier.width(6.dp))
+            Text("자체 AI로 입어보기 · 옷장에서 한 벌 선택", color = Camel)
+        }
         if(avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
                 TextButton(onClick={inspectAvatar=!inspectAvatar;if(!inspectAvatar)avatarCameraReset++},modifier=Modifier.testTag("fittingInspectModel")) {

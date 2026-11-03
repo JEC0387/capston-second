@@ -144,6 +144,18 @@ class LocalVtonFlowTest {
         compose.onNodeWithTag("localVtonGenerate").assertIsNotEnabled()
         compose.runOnIdle {assertEquals(0,fake.posts);external.viewModelScope.cancel()}
     }
+    @Test fun fittingScreenCanChooseFromWardrobeWithoutFirstCreatingAStickerPlacement() {
+        LocalVtonSession.clear() // No network request or generated image in this UI test.
+        WardrobeStore.load(app)
+        val item=WardrobeStore.items.value.first {TryOnPlan.categoryFor(it.category)!=null}
+        compose.setContent {VirtualFittingScreen(onBack={})}
+        compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().performClick()
+        compose.onNodeWithTag("localVtonTitle").assertIsDisplayed()
+        compose.onNodeWithTag("localGarment-${item.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("localVtonGenerate").assertIsNotEnabled()
+        compose.onNodeWithText("원본 전신 사진 선택").assertExists()
+        compose.runOnIdle {assertEquals(0,fake.posts)}
+    }
     @Test fun explicitLostJobRecoveryNeverPostsAutomatically() {
         fake.uncertain=true
         compose.runOnIdle {model.generate(app,photo,listOf(garment),true)}
@@ -155,10 +167,34 @@ class LocalVtonFlowTest {
             assertEquals(1,fake.posts)
         }
     }
+    @Test fun cancellationDuringUploadWaitsForTheJobAndNeverPostsTwice() {
+        fake.gate=CompletableDeferred()
+        screen();approve()
+        compose.waitUntil(5000) {fake.posts==1}
+        compose.runOnIdle {model.cancel();assertEquals(0,fake.cancels)}
+        compose.runOnIdle {fake.gate!!.complete(Unit)}
+        done()
+        compose.runOnIdle {
+            assertEquals(1,fake.posts)
+            assertEquals(1,fake.cancels)
+            assertNull(model.state.result)
+            assertNull(model.requestId)
+        }
+    }
+    @Test fun resultExpiryBetweenStatusAndPngDownloadIsTerminal() {
+        fake.expiredResult=true
+        screen();approve();done()
+        compose.runOnIdle {
+            assertEquals(1,fake.posts)
+            assertNull(model.state.result)
+            assertNull(model.requestId)
+            assertTrue(model.state.error.orEmpty().contains("만료"))
+        }
+    }
     private class Fake:TryOnGateway {
         val images=mutableListOf<String>()
-        var posts=0;var base="";var categories=listOf<String>()
-        var gate:CompletableDeferred<Unit>?=null;var fail=false;var uncertain=false
+        var posts=0;var cancels=0;var base="";var categories=listOf<String>()
+        var gate:CompletableDeferred<Unit>?=null;var fail=false;var uncertain=false;var expiredResult=false
         override suspend fun image(context:android.content.Context,source:String):String {images+=source;return "prepared-inline-image"}
         override suspend fun check(connection:TryOnConnection) {base=connection.base}
         override suspend fun submit(connection:TryOnConnection,id:String,person:String,garments:List<Pair<String,String>>) {
@@ -166,11 +202,13 @@ class LocalVtonFlowTest {
             if(uncertain) throw IOException("synthetic lost response")
             if(fail) throw TryOnHttpFailure(503,"자체 AI 테스트 실패")
         }
-        override suspend fun status(connection:TryOnConnection,id:String)=TryOnJob("completed",null,1,1,true)
+        override suspend fun status(connection:TryOnConnection,id:String)=if(cancels>0)
+            TryOnJob("cancelled","cancelled",1,1,false) else TryOnJob("completed",null,1,1,true)
         override suspend fun result(connection:TryOnConnection,id:String):ByteArray {
+            if(expiredResult) throw TryOnHttpFailure(410,LocalVtonRepository.friendly("result_expired"))
             val image=Bitmap.createBitmap(256,384,Bitmap.Config.ARGB_8888);val out=ByteArrayOutputStream()
             image.compress(Bitmap.CompressFormat.PNG,100,out);image.recycle();return out.toByteArray()
         }
-        override suspend fun cancel(connection:TryOnConnection,id:String) {}
+        override suspend fun cancel(connection:TryOnConnection,id:String) {cancels++}
     }
 }

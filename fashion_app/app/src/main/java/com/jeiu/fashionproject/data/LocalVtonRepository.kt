@@ -138,9 +138,17 @@ object LocalVtonRepository : TryOnGateway {
         if (bytes.size !in 8..8*1024*1024 || !bytes.take(8).toByteArray().contentEquals(signature))
             throw TryOnFailure("유효한 자체 AI PNG 결과가 없어요.")
         val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
-        BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
+        try {BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)}
+        catch (_: RuntimeException) {throw TryOnFailure("자체 AI PNG 결과를 읽지 못했어요.")}
         if (minOf(bounds.outWidth,bounds.outHeight)<32 || bounds.outWidth.toLong()*bounds.outHeight>20_000_000)
             throw TryOnFailure("자체 AI 결과 크기가 유효하지 않아요.")
+        var sample=1
+        while(maxOf(bounds.outWidth,bounds.outHeight)/sample>1024)sample*=2
+        val decoded=try {BitmapFactory.decodeByteArray(bytes,0,bytes.size,
+            BitmapFactory.Options().apply {inSampleSize=sample})}
+            catch (_: RuntimeException) {throw TryOnFailure("자체 AI PNG 결과를 끝까지 읽지 못했어요.")}
+            ?: throw TryOnFailure("자체 AI PNG 결과를 끝까지 읽지 못했어요.")
+        decoded.recycle()
     }
     suspend fun save(context: Context,bytes: ByteArray,target: Uri,png: Boolean) = withContext(Dispatchers.IO) {
         validatePng(bytes)

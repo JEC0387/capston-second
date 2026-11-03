@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -27,6 +28,9 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.BuildConfig
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.components.TryOnComparisonDialog
+import com.jeiu.fashionproject.ui.theme.Brown
+import com.jeiu.fashionproject.ui.theme.Camel
+import com.jeiu.fashionproject.ui.theme.Cream
 import com.jeiu.fashionproject.ui.viewmodel.TryOnViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -51,7 +55,10 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     val scope=rememberCoroutineScope()
     val state=model.state
     var chosenPhoto by rememberSaveable { mutableStateOf(defaultPhoto?.toString()) }
-    var chosenId by remember(garments) { mutableStateOf(garments.singleOrNull()?.id) }
+    var chosenId by rememberSaveable { mutableStateOf(garments.singleOrNull()?.id) }
+    LaunchedEffect(garments) {
+        if (garments.none { it.id == chosenId }) chosenId = garments.singleOrNull()?.id
+    }
     val selected=if(state.pending) model.selectedGarments else garments.filter { it.id==chosenId }
     val person=if(state.pending) model.selectedPerson else chosenPhoto?.let(Uri::parse) ?: model.selectedPerson
     val issue=LocalVtonRepository.selectionIssue(selected)
@@ -134,15 +141,17 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
         confirmButton={TextButton(onClick={stopTracking=false;model.stopLocalTracking()}) {Text("추적만 종료")}},
         dismissButton={TextButton(onClick={stopTracking=false}) {Text("계속 확인")}})
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().background(Cream)) {
         TextButton(onClick=onBack) {Text("외부 AI/수동 모드로 돌아가기")}
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement=Arrangement.spacedBy(10.dp)) {
-            Text("모드 B · 자체 AI 착장 이미지 생성",style=MaterialTheme.typography.titleLarge,
+            Text("자체 AI로 입어보기",style=MaterialTheme.typography.titleLarge,color=Brown,
                 modifier=Modifier.testTag("localVtonTitle"))
             Text("FASHN VTON v1.5 · 별도 개발 서버 · 유료 API 자동 호출 없음")
-            Text("모드 A의 마법봉 자동 정렬/스티커 배치와 다른 실제 모델 생성 경로예요. 한 번에 의류 한 벌만 지원해요.")
-            Text(status ?: "자체 AI 서버 미설정",modifier=Modifier.testTag("localVtonServerState"))
+            Text("전신 사진 → 옷장에서 한 벌 → 서버 준비 확인 → 전송 동의 → 생성·비교·저장",
+                style=MaterialTheme.typography.bodySmall,color=Brown)
+            Text("마법봉의 2D 위치 맞춤과 다른 모델 생성 경로예요. 결과가 없으면 생성 성공으로 표시하지 않아요.")
+            Text(status ?: "자체 AI 서버 미설정",color=Brown,modifier=Modifier.testTag("localVtonServerState"))
             TextButton(onClick={connect=true},enabled=!state.pending) {Text("자체 AI 서버 설정")}
             OutlinedButton(onClick={scope.launch {checkServer()}},enabled=!checking && !state.watching) {
                 Text(if(checking) "서버 준비 확인 중…" else "자체 서버 준비 다시 확인")
@@ -150,6 +159,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             OutlinedButton(onClick={picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))},
                 enabled=!state.pending) {Text("원본 전신 사진 선택")}
             Text("얼굴·양쪽 어깨·발목까지 보이는 정면 사진과 의류 전체가 보이는 사진을 사용해요.")
+            Text("옷장에서 의류 한 벌 선택",style=MaterialTheme.typography.titleMedium,color=Brown)
             (if(state.pending) model.selectedGarments else garments).forEach { garment ->
                 Row {
                     RadioButton(selected=chosenId==garment.id,onClick={chosenId=garment.id},
@@ -197,6 +207,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             Text("Human Parser는 NVIDIA SegFormer 연구·평가용 비상업 라이선스를 따라요. 3D 아바타 스크린샷을 전신 사진 대신 보내지 않아요.")
         }
         Button(onClick={review=true},enabled=ready && person!=null && issue==null && !state.pending && !saving,
+            colors=ButtonDefaults.buttonColors(containerColor=Camel),
             modifier=Modifier.fillMaxWidth().padding(16.dp).testTag("localVtonGenerate")) {Text("자체 AI 생성 시작 · 의류 한 벌")}
     }
 }

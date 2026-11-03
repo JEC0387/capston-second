@@ -93,5 +93,8 @@ class LocalVtonRepositoryTest {
             if(isPng) assertEquals(137,bytes[0].toInt() and 255) else assertEquals(255,bytes[0].toInt() and 255)
         }
         try {LocalVtonRepository.validatePng("fake image".toByteArray());fail()} catch(_:TryOnFailure) {}
+        val truncated=png().copyOf(33) // Valid signature/IHDR but missing image data.
+        try {LocalVtonRepository.validatePng(truncated);fail("Truncated PNG must not be shown as a generated result")}
+        catch(_:TryOnFailure) {}
     }
 }
