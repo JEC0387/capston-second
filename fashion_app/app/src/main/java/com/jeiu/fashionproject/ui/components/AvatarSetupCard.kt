@@ -40,6 +40,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     var askClear by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var controlsExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(saved) { saved?.let {
         height=it.heightCm.toString();weight=it.weightKg.toString()
         shoulder=it.shoulder;waist=it.waist;hip=it.hip;thigh=it.thigh;leg=it.leg
@@ -81,9 +82,40 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             Text("내 3D 모델",style=MaterialTheme.typography.titleMedium)
             Text(if(saved?.centimeters!=null)"저장된 cm 아바타 · 부위별 출처 구분" else if (saved != null) "저장된 3D 설정: ${saved!!.source.label}" else "아직 저장한 3D 설정이 없어요.",
                 style=MaterialTheme.typography.bodySmall)
+            Text("1단계 · 키와 몸무게",style=MaterialTheme.typography.titleMedium)
+            Text("기본 정보만 입력하면 자동 추정 체형이 만들어져요.",style=MaterialTheme.typography.bodySmall)
+            if(draft.source!=AvatarSource.BMI || draft.centimeters!=null) {
+                TextButton(onClick={
+                    imported=null;shoulder=1f;chest=1f;waist=1f;hip=1f;thigh=1f;leg=1f;torso=1f
+                    controlsExpanded=false
+                    message="기존 저장 프로필은 그대로예요. 새 키·몸무게를 입력하고 3D를 만들 수 있어요."
+                },modifier=Modifier.testTag("avatarStartNew")) { Text("새 키·몸무게로 시작") }
+            }
+            Text("키·몸무게는 시각적 초기 비율에만 사용해요. 실제 신체 치수·체지방·의류 핏을 측정하지 않아요.",
+                style=MaterialTheme.typography.bodySmall)
+            issue?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+            OutlinedTextField(height,{height=it.take(8)},label={Text("키 (cm)")},singleLine=true,
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
+                readOnly=draft.source!=AvatarSource.BMI || draft.centimeters!=null,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
+            OutlinedTextField(weight,{weight=it.take(8)},label={Text("초기 형상 참고 몸무게 (kg)")},singleLine=true,
+                readOnly=draft.centimeters!=null,
+                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
+                modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
+            if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
+            Text("2단계 · 내 3D 체형",style=MaterialTheme.typography.titleMedium)
+            Button(enabled=draft.valid()&&storesLoaded,onClick={
+                AvatarCentimeters.fromLegacy(draft,System.currentTimeMillis())?.let {cm->
+                    cmEditingRaw=AvatarProfileStore.encode(draft.copy(centimeters=cm))
+                }
+            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text("3D 아바타 생성 · cm 줄자로 조절")}
+            Text("키·몸무게로 기본 치수를 자동 제안해요. 초기값은 검증된 평균이 아닌 임시 형상이므로 실제 치수에 맞춰 수정해주세요.",style=MaterialTheme.typography.bodySmall)
             Button(onClick={showAvatar=true},enabled=draft.valid(),
                 modifier=Modifier.fillMaxWidth().testTag("avatarShow")) { Text(if(draft.centimeters!=null)"저장된 cm 3D 모델 보기" else "이전 형상 3D 미리보기") }
-            Text("새 마네킹은 아래 키·몸무게 확인 후 ‘3D 아바타 생성 · cm 줄자로 조절’에서 만들어요.",style=MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick={advancedExpanded=!advancedExpanded},
+                modifier=Modifier.fillMaxWidth().testTag("avatarAdvancedToggle")) {
+                Text(if(advancedExpanded) "고급 설정 접기" else "고급 설정 · 사진 치수 및 실측값 불러오기")
+            }
+            if(advancedExpanded) {
             Text("체형 생성 방법",style=MaterialTheme.typography.titleMedium)
             Text("3D 형상 출처 선택 · 현재 ${draft.source.label}",modifier=Modifier.testTag("avatarSource"))
             OutlinedButton(onClick={proposal=AvatarProfile(height.toFloatOrNull() ?: Float.NaN,weight.toFloatOrNull() ?: Float.NaN).takeIf {it.valid()}},
@@ -106,23 +138,6 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             if(AvatarMeasurementImport.photo(photo ?: sessionPhoto,saved)==null) Text("현재 세션의 유효한 사진 측정값이 없어요. 사진 분석 후 다시 선택해주세요.")
             if(manual==null) Text("직접 입력한 신체 치수가 없어요. 숫자 입력에서 필요한 항목을 추가해주세요.")
             manualIssue?.let {Text(it,color=MaterialTheme.colorScheme.error)}
-            Text("키·몸무게는 시각적 초기 비율에만 사용해요. 실제 신체 치수·체지방·의류 핏을 측정하지 않아요.",
-                style=MaterialTheme.typography.bodySmall)
-            issue?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-            OutlinedTextField(height,{height=it.take(8)},label={Text("키 (cm)")},singleLine=true,
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
-                readOnly=draft.source!=AvatarSource.BMI || draft.centimeters!=null,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
-            OutlinedTextField(weight,{weight=it.take(8)},label={Text("초기 형상 참고 몸무게 (kg)")},singleLine=true,
-                readOnly=draft.centimeters!=null,
-                keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
-                modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
-            if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
-            Button(enabled=draft.valid()&&storesLoaded,onClick={
-                AvatarCentimeters.fromLegacy(draft,System.currentTimeMillis())?.let {cm->
-                    cmEditingRaw=AvatarProfileStore.encode(draft.copy(centimeters=cm))
-                }
-            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text("3D 아바타 생성 · cm 줄자로 조절")}
-            Text("키·몸무게로 기본 치수를 자동 제안해요. 초기값은 검증된 평균이 아닌 임시 형상이므로 실제 치수에 맞춰 수정해주세요.",style=MaterialTheme.typography.bodySmall)
             @Composable fun adjustment(label:String,value:Float,onChange:(Float)->Unit,tag:String) {
                 Text("$label 표시 비율: ${(value*100).toInt()}%")
                 Slider(value,onChange,valueRange=.8f..1.2f,modifier=Modifier.testTag(tag))
@@ -151,6 +166,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             Button(onClick={message=if(AvatarProfileStore.save(context,draft)) "이 기기에 3D 설정을 저장했어요." else "3D 설정을 저장하지 못했어요. 입력값이나 기존 저장값을 확인해주세요."},
                 enabled=draft.valid(),modifier=Modifier.fillMaxWidth().testTag("avatarSave")) { Text("3D 설정 저장") }
             if (saved != null || issue != null) TextButton(onClick={askClear=true}) { Text("3D 설정 초기화") }
+            }
             message?.let { Text(it) }
         }
     }
