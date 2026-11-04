@@ -24,9 +24,12 @@ import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.ui.components.TasteReportCard
 import com.jeiu.fashionproject.ui.components.BackupRestoreDialog
+import com.jeiu.fashionproject.ui.components.AccountAccessDialog
 import com.jeiu.fashionproject.ui.components.ServerAddressDialog
 import com.jeiu.fashionproject.data.ServerSettings
 import com.jeiu.fashionproject.data.AppBuildInfo
+import com.jeiu.fashionproject.data.DataAuth
+import com.jeiu.fashionproject.data.DbSync
 import com.jeiu.fashionproject.ui.components.RecommendationStatsCard
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.WearLogStore
@@ -70,7 +73,7 @@ fun MyPageScreen(
     onVirtualFitting: () -> Unit = {},
     onBodyHistory: () -> Unit = {},
     onOutfitBook: () -> Unit = {},
-    onLogout: () -> Unit = {}
+    onReturnToStart: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val buildInfo = remember(context) { AppBuildInfo.installed(context) }
@@ -80,7 +83,9 @@ fun MyPageScreen(
     var showBackupDialog by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
     var showVersionDialog by remember { mutableStateOf(false) }
-    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+    val authState by DataAuth.state.collectAsState()
+    val pendingCount by DbSync.pendingCount.collectAsState()
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -126,7 +131,7 @@ fun MyPageScreen(
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val nickname = profile?.nickname ?: "나의 스타일"
-    val email = profile?.email ?: "style@fashion.ai"
+    val email = profile?.email?.takeIf { it.isNotBlank() } ?: "소셜 로그인 미설정 · 로컬 게스트"
     // 서버에 연결되지 않으면 폰에 있는 기록으로 센다 (예전에는 고정 숫자 12 · 8 · 24 를 보여 줬음)
     val wardrobeItems by WardrobeStore.items.collectAsState()
     val interestIds by ProductInterestStore.ids.collectAsState()
@@ -388,7 +393,7 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
+            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "계정 · 게스트 이용", onClick = { showAccountDialog = true })
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -557,19 +562,14 @@ fun MyPageScreen(
         )
     }
 
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            title = { Text("로그아웃", fontWeight = FontWeight.Bold) },
-            text = { Text("로그아웃 하시겠습니까?") },
-            confirmButton = {
-                TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
-                    Text("로그아웃", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) { Text("취소", color = MediumGray) }
-            }
+    if (showAccountDialog) {
+        AccountAccessDialog(
+            onDismiss = { showAccountDialog = false },
+            onBackupRestore = { showAccountDialog = false; showBackupDialog = true },
+            onReturnToStart = { showAccountDialog = false; onReturnToStart() },
+            preview = com.jeiu.fashionproject.BuildConfig.PREVIEW_BUILD,
+            authState = authState,
+            pendingCount = pendingCount
         )
     }
 }

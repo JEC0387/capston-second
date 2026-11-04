@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -171,6 +172,15 @@ fun OnboardingScreen(onStart: () -> Unit) {
             ) {
                 Text("시작하기", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
+
+            // Returning users may enter without committing a new style draft or touching backup state.
+            OutlinedButton(onClick = onStart,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("continueLocalGuest"),
+                shape = RoundedCornerShape(12.dp)) {
+                Text("기록을 유지하고 바로 이용")
+            }
+            Text("로그인 없이 이용할 수 있어요. 위에서 바꾼 스타일은 저장하지 않아요.",
+                style = MaterialTheme.typography.bodySmall, color = MediumGray)
 
             Spacer(modifier = Modifier.height(16.dp))
         }

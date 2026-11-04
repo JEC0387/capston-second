@@ -304,7 +304,7 @@ fun AppNavigation() {
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onBodyHistory = { navController.navigate(Screen.BodyHistory.route) },
                     onOutfitBook = { navController.navigate(Screen.OutfitBook.route()) },
-                    onLogout = {
+                    onReturnToStart = {
                         navController.navigate(Screen.Onboarding.route) {
                             popUpTo(0) { inclusive = true }
                         }

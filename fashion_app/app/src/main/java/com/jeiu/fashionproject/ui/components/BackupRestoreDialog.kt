@@ -76,16 +76,13 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(CreamDark).padding(10.dp))
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                if (pending == 0) "모든 기록이 서버에 저장됐어요" else "서버로 보낼 기록 ${pending}개가 남았어요 (서버가 켜지면 자동 전송)",
-                                style = MaterialTheme.typography.labelSmall, color = MediumGray, modifier = Modifier.weight(1f)
-                            )
+                            BackupQueueStatusText(pending, Modifier.weight(1f))
                             TextButton(onClick = {
                                 clipboard.setText(AnnotatedString(code))
                                 Toast.makeText(context, "백업 코드를 복사했어요", Toast.LENGTH_SHORT).show()
                             }) { Text("복사", color = Camel) }
                         }
-                        Text("새 복구 코드입니다. 폰을 바꾸거나 앱을 다시 설치할 때 이 코드를 넣으면 옷장 · 착용 기록 · 취향 · 관심 상품 · 저장한 코디 · 코디 일정을 되살릴 수 있어요. " +
+                        Text("새 복구 코드입니다. 서버에 정상 백업된 옷장 · 착용 기록 · 취향 · 관심 상품 · 저장한 코디 · 코디 일정만 다른 폰에서 복원할 수 있어요. 코드가 있다는 것만으로 백업 완료를 뜻하지 않아요. " +
                             "코드를 아는 사람은 내 기록을 볼 수 있으니 다른 사람에게 알려 주지 마세요.",
                             style = MaterialTheme.typography.labelSmall, color = MediumGray)
                     } else {
@@ -200,7 +197,7 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
                             BackupRestore.Result.RestartRequired -> BackupRestore.restartApp(context.applicationContext)
                             BackupRestore.Result.InvalidCode -> message = "새 복구 코드 형식이 맞지 않아요. 예전 기기 번호는 운영자 확인 후 이전해야 해요."
                             BackupRestore.Result.SameCode -> message = "이 폰의 백업 코드예요. 다른 폰의 코드를 넣어 주세요."
-                            BackupRestore.Result.NotFound -> message = "이 코드로 저장된 기록이 없어요. 코드를 다시 확인해 주세요."
+                            BackupRestore.Result.NotFound -> message = "이 코드로 가져올 기록이 없어요. 이 폰 기록은 바꾸지 않았고 계정 간 업로드를 막기 위해 동기화는 보류해요. 코드를 확인한 뒤 복원을 이어하거나, 안내를 확인하고 이 폰 기록 사용을 선택하세요."
                             BackupRestore.Result.Offline -> message = "연결·복구 코드·저장 공간을 확인해 주세요. 기록은 보존했으며, 중단된 복원은 이어서 진행할 수 있어요."
                         }
                     }
@@ -248,4 +245,14 @@ fun BackupRestoreDialog(onDismiss: () -> Unit) {
             dismissButton = { TextButton(onClick = { confirmDisable = false }) { Text("취소", color = MediumGray) } }
         )
     }
+}
+
+/** An empty queue is not evidence of a complete server snapshot or a successful restore. */
+@Composable
+internal fun BackupQueueStatusText(pending: Int, modifier: Modifier = Modifier) {
+    Text(
+        if (pending > 0) "서버로 보낼 기록 ${pending}개가 남았어요. 연결·인증이 준비되면 재시도해요."
+        else "현재 전송 대기 항목이 없어요. 서버 백업 완료나 복원 가능 여부는 아직 확인하지 않았어요.",
+        style = MaterialTheme.typography.labelSmall, color = MediumGray, modifier = modifier
+    )
 }

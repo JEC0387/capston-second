@@ -149,7 +149,7 @@ jobs:
             --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
             --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*OfficialDemoTest' --tests '*P7*' \
-            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' --tests '*P19*' --tests '*P22*' \
+            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' --tests '*P19*' --tests '*P22*' --tests '*P23*' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Build Preview instrumentation harness (no device or live service execution)
@@ -230,6 +230,8 @@ jobs:
           name: fashionai-preview-apk-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
           path: apk-artifact/
           if-no-files-found: error
+          # Keep the installable Preview through the November 16 presentation.
+          # These upload settings affect new artifacts only; never delete prior runs here.
           retention-days: 30
           compression-level: 0
 
@@ -240,7 +242,7 @@ jobs:
           name: fashionai-preview-instrumentation-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
           path: fashion_app/build/preview-instrumentation/app-debug-androidTest.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
 
       - name: Upload validation metadata (contains no APK or signing key)
         if: success()
@@ -255,6 +257,7 @@ jobs:
             apk-artifact/BUILD_INFO.json
             apk-artifact/SHA256SUMS.txt
           if-no-files-found: error
+          retention-days: 30
 
       - name: Upload separate device QA app and tests
         if: success() && steps.distribution.outputs.ready == 'true'
@@ -263,7 +266,7 @@ jobs:
           name: fashionai-device-qa-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
           path: qa-artifact/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 3
           compression-level: 0
 
       - name: Remove temporary signing key
@@ -285,7 +288,7 @@ jobs:
             fashion_app/app/build/p10-visual/
             fashion_app/build/native-alignment/
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 7
 
   backend:
     runs-on: ubuntu-24.04
@@ -319,7 +322,7 @@ jobs:
         run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
       - name: APK release safety tests
         working-directory: tools
-        run: python -m unittest -v test_apk_release test_native_alignment
+        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
