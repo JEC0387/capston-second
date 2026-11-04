@@ -205,7 +205,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             state.error?.let {Text(it,modifier=Modifier.testTag("localVtonError"))}
             val original=if(currentResult!=null) state.resultPerson ?: person?.toString() else person?.toString()
             val shown: Any?=if(currentResult!=null && !originalVisible) currentResult else original
-            if(shown!=null) AsyncImage(shown,if(state.result!=null && !originalVisible) "자체 AI 생성 결과" else "원본 사진",
+            if(shown!=null) AsyncImage(shown,if(currentResult!=null && !originalVisible) "자체 AI 생성 결과" else "원본 사진",
                 contentScale=ContentScale.Fit,modifier=Modifier.fillMaxWidth().height(320.dp))
             if(state.result!=null && currentResult==null) Text("이전 사진·옷의 자체 AI 결과는 현재 선택에 표시하지 않아요. 새 생성에는 별도 동의가 필요해요.")
             if(currentResult!=null) {

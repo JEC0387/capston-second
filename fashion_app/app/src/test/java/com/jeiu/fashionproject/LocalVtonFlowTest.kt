@@ -120,6 +120,29 @@ class LocalVtonFlowTest {
         compose.runOnIdle {assertTrue(model.state.resultFromPreviousAttempt);assertNotNull(model.state.result)}
         compose.onNodeWithTag("localVtonSuccess").performScrollTo().assertTextContains("이전",substring=true)
     }
+    @Test fun changingGarmentLabelsTheDisplayedOriginalRatherThanTheHiddenOldResult() {
+        val other=TryOnGarment("other-top","다른 상의","상의","content://test-original/other-shirt.png")
+        screen(listOf(garment,other))
+        compose.onNodeWithTag("localGarment-top").performScrollTo().performClick()
+        approve();done()
+        compose.onNodeWithContentDescription("자체 AI 생성 결과").assertExists()
+        compose.onNodeWithTag("localGarment-other-top").performScrollTo().performClick()
+        compose.onNodeWithTag("localVtonSuccess").assertDoesNotExist()
+        compose.onNodeWithText("PNG 저장").assertDoesNotExist()
+        compose.onNodeWithContentDescription("자체 AI 생성 결과").assertDoesNotExist()
+        compose.onNodeWithContentDescription("원본 사진").assertExists()
+        compose.runOnIdle {assertEquals(1,fake.posts)}
+    }
+    @Test fun unreadyServerBlocksGenerationUntilExplicitSuccessfulReadinessCheck() {
+        fake.notReady=true
+        screen()
+        compose.onNodeWithTag("localVtonGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("localVtonServerState").assertTextContains("GPU 미준비",substring=true)
+        compose.runOnIdle {fake.notReady=false;assertEquals(0,fake.posts);assertTrue(fake.images.isEmpty())}
+        compose.onNodeWithText("자체 서버 준비 다시 확인").performScrollTo().performClick()
+        compose.onNodeWithTag("localVtonGenerate").assertIsEnabled()
+        compose.runOnIdle {assertEquals(0,fake.posts);assertTrue(fake.images.isEmpty())}
+    }
     @Test fun processRestorationQueriesOnlyAndDoesNotStoreCredentials() {
         fake.uncertain=true
         compose.runOnIdle {model.generate(app,photo,listOf(garment),true)}
@@ -193,10 +216,13 @@ class LocalVtonFlowTest {
     }
     private class Fake:TryOnGateway {
         val images=mutableListOf<String>()
-        var posts=0;var cancels=0;var base="";var categories=listOf<String>()
+        var posts=0;var cancels=0;var base="";var categories=listOf<String>();var notReady=false
         var gate:CompletableDeferred<Unit>?=null;var fail=false;var uncertain=false;var expiredResult=false
         override suspend fun image(context:android.content.Context,source:String):String {images+=source;return "prepared-inline-image"}
-        override suspend fun check(connection:TryOnConnection) {base=connection.base}
+        override suspend fun check(connection:TryOnConnection) {
+            base=connection.base
+            if(notReady) throw TryOnFailure("합성 시험: GPU 미준비")
+        }
         override suspend fun submit(connection:TryOnConnection,id:String,person:String,garments:List<Pair<String,String>>) {
             posts++;base=connection.base;categories=garments.map {it.first};gate?.await()
             if(uncertain) throw IOException("synthetic lost response")
