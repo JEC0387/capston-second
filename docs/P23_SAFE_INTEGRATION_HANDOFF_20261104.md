@@ -1,5 +1,31 @@
 # P23 — Safe guest entry and data preservation
 
+## Latest verified result — 2026-11-05 KST
+
+Execution SHA: `71f57804250260975e803398616f4f25d6f66bc2`. Implementation and tests are committed and pushed on the existing branch. This final handoff update is documentation-only; do not rebuild the same application for it.
+
+- [CI #86](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41859832925): focused authentication/preservation tests, full Android tests, Preview regression, Backend, five server-start environments, Lint, instrumented-test compilation, Preview/QA build, package/signature/version/source gates and ZIP/ELF static checks passed.
+- Backend: **151 passed plus 8 subtests**; release/native/retention policy tests: **13 passed**. Final Android/Preview XML could not be downloaded; do not substitute prior-run counts or add repeated runs together. Device instrumentation was compiled, not executed.
+- **GitHub publication is blocked**: both APK and report uploads failed with `Artifact storage quota has been hit`. GitHub says usage is recalculated every 6–12 hours. The final read still reports workflow `in_progress`, conclusion `null`, although validation and cleanup steps are complete; its artifacts endpoint reports zero artifacts. This is not an overall green workflow or a downloadable GitHub APK. No protected #79/#80/#81 artifact was deleted, and no workflow was cancelled.
+- A local fallback was built from the same clean execution SHA and signed with the existing trusted Preview key. All final local candidate checks and the fresh monotonic-version floor passed. It was **not installed** and is **not a GitHub artifact**; `distributionVerified:false` deliberately remains in its build information.
+
+### Verified local candidate
+
+- File: `fashion_app/build/p23-release/fashionai-1.1.86.1-preview-vc18601-71f57804.apk` (relative to this worktree).
+- Package: `com.jeiu.fashionproject.preview`; version `1.1.86.1-preview`, code **18601** (greater than 18101; checked floor 18600).
+- SHA-256: `e8e7bebb1063d9b013b6a27caeb4f2fd5d30c31e14018c597ba01ca4bfc89435`.
+- Certificate SHA-256: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9` (existing trusted signer).
+- Embedded branch/build/source identity, APK CRC, P22/P23 DEX markers, package and signature verified. Actual signing secret bytes were checked against APK contents without printing them. Temporary private signing material was removed; the original protected backup remains untouched.
+- Current APK passed SDK ZIP 16 KB alignment. All 18 packaged native files and their file set exactly match the pinned P22 reference APK; nine ELF64 libraries reuse that byte-identical LLVM audit. This is static evidence, not a new local LLVM run or actual 16 KB device execution.
+- Evidence alongside the APK: `BUILD_INFO.json`, `BUILD_INFO.txt`, `SHA256SUMS.txt`, `LOCAL_VERIFICATION.json`, `VERSION_FLOOR.json`, `native-alignment.json`. Final `localCandidateChecksPassed`, `versionFloorVerified` and native static checks are true.
+- The unavailable CI-built APK has a different hash (`9ac1d95308b2de6b3fb8daf659a11508d9c8653663b210249530285dd1487ecd`); do not apply that hash to the local file.
+
+Local candidate attempt 01 failed before compilation because an empty signing environment variable was interpreted as a path. Attempt 02 failed during DEX transformation with Windows system-resource exhaustion. Both logs were preserved and neither restored the signing key. Attempt 03 passed using one worker, two active JVM processors and a 1.5 GB SerialGC heap; it reused completed tasks without clearing caches. Final C: free space was about 18.8 GiB. No user files, SDK, AVD or older APK were removed.
+
+The earlier combined-suite failure was fixed solely by isolating the synthetic DataAuth lifecycle in the test fixture. Final Linux CI passed both auth classes together and the full suites; the earlier Windows loopback-TLS limitation is not claimed resolved. Synthetic records/queue preservation passed, but phone data was not accessed or freshly hash-audited.
+
+Next: retain this local candidate and reports; after GitHub storage accounting permits uploads, publish only through the existing trusted release gates. Do not lower version checks or delete protected artifacts to bypass the block. Real OAuth/operational recovery and all device/AI limitations below remain outstanding.
+
 ## Scope and implementation
 
 - Existing branch: `codex/fashionai-p17-camera-personal-vton-20261104`; baseline execution SHA `c14fca05ce60a148be08e5e47499c91b005f3485`. No new branch/worktree or forced reset.
@@ -17,9 +43,9 @@ Only the provider-list and guest-entry concepts were adapted. No team file, auth
 
 Excluded `AuthStore.acceptLogin` behavior that clears local data on missing/same-code server records, and `signOut` behavior that deletes local data even after failed/timed-out synchronization. Its recursive preferences/photo/fitting-cache deletion path was not imported. A real social login/logout implementation requires a compatible authenticated ownership and recovery contract plus configured providers; it remains unavailable rather than reporting simulated success.
 
-## Verification in progress
+## Earlier execution history (preserved)
 
-P23 focused results and final CI/APK evidence will be appended after execution; this section is not a success claim.
+The entries below record intermediate failures; the latest verified result above supersedes their pending state without erasing the failure evidence.
 
 During validation, the same remote branch advanced through `26860c1` to `f7fb4b21219085777692901d245028dcd44c5131` (AI wand wording and binding results to original inputs). Those non-overlapping commits were reviewed and fast-forwarded without discarding local P23 changes. Existing CI #83 was left running. See the separate `P23_AI_WAND_FLOW_20261104.md`; its actual-inference limitations still apply.
 
@@ -47,6 +73,7 @@ P22 CI run `41840132897` completed all seven jobs successfully, with Android 472
 
 - `.github/workflows/android-debug-apk.yml`: new-artifact retention and P23 Preview/release-policy tests.
 - `tools/test_artifact_retention.py`: retention and existing distribution-gate checks.
+- `fashion_app/gradle/test-runtime.init.gradle.kts`: full test exception details for diagnosis when report upload is unavailable.
 - `fashion_app/app/src/main/java/com/jeiu/fashionproject/navigation/AppNavigation.kt`: honest start-screen callback name only.
 - `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/AccountAccessDialog.kt`: unconfigured providers, guest/backup/start separation.
 - `fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/BackupRestoreDialog.kt`: honest pending/empty-recovery status.
