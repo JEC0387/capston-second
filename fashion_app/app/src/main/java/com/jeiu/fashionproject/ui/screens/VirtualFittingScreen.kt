@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.CenterFocusStrong
 import com.jeiu.fashionproject.data.TryOnPlan
 import com.jeiu.fashionproject.data.TryOnGarment
 import com.jeiu.fashionproject.data.TryOnRepository
+import com.jeiu.fashionproject.data.LocalVtonSession
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
