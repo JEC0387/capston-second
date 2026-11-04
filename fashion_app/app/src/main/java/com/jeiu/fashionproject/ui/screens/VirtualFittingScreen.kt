@@ -98,7 +98,7 @@ private fun fittingUri(item: WardrobeItem): String =
 private fun hasCutout(item: WardrobeItem) = item.garmentUri != null || item.cutoutUri != null || item.isCutout
 
 /** 입은 옷 한 벌 — 위치·크기는 피팅 화면(캔버스) 픽셀 기준 */
-private data class WornGarment(
+internal data class WornGarment(
     val item: WardrobeItem,
     val uri: String,
     val aspect: Float,        // 세로 / 가로
@@ -242,11 +242,12 @@ internal fun fitAvatar(slot: FitSlot, item: WardrobeItem, aspect: Float, canvas:
     }
 }
 
-private enum class PoseStatus { NONE, LOADING, FOUND, NOT_FOUND }
+internal enum class PoseStatus { NONE, LOADING, FOUND, NOT_FOUND }
 
 /** Retains the complete manual canvas through configuration changes. No disk photo storage. */
-private class ManualFittingViewModel : ViewModel() {
+internal class ManualFittingViewModel : ViewModel() {
     var bodyPhoto by mutableStateOf<Uri?>(null)
+    var photoDisplaySize by mutableStateOf<Size?>(null)
     var photoGeneration by mutableLongStateOf(0L)
     var body by mutableStateOf<FittingPoseDetector.BodyPoints?>(null)
     var poseStatus by mutableStateOf(PoseStatus.NONE)
@@ -260,6 +261,41 @@ private class ManualFittingViewModel : ViewModel() {
     var showAi by mutableStateOf(false)
     var showLocalAi by mutableStateOf(false)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
+
+    fun selectPhoto(uri: Uri): Long {
+        bodyPhoto = uri
+        photoGeneration++
+        photoDisplaySize = null
+        body = null
+        poseStatus = PoseStatus.LOADING
+        return photoGeneration
+    }
+
+    // Coil's displayed drawable has already applied orientation, even if pose detection fails.
+    // Ignore old requests (including the same URI reselected) and duplicate size notifications.
+    // Learning dimensions must never move a placement edited while the image was loading.
+    fun acceptPhotoDisplaySize(generation: Long, uri: Uri?, size: Size) {
+        if (generation == photoGeneration && uri != null && uri == bodyPhoto &&
+            photoDisplaySize == null && size.isUsableFittingSize()) photoDisplaySize = size
+    }
+
+    fun resizeCanvas(updated: Size) {
+        if (!updated.isUsableFittingSize()) return
+        val old = canvasSize
+        if (old.isUsableFittingSize() && old != updated) {
+            // Avatar storage and its canvas-normalized coordinate contract are unchanged.
+            avatarWorn.keys.toList().forEach { slot -> avatarWorn[slot]?.let { g ->
+                    avatarWorn[slot] = g.copy(center = Offset(g.center.x * updated.width / old.width,
+                        g.center.y * updated.height / old.height), baseWidth = g.baseWidth * updated.width / old.width)
+            } }
+            worn.keys.toList().forEach { slot -> worn[slot]?.let { g ->
+                resizePhotoPlacement(Placement(g.center,g.baseWidth,g.rotation),photoDisplaySize,old,updated)?.let { p ->
+                    worn[slot] = g.copy(center=p.center,baseWidth=p.width)
+                }
+            } }
+        }
+        canvasSize = updated
+    }
 }
 
 @Composable
@@ -419,11 +455,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri ?: return@rememberLauncherForActivityResult
-        bodyPhoto = uri
-        photoGeneration++
-        val requestGeneration = photoGeneration
-        body = null
-        poseStatus = PoseStatus.LOADING
+        val requestGeneration = manual.selectPhoto(uri)
         scope.launch {
             val detected = try { FittingPoseDetector.detect(context.applicationContext, uri) }
                 catch (cancelled: CancellationException) { throw cancelled }
@@ -450,13 +482,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             return
         }
         val targetAvatar=avatarMode
+        val targetPhotoGeneration=photoGeneration
         val target=worn
         val request=(manual.selectionRequests[slot] ?: 0L)+1
         manual.selectionRequests[slot]=request
         if (targetAvatar) {inspectAvatar=false;avatarCameraReset++}
         scope.launch {
             val image=GarmentGeometry.load(context.applicationContext,item)
-            if(manual.selectionRequests[slot]!=request)return@launch
+            if(manual.selectionRequests[slot]!=request ||
+                (!targetAvatar && targetPhotoGeneration!=photoGeneration))return@launch
             val uri=image?.uri ?: fittingUri(item)
             val aspect=image?.aspect ?: 1.2f
             val region=image?.region
@@ -614,23 +648,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 .onSizeChanged { size ->
                     val old = canvasSize
                     val updated = Size(size.width.toFloat(), size.height.toFloat())
-                    if (old.width > 0f && old.height > 0f && old != updated) {
+                    if (old.isUsableFittingSize() && updated.isUsableFittingSize() && old != updated) {
                         undoAvatar=undoAvatar?.mapValues { (_,g) -> g.copy(center=Offset(g.center.x*updated.width/old.width,g.center.y*updated.height/old.height),baseWidth=g.baseWidth*updated.width/old.width) }
-                        // Keep BOTH photo overlays and avatar overlays anchored when
-                        // the canvas changes height (e.g. text/notice/keyboard changes).
-                        // Resizing only avatarWorn made photo auto-fit appear to drift.
-                        listOf(manual.avatarWorn, manual.worn).forEach { outfit ->
-                            outfit.keys.toList().forEach { slot ->
-                                outfit[slot]?.let { g ->
-                                    outfit[slot] = g.copy(
-                                        center = Offset(g.center.x * updated.width / old.width,
-                                            g.center.y * updated.height / old.height),
-                                        baseWidth = g.baseWidth * updated.width / old.width)
-                                }
-                            }
-                        }
                     }
-                    canvasSize = updated
+                    manual.resizeCanvas(updated)
                 }
                 .testTag("fittingCanvas"),
             contentAlignment = Alignment.Center
@@ -668,8 +689,18 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                             resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty())
                     }
                 } else {
-                    AsyncImage(model = bodyPhoto, contentDescription = "전신 사진",
-                        modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                    val displayedPhoto = bodyPhoto
+                    val displayedGeneration = photoGeneration
+                    // A reselected identical URI is still a new generation with its own completion.
+                    key(displayedGeneration) {
+                        AsyncImage(model = displayedPhoto, contentDescription = "전신 사진",
+                            modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit,
+                            onSuccess = { success ->
+                                val drawable = success.result.drawable
+                                manual.acceptPhotoDisplaySize(displayedGeneration, displayedPhoto,
+                                    Size(drawable.intrinsicWidth.toFloat(), drawable.intrinsicHeight.toFloat()))
+                            })
+                    }
                 }
                 // Render back-to-front. Selection feedback follows the image; all input stays on the fixed canvas.
                 (if(inspectAvatar && avatarMode) emptyList() else worn.values.toList()).sortedBy { slotOf(it.item).ordinal }.forEach { g ->

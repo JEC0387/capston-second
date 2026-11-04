@@ -149,7 +149,7 @@ jobs:
             --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
             --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
             --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*OfficialDemoTest' --tests '*P7*' \
-            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' --tests '*P19*' \
+            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' --tests '*P19*' --tests '*P22*' \
             --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
       - name: Build Preview instrumentation harness (no device or live service execution)
