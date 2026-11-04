@@ -1,43 +1,45 @@
 # P16 device stability — 2026-11-04
 
-## Latest verified state (CI/APK checkpoint)
+## Latest verified state (S25+ QA and update completed)
 
-**Code/CI/APK verification passed; physical UI testing is waiting for the phone to be unlocked. Do not report P16 device interaction or 16KB runtime verification as complete.**
+**Code/CI/APK checks and both isolated S25+ instrumentation phases passed. Existing Preview was updated without deletion. Real 16KB runtime and real-camera capture remain unverified; model joint visual quality still needs follow-up.**
 
 - Execution commit: `94e4e3a7b5b0a5017f934e50ab840260b067fba7`.
 - [Final CI 41726982899](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899): all **7 jobs successful**.
 - Android **440 passed**, Preview **204 passed**; each 0 failed/errors/skipped. Backend **151 passed + 8 subtests**, 7 warnings. Release/native safety **10 passed**. Lint **0 errors, 165 warnings, 2 hints**.
-- Instrumentation sources/APKs compiled and signed. Physical instrumentation **not executed yet**: S25+ is ADB-authorized but `showing=true`, `inputRestricted=true`, screen off. User unlocked earlier, but it automatically locked again during CI. A second unlock request is pending; no lock bypass/settings changes.
+- After the user unlocked S25+, physical instrumentation ran: `editManipulateAndSaveSyntheticFixtures` **1/1 passed (7.176s)**; QA-only process stop followed by `restoreSavedFixturesAfterSeparateProcessRestart` **1/1 passed (1.365s)**. Evidence verifies distinct process IDs and exact seven-part profile/manual placement restoration. No lock bypass or device-setting changes.
 - Preview `com.jeiu.fashionproject.preview`, `1.1.79.1-preview`, **17901**; [APK artifact 13276820721](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899/artifacts/13276820721).
 - APK SHA-256: `95060779ed1af0804762b1c039da2e28d51ea9ba01b53a44b90148b0563e0119`.
 - Local APK: `C:\Users\USER\Documents\ChatGPT\capston\p16-device-20261104\fashion_app\build\p16-release\fashionai-1.1.79.1-preview-vc17901-94e4e3a7.apk`.
 - Package/version, existing trusted certificate, clean source SHA, embedded identity, SHA256SUMS and full ZIP CRC independently verified locally. CI native reports match those exact downloaded APK hashes: **9/9 ELF64 libraries pass, ZIP passes, all four ABIs retained**, for both Preview and QA.
-- Only the separate **FashionAI QA P16** app (`com.jeiu.fashionproject.preview.qa`) and its `.test` package were installed successfully. Their signer and exact instrumentation target were checked. No test fixture was executed/written yet.
-- Existing Preview remains **17701 / 1.1.77.1-preview**; no user-app update/uninstall/clear. After QA installation, all **22 existing Preview data file hashes unchanged**, 0 missing/changed, 0 new files. Original app, photos, profiles, queue, journal and backups untouched.
+- **FashionAI QA P16** (`com.jeiu.fashionproject.preview.qa`) and its `.test` package are separate from user data. Five generated synthetic garment images and a synthetic profile were used only there. No external AI requests, real photos or user-record edits.
+- Existing Preview successfully updated **17701 -> 17901** with `adb install -r`, after matching installed P15 APK hash to the known signer and verifying the increased candidate version. Installed P16 APK hash equals the verified artifact. Cold launch succeeded; body entry and actual OpenGL mannequin/ruler screen were inspected without editing/saving user measurements. No uninstall/clear/downgrade.
+- Immediately before/after update: all **22 existing Preview data file hashes unchanged**, 0 missing/changed, 0 new files. After normal Home/UI navigation, 19 remained identical; `weather_alert.xml`, `recommendation_log.xml` and `files/profileInstalled` changed. Existing Home code records displayed recommendations and runtime weather/profile state; these files were not restored/overwritten by test fixtures. There is no before-content snapshot to independently prove entry-by-entry recommendation-log preservation. Wardrobe, body profile, placements, queue/journal and other unchanged files retain their hashes. Original app and old backups/APKs untouched.
 - QA APK SHA-256: `c12e6e473e6b47e6c1e509491eaca390ecf4561a5104efe8f707702739504de1`; [separate QA artifact 13276252269](https://github.com/jimnnieo-svg/capstone-integration-backup/actions/runs/41726982899/artifacts/13276252269). It is not a Preview update.
 
 | Required area | Final verified scope | Remaining physical check |
 |---|---|---|
-| Home/body readability | Exact long weather fixture at 384dp passed, no Home production change; draft/UI regressions passed | P16 body editor visibility on S25+; historical Home onset remains unknown |
-| Seven parts / 0.5cm ruler | Automated regression passed; no unsupported ruler math rewrite | Guarded seven-part touch/input test |
-| Garment selection/pan/scale/rotation | Selection/bounds/UI tests passed | Synthetic S25+ gestures |
-| Auto-fit/undo | Reproduced original drift and corrected; repeat/no-op tests passed | Actual touch + repeated auto-fit + undo |
-| Save/process restart | Guarded two-phase instrumentation ready and compiled | Execute both phases with different QA process IDs; not yet verified |
-| Camera/photo analysis | Full automated regression passed; native smoke prepared | Actual bundled model smoke and camera capture; no real photo processed |
+| Home/body readability | Exact long weather fixture at 384dp passed; no Home production change. Actual P16 Home action is horizontal (256x69 physical px); primary body entry shown | Historical onset unknown; exact historical weather text was injected only in the automated fixture |
+| Seven parts / 0.5cm ruler | S25+ cancel preserves profile; direct input/drag/0.5cm snap, seven independent values and approved save passed | Numeric/model behavior is not physical measurement accuracy |
+| Garment selection/pan/scale/rotation | S25+ synthetic top/bottom selection, single drag, multitouch scale/rotation, independent garment state passed | Broad real-photo/device coverage remains future work |
+| Auto-fit/undo | S25+ repeated/no-op auto-fit and exact undo passed; opaque/tall failures preserve previous garment; asymmetric alpha-margin case passed | Flat overlay alignment is not 3D cloth simulation or AI image generation |
+| Save/process restart | Both real-device phases passed with different QA PIDs and exact persisted profile/placements | Scope is synthetic avatar-mode QA; not photo-mode process restoration |
+| Camera/photo analysis | Full automated regression and actual bundled MediaPipe inference on a generated blank bitmap passed; invalid body rejected | Camera capture/real-photo accuracy not tested |
 | 16KB | Final ELF/ZIP checks passed | Real 16KB runtime unavailable; S25+ is 4096-byte pages |
 | P15 public AI | Existing input/privacy/request limits preserved; reentry label mock passed; existing journal files unchanged | P16 screen reentry, compare/save without generating again |
 | Personal-photo VTON | No private input uploaded, no paid resource | Authorized private GPU, weights/licenses, approved input and server privacy setup still required |
 
-### Resume exactly here
+### Completed resumption and remaining actions
 
 1. Do **not** rerun successful CI/tests, rebuild identical APKs, clear data or repeat public AI generation. Confirm branch/worktree and retain all ignored evidence.
-2. After user unlocks, verify S25+ `device` and unlocked status with explicit serial. The QA app/tests are already installed; do not reinstall/reset automatically.
-3. Run private helper `fashion_app/build/p16-private/run_device_qa.py first` with the existing Python environment. It targets only `.preview.qa`, refuses old output, checks unlock, runs `P16DeviceQaTest#editManipulateAndSaveSyntheticFixtures`, and saves output/evidence. Optional `capture_qa.py` captures only when QA has foreground focus.
-4. If first phase succeeds, stop **only** `com.jeiu.fashionproject.preview.qa`, then run helper argument `restore`. If it fails, preserve partial JSON/logs and distinguish a test harness issue from an application issue before retrying; never weaken assertions.
-5. Only after device QA is satisfactory: fingerprint current Preview with `device_audit.py preupdate`, verify it is still the known 17701 package/APK, and perform compatible `adb -s <S25 serial> install -r <verified Preview APK>` without `-d`, uninstall or clear. Fingerprint with `device_audit.py after`, inspect actual installed metadata and minimal P16 UI. The old 17701 APK remains preserved.
-6. Append real outcomes and final documentation commit SHA here. Documentation-only update does not require a new APK/CI run.
+2. QA installation, `run_device_qa.py first`, QA-only stop, `restore`, Preview preupdate fingerprints, compatible update and after fingerprints are **completed**. Helpers refuse overwriting existing output; do not automatically repeat them or replace their evidence.
+3. Physical UI proof: body primary action visible; Home action horizontal; native mannequin/ruler displayed. A private screenshot shows rough wrist/pelvis transitions. Geometry/shaders were not changed in P16, and visual perfection is **not** claimed. Save button's lower portion requires scrolling at current viewport; scrolling and save were exercised in QA.
+4. Remaining: real 16KB environment, actual camera capture/photo regression, deeper joint visual review, and P15 result compare/save reentry on P16 without a new generation. Personal-photo VTON still needs the authorized private GPU/server path.
+5. Document-only handoff updates do not need a new APK or repeated CI. The execution SHA remains `94e4e3a7b5b0a5017f934e50ab840260b067fba7`.
 
 Private evidence: `fashion_app/build/p16-private/{baseline-build.json,s25-data-before.json,qa-install-preservation.json,verify_download.py,run_device_qa.py,capture_qa.py}`; verified APK metadata in `p16-release/LOCAL_VERIFICATION.json` and `p16-qa-release/LOCAL_VERIFICATION.json`; final XML/native reports in `p16-ci-final-reports`. None are committed. Low PC disk space (~400MB remaining) means do not start another local full build or emulator image download.
+
+Completed device evidence additionally includes `qa-94e4e3a7-{first,restore}.{txt,json}`, `s25-data-{preupdate,after}.json`, `s25-data-comparison.json`, `installed-p16.json`, `body-entry-after-update.json`, `home-action-after-update.json`, `s25-after-ui-preservation.json`, and private `native-avatar-after-update.png`. Screenshot/profile values must not enter GitHub or APK artifacts.
 
 ## Checkpoint and safety
 
