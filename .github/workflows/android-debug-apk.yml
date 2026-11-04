@@ -106,11 +106,11 @@ jobs:
             echo "ANDROID_KEY_ALIAS=${KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
           fi
 
+      - name: Focused P23 preservation and guest regressions
+        run: set -o pipefail; bash gradlew :app:testDebugUnitTest --tests '*DataAuthRecoverySafetyTest' --tests '*P23*' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/p23-focused.log"
+
       - name: Build debug APK
         run: set -o pipefail; bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log"
-
-      - name: Focused P23 preservation and guest regressions
-        run: set -o pipefail; bash gradlew :app:testDebugUnitTest --tests '*P23*' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/p23-focused.log"
 
       - name: Unit tests
         run: set -o pipefail; bash gradlew :app:testDebugUnitTest --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/test.log"

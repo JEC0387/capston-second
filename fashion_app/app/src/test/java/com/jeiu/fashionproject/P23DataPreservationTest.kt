@@ -5,6 +5,7 @@ import android.content.Context
 import android.net.Uri
 import com.jeiu.fashionproject.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -16,11 +17,14 @@ import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.util.ReflectionHelpers
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
@@ -33,6 +37,36 @@ import javax.net.ssl.HttpsURLConnection
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35], application=Application::class)
 class P23DataPreservationTest {
+    // Robolectric can reuse a sandbox across test classes. DataAuth intentionally initializes
+    // only once per real application process; simulate a fresh synthetic process here without
+    // changing that production guard, or retaining another test's context/vault/account.
+    private val nullableAuthFields = listOf("context", "vault", "recovery", "requestedRecovery",
+        "requestedRecoveryServer", "binding")
+    private val booleanAuthFields = listOf("storageLocked", "enabled", "restorePending", "legacyPending")
+    private lateinit var previousAuthFields: Map<String, Any?>
+    private var previousAuthState = "uninitialized"
+    private val authState: MutableStateFlow<String>
+        get() = ReflectionHelpers.getStaticField(DataAuth::class.java, "_state")
+
+    @Before fun isolateSyntheticApplicationAuth() {
+        previousAuthFields = (nullableAuthFields + booleanAuthFields).associateWith { name ->
+            ReflectionHelpers.getStaticField<Any?>(DataAuth::class.java, name)
+        }
+        previousAuthState = DataAuth.state.value
+        nullableAuthFields.forEach { ReflectionHelpers.setStaticField(DataAuth::class.java, it, null) }
+        booleanAuthFields.forEach { ReflectionHelpers.setStaticField(DataAuth::class.java, it, false) }
+        authState.value = "uninitialized"
+    }
+
+    @After fun restorePreviousApplicationAuth() {
+        if (::previousAuthFields.isInitialized) {
+            previousAuthFields.forEach { (name, value) ->
+                ReflectionHelpers.setStaticField(DataAuth::class.java, name, value)
+            }
+            authState.value = previousAuthState
+        }
+    }
+
     @Test fun failedCancelledTimedOutAndEmptyAccountRecoveryNeverReplacesLocalRecords() = runBlocking {
         val context=RuntimeEnvironment.getApplication() as Context
         val photo=File(context.filesDir,"p23-synthetic-photo.bin").apply {writeBytes(byteArrayOf(1,3,5,7,9))}
