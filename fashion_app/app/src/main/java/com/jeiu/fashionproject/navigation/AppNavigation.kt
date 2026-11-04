@@ -132,7 +132,6 @@ fun AppNavigation() {
                 HomeScreen(
                     onOutfitRecommendClick = { navController.navigate(Screen.OutfitRecommend.route()) },
                     onForecastClick = { navController.navigate(Screen.OutfitRecommend.route(tab = 1)) },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     onShopClick = { preset ->
                         // 홈에서 보던 목록을 쇼핑 탭에서 이어서 전체로 보여준다 (쇼핑 탭이 성별을 앞에 붙임)
@@ -157,7 +156,7 @@ fun AppNavigation() {
             composable(Screen.Wardrobe.route) {
                 WardrobeScreen(
                     onOutfitRecommend = { scope -> navController.navigate(Screen.OutfitRecommend.route(scope = scope.name)) },
-                    onProductDetail = { navController.navigate(Screen.ProductDetail.route) },
+                    onProductDetail = { id -> navController.navigate(Screen.ProductDetail.route(id)) },
                     onShop = { navController.navigate(Screen.Shop.route) },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     onEditClothing = { id -> navController.navigate(Screen.AddClothing.route(id)) },
@@ -212,7 +211,6 @@ fun AppNavigation() {
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
                     weatherViewModel = weatherViewModel,
                     gender = gender)
             }
@@ -280,13 +278,19 @@ fun AppNavigation() {
             }
             composable(Screen.Shop.route) {
                 ShopScreen(
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) },
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) },
                     viewModel = shopViewModel,
                     gender = gender
                 )
             }
-            composable(Screen.ProductDetail.route) {
-                ProductDetailScreen(onBack = { navController.popBackStack() })
+            composable(Screen.ProductDetail.route,
+                arguments = listOf(navArgument("productId") { type = NavType.StringType; nullable = true; defaultValue = null })
+            ) { entry ->
+                ProductDetailScreen(
+                    productId = entry.arguments?.getString("productId"),
+                    onBack = { navController.popBackStack() },
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) }
+                )
             }
             composable(Screen.MyPage.route) {
                 MyPageScreen(
@@ -323,10 +327,16 @@ fun AppNavigation() {
                 StyleAnalysisScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.StyleSuggestion.route) {
+                val wardrobe by com.jeiu.fashionproject.data.WardrobeStore.items.collectAsState()
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    com.jeiu.fashionproject.data.WardrobeStore.load(context)
+                }
                 StyleSuggestionScreen(
-                    analysis = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.result,
+                    analysisState = bodyAnalysisState,
+                    gender = gender,
+                    wardrobe = wardrobe,
                     onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route) }
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) }
                 )
             }
         }

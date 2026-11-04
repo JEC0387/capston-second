@@ -14,7 +14,10 @@ sealed class Screen(val route: String) {
     object BodyAnalysisAvatar : Screen("body_analysis_avatar")
     object BodySizeComparison : Screen("body_size_comparison")
     object Shop : Screen("shop")
-    object ProductDetail : Screen("product_detail")
+    object ProductDetail : Screen("product_detail?productId={productId}") {
+        // Navigation decodes the argument once. Never decode it again in the screen.
+        fun route(productId: String) = "product_detail?productId=${android.net.Uri.encode(productId)}"
+    }
     object MyPage : Screen("my_page")
     object StyleAnalysis : Screen("style_analysis")
     object StyleSuggestion : Screen("style_suggestion")

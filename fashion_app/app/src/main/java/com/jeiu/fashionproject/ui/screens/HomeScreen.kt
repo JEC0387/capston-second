@@ -92,7 +92,6 @@ private val popularItems = listOf(
 fun HomeScreen(
     onOutfitRecommendClick: () -> Unit,
     onForecastClick: () -> Unit,
-    onProductClick: () -> Unit,
     onAddClothing: () -> Unit,
     onShopClick: (presetQuery: String?) -> Unit,
     weatherViewModel: WeatherViewModel,

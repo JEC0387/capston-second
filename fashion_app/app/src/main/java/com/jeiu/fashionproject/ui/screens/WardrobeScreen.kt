@@ -53,7 +53,7 @@ import kotlinx.coroutines.withContext
 fun WardrobeScreen(
     onOutfitRecommend: (ClothingScope) -> Unit,
     onShop: () -> Unit,
-    onProductDetail: () -> Unit,
+    onProductDetail: (String) -> Unit,
     onAddClothing: () -> Unit = {},
     onVirtualFitting: () -> Unit = {},
     onWearLog: () -> Unit = {},          // 오늘 입은 옷 기록
@@ -234,8 +234,7 @@ fun WardrobeScreen(
                 val product = entry.product
                 if (product != null) {
                     Card(onClick = {
-                        if (product.purchaseUrl.isNotBlank()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(product.purchaseUrl)))
-                        else onProductDetail()
+                        onProductDetail(product.id)
                     }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = White)) {
                         Box(Modifier.fillMaxWidth().height(150.dp).background(Color(product.color))) {

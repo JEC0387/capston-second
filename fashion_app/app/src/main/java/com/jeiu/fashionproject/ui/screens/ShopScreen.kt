@@ -1,7 +1,5 @@
 package com.jeiu.fashionproject.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +12,6 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,7 +42,7 @@ private enum class ShopTab(val label: String) { PRODUCTS("추천 상품"), STYLE
 
 @Composable
 fun ShopScreen(
-    onProductClick: () -> Unit,
+    onProductClick: (String) -> Unit,
     viewModel: ShopViewModel,
     gender: Gender? = null
 ) {
@@ -111,7 +108,7 @@ fun ShopScreen(
         ) {
             Text(
                 when {
-                    tab == ShopTab.PRODUCTS -> "AI가 내 체형·취향을 분석해 추천한 상품이에요. 하트를 누르면 옷장 '관심 옷'에 담겨요"
+                    tab == ShopTab.PRODUCTS -> "앱에 등록된 카탈로그예요. 가격·재고는 실시간 정보가 아니에요. 하트를 누르면 옷장 '관심 옷'에 담겨요"
                     gender != null -> "네이버 이미지 검색에서 ${gender.label} 맞춤 스타일을 가져왔어요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                     else -> "네이버 이미지 검색 결과예요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                 },
@@ -126,10 +123,7 @@ fun ShopScreen(
                 query = searchQuery,
                 likedSet = likedSet,
                 onToggleLike = { ProductInterestStore.toggle(context, it) },
-                onOpen = { url ->
-                    if (url.isNotEmpty()) context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                    else onProductClick()
-                }
+                onOpen = onProductClick
             )
             ShopTab.STYLES -> {
                 val state by viewModel.state.collectAsState()
@@ -155,7 +149,7 @@ private fun ProductGrid(
     query: String,
     likedSet: List<String>,
     onToggleLike: (String) -> Unit,
-    onOpen: (purchaseUrl: String) -> Unit
+    onOpen: (productId: String) -> Unit
 ) {
     val products = ShopCatalog.products
     val filteredProducts = remember(query) {
@@ -181,7 +175,7 @@ private fun ProductGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateItem()
-                    .clickable { onOpen(product.purchaseUrl) },
+                    .clickable { onOpen(product.id) },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = White),
                 elevation = CardDefaults.cardElevation(1.dp)
@@ -199,7 +193,7 @@ private fun ProductGrid(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                        product.tag?.let {
+                        product.tag?.takeUnless { it == "AI추천" }?.let {
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopStart)
@@ -230,11 +224,6 @@ private fun ProductGrid(
                             Text(product.originalPrice, style = MaterialTheme.typography.labelSmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
                         }
                         Text(product.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC107), modifier = Modifier.size(12.dp))
-                            Text("${product.rating}", style = MaterialTheme.typography.labelSmall, color = CharcoalBlack)
-                            Text("(${product.reviewCount})", style = MaterialTheme.typography.labelSmall, color = MediumGray)
-                        }
                     }
                 }
             }
