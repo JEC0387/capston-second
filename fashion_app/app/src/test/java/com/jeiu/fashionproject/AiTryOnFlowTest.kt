@@ -160,6 +160,17 @@ class AiTryOnFlowTest {
         compose.runOnIdle { assertEquals(1,fake.posts) }
     }
 
+    @Test fun choosingAnotherPersonHidesPriorResultUntilNewGeneration() {
+        screen(); approve(); finished()
+        compose.onNodeWithTag("aiTryOnSuccess").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("전신 사진 바꾸기").performScrollTo().performClick()
+        compose.runOnIdle { registry.dispatchResult(registryCode, Uri.parse("content://mock/person-second.jpg")) }
+        compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
+        compose.onNodeWithText("이전 사진 또는 다른 옷의 AI 결과", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("aiTryOnGenerate").assertIsEnabled()
+        compose.runOnIdle { assertEquals(1, fake.posts) }
+    }
+
     private class FakeGateway : TryOnGateway {
         var rejectInput = false
         override suspend fun prepare(context: Context, source: String, role: TryOnInputRole): PreparedTryOnImage {

@@ -19,6 +19,7 @@ data class TryOnUiState(
     val error: String? = null,
     val result: ByteArray? = null,
     val resultPerson: String? = null,
+    val resultGarments: List<TryOnGarment> = emptyList(),
     val resultFromPreviousAttempt: Boolean = false,
     val inputWarnings: List<String> = emptyList()
 )
@@ -42,6 +43,11 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     private var submitting = false
     private var cancelAfterSubmit = false
     val requestId: String? get() = saved["requestId"]
+
+    /** Only display a real AI result when its original inputs match the current draft. */
+    fun resultMatches(person: Uri?, garments: List<TryOnGarment>): Boolean =
+        state.result != null && person != null && state.resultPerson == person.toString() &&
+            state.resultGarments == garments
 
     fun generate(context: Context, person: Uri?, garments: List<TryOnGarment>, approved: Boolean) {
         val plan = TryOnPlan.build(garments)
@@ -148,6 +154,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                         state = state.copy(pending = false, watching = false, progress = null,
                             error = if (bytes == null) message("result_expired") else null,
                             result = bytes ?: state.result, resultPerson = if (bytes != null) saved["person"] else state.resultPerson,
+                            resultGarments = if (bytes != null) selectedGarments.toList() else state.resultGarments,
                             resultFromPreviousAttempt = if (bytes != null) false else state.resultFromPreviousAttempt)
                         return@withTimeoutOrNull true
                     }

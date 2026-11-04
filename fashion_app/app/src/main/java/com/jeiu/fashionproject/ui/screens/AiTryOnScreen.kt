@@ -63,6 +63,7 @@ fun AiTryOnScreen(
     var personText by rememberSaveable { mutableStateOf(defaultPhoto?.toString()) }
     val person = if (state.pending) model.selectedPerson ?: personText?.let(Uri::parse)
         else personText?.let(Uri::parse) ?: model.selectedPerson
+    val currentResult = state.result?.takeIf { model.resultMatches(person, selection) }
     var zoomComparison by remember { mutableStateOf(false) }
     var showOriginal by rememberSaveable { mutableStateOf(false) }
     var review by remember { mutableStateOf<Pair<Uri, List<TryOnGarment>>?>(null) }
@@ -81,7 +82,7 @@ fun AiTryOnScreen(
         if (photo != null && !state.pending) { review = null; personText = photo.toString(); saveMessage = null }
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { target ->
-        val source = model.state.result
+        val source = model.state.result?.takeIf { model.resultMatches(person, selection) }
         if (target != null && source != null && !saving) {
             saving = true
             scope.launch {
@@ -121,7 +122,7 @@ fun AiTryOnScreen(
             }, modifier = Modifier.testTag("aiTryOnConfirm")) { Text("확인하고 AI 생성") } },
             dismissButton = { TextButton(onClick = { review = null }) { Text("전송하지 않기") } })
     }
-    if (zoomComparison && state.result != null) TryOnComparisonDialog(state.resultPerson, state.result,
+    if (zoomComparison && currentResult != null) TryOnComparisonDialog(state.resultPerson, currentResult,
         state.resultFromPreviousAttempt) { zoomComparison = false }
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(8.dp)) {
@@ -142,9 +143,9 @@ fun AiTryOnScreen(
             OutlinedButton(enabled = !state.pending && !saving, onClick = {
                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }) { Text(if (person == null) "전신 사진 선택" else "전신 사진 바꾸기") }
-            val original = state.resultPerson?.let(Uri::parse) ?: person
-            val shown: Any? = if (state.result != null && !showOriginal) state.result else original
-            if (shown != null) AsyncImage(shown, if (state.result != null && !showOriginal) "AI 생성 결과" else "원본 전신 사진",
+            val original = if (currentResult != null) state.resultPerson?.let(Uri::parse) ?: person else person
+            val shown: Any? = if (currentResult != null && !showOriginal) currentResult else original
+            if (shown != null) AsyncImage(shown, if (currentResult != null && !showOriginal) "AI 생성 결과" else "원본 전신 사진",
                 contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(340.dp).testTag("aiTryOnPreview"))
             if (selection.isEmpty()) {
                 Text("먼저 수동 배치 화면에서 입어볼 옷을 선택해주세요.", color = Brown)
@@ -189,7 +190,8 @@ fun AiTryOnScreen(
             }
             state.inputWarnings.forEach { Text(it, color = MediumGray, modifier = Modifier.testTag("aiTryOnInputHint")) }
             state.error?.let { Text(it, color = Brown, modifier = Modifier.testTag("aiTryOnError")) }
-            if (state.result != null) {
+            if (state.result != null && currentResult == null) Text("이전 사진 또는 다른 옷의 AI 결과는 현재 선택에 표시하지 않아요. 다시 생성하려면 새 동의가 필요해요.", color = MediumGray)
+            if (currentResult != null) {
                 Text(if (state.resultFromPreviousAttempt) "이전 AI 생성 결과 · 이번 요청의 성공 결과가 아니에요" else "AI 생성 결과 · 얼굴·체형·실제 핏은 보장하지 않아요", color = Brown, modifier = Modifier.testTag("aiTryOnSuccess"))
                 OutlinedButton(onClick = { showOriginal = !showOriginal }) { Text(if (showOriginal) "AI 결과 보기" else "원본과 비교") }
                 OutlinedButton(onClick = { zoomComparison = true }, modifier = Modifier.testTag("aiTryOnZoom")) { Text("확대해서 비교") }
@@ -205,7 +207,7 @@ fun AiTryOnScreen(
                 person?.let { review = it to selection.toList() }
             }) {
             Icon(Icons.Filled.AutoFixHigh, null); Spacer(Modifier.width(6.dp))
-            Text(if (state.pending) "AI 생성 중…" else if (state.result != null || state.error != null) "다시 만들기 (${plan.requestCount}회 요청)" else "AI로 입어보기 (${plan.requestCount}회 요청)")
+            Text(if (state.pending) "AI 생성 중…" else if (currentResult != null || state.error != null) "다시 만들기 (${plan.requestCount}회 요청)" else "AI로 입어보기 (${plan.requestCount}회 요청)")
         }
     }
 }

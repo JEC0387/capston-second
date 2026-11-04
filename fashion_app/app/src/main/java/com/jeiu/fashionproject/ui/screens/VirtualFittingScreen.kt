@@ -341,7 +341,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var lastProfile by remember {mutableStateOf(avatarProfile)}
     LaunchedEffect(avatarProfile) {
         if(lastProfile!=null && lastProfile!=avatarProfile && manual.avatarWorn.isNotEmpty())
-            inputNotice="3D 체형이 바뀌었어요. 기존 의류 배치는 보존했어요. 마법봉을 누르면 정면·기본 줌에서 새 체형으로 다시 맞춰요."
+            inputNotice="3D 체형이 바뀌었어요. 기존 의류 배치는 보존했어요. 위치 자동맞춤을 누르면 정면·기본 줌에서 새 체형으로 다시 맞춰요."
         lastProfile=avatarProfile
     }
     if (askClearOverlay) AlertDialog(onDismissRequest = { askClearOverlay = false },
@@ -587,8 +587,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { autoFitNow() },
                     enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
-                    Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
-                    Text("마법봉 · 옷 위치 자동맞춤", color = Camel)
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                    Text("3D 아바타 · 옷 위치 자동맞춤", color = Camel)
                 }
                 TextButton(onClick = {
                     val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
@@ -610,7 +610,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             TextButton(onClick = { autoFitNow() },
                 enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
                 Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                Text("마법봉 · 옷 위치 자동맞춤", color = Camel)
+                Text("2D · 옷 위치 자동맞춤", color = Camel)
             }
         }
 
@@ -631,9 +631,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (aiModel.state.pending) "진행 중인 AI 착장 보기" else "AI 착장 사진 생성 (서버 필요)", color = Camel)
+                Text(if (aiModel.state.pending) "진행 중인 AI 착장 보기" else "마법봉 · AI 착장 사진 생성", color = Camel)
             }
-            if (!avatarMode && !compact && !TryOnRepository.isConfigured()) Text("AI 피팅 서비스가 아직 연결되지 않았어요. 수동 배치는 사용할 수 있어요.",
+            if (!avatarMode && !compact && !TryOnRepository.isConfigured() && LocalVtonSession.connection == null) Text("AI 생성에는 자체 GPU 서버 또는 외부 유료 서버가 필요해요. 별도 동의 전에는 사진을 전송하지 않아요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 

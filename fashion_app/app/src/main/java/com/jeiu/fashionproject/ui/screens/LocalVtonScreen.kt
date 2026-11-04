@@ -63,6 +63,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     val selected=if(state.pending) model.selectedGarments else garments.filter { it.id==chosenId }
     val person=if(state.pending) model.selectedPerson else chosenPhoto?.let(Uri::parse) ?: model.selectedPerson
     val issue=LocalVtonRepository.selectionIssue(selected)
+    val currentResult=state.result?.takeIf { model.resultMatches(person,selected) }
     var ready by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
@@ -99,7 +100,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
         if(uri!=null && !state.pending) chosenPhoto=uri.toString()
     }
     fun save(target: Uri?,png: Boolean) {
-        val bytes=model.state.result ?: return
+        val bytes=currentResult ?: return
         if(target==null || saving) return
         saving=true
         scope.launch {
@@ -141,7 +142,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             model.generate(context,person,selected,approved=true)
         },modifier=Modifier.testTag("localVtonConsentConfirm")) {Text("동의하고 자체 AI 생성")}},
         dismissButton={TextButton(onClick={review=false}) {Text("전송하지 않기")}})
-    if(compare && state.result!=null) TryOnComparisonDialog(state.resultPerson,state.result!!,
+    if(compare && currentResult!=null) TryOnComparisonDialog(state.resultPerson,currentResult,
         state.resultFromPreviousAttempt) {compare=false}
     if(stopTracking) AlertDialog(onDismissRequest={stopTracking=false},title={Text("기기에서 작업 추적을 종료할까요?")},
         text={Text("서버 작업이 취소됐다는 뜻은 아니에요. 먼저 서버 상태를 확인하고, 새 생성은 별도 동의 후 시작해요. 자동 재요청하지 않아요.")},
@@ -202,11 +203,12 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             }
             state.inputWarnings.forEach {Text(it)}
             state.error?.let {Text(it,modifier=Modifier.testTag("localVtonError"))}
-            val original=state.resultPerson ?: person?.toString()
-            val shown: Any?=if(state.result!=null && !originalVisible) state.result else original
+            val original=if(currentResult!=null) state.resultPerson ?: person?.toString() else person?.toString()
+            val shown: Any?=if(currentResult!=null && !originalVisible) currentResult else original
             if(shown!=null) AsyncImage(shown,if(state.result!=null && !originalVisible) "자체 AI 생성 결과" else "원본 사진",
                 contentScale=ContentScale.Fit,modifier=Modifier.fillMaxWidth().height(320.dp))
-            if(state.result!=null) {
+            if(state.result!=null && currentResult==null) Text("이전 사진·옷의 자체 AI 결과는 현재 선택에 표시하지 않아요. 새 생성에는 별도 동의가 필요해요.")
+            if(currentResult!=null) {
                 Text(if(state.resultFromPreviousAttempt) "이전 자체 AI 결과 · 이번 요청은 실패/진행 중일 수 있어요"
                     else "자체 AI 생성 결과 · 실제 착용·정체성 보존 미보장",modifier=Modifier.testTag("localVtonSuccess"))
                 OutlinedButton(onClick={originalVisible=!originalVisible}) {Text("자체 AI 원본/결과 비교")}

@@ -109,6 +109,30 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
+    @Test fun photoMagicWandOpensGenerativeFlowWithoutUnapprovedNetworkCall() {
+        com.jeiu.fashionproject.data.TryOnSession.clear()
+        var requestCode = 0
+        val registry = object : ActivityResultRegistry() {
+            override fun <I,O> onLaunch(code: Int, contract: ActivityResultContract<I,O>, input: I, options: ActivityOptionsCompat?) { requestCode = code }
+        }
+        val owner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
+        compose.setContent {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) { VirtualFittingScreen(onBack = {}) }
+        }
+        compose.onNodeWithText("전신 사진 선택").performClick()
+        compose.runOnIdle { registry.dispatchResult(requestCode, Uri.parse("content://invalid/ai-wand")) }
+        val id = WardrobeStore.items.value.first().id
+        compose.onNodeWithTag("manualWardrobe").performScrollTo()
+        compose.onNodeWithTag("manualGarment-$id").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("manualAutoAlign").assertExists()
+        compose.onNodeWithTag("aiTryOnWand").assertTextContains("마법봉 · AI 착장 사진 생성", substring = true)
+        compose.onNodeWithTag("aiTryOnWand").performClick()
+        compose.onNodeWithTag("aiTryOnGuide").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("aiTryOnGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
+    }
+
     @Test fun photoAndAvatarModesKeepSeparateEntryPaths() {
         val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<Application>()
         AvatarProfileStore.clear(app)
