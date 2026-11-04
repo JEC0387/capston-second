@@ -1,9 +1,9 @@
 # P19 선택 상품 상세·체형별 제안
 
-## 현재 상태 — WIP / 검증 전
+## 현재 상태 — 집중 검사 완료 / 최종 CI 대기
 
 - 기준: P18 `801c61493b5ae0d2f0d161217e82a26268a9ff69`, 기존 `codex/fashionai-p17-camera-personal-vton-20261104` 유지.
-- 실행 코드 수정 단계. 집중 검사·최종 전체 CI·새 APK 검증은 아직 완료하지 않았다. P16 결과를 P19 결과로 사용하지 않는다.
+- 실행 코드와 집중 검사를 완료했다. 최종 전체 CI·새 APK 검증은 아직 완료하지 않았다. P16 결과를 P19 결과로 사용하지 않는다.
 - 시작 C: 여유 공간 23,277,850,624 bytes. 기존 작업·APK·비공개 증거를 삭제하지 않았다.
 
 ## 실제 변경
@@ -31,4 +31,32 @@
 
 ## 검증 결과
 
-대기: 집중 테스트, 최종 CI, APK 산출/서명/소스 SHA/해시/업데이트 호환성.
+집중 검사 기준은 WIP `1e0584b000328812487c32f4fd56002edc33e9d8`의 실행 코드다. run02는 같은 실행 코드에서 `P19ProductDetailUiTest`의 스크롤 절차만 수정했다.
+
+| 검사 | 최종 확인 | 근거 |
+|---|---:|---|
+| P19ProductDetailSelectionTest | 5 통과 | run01 XML |
+| P19ProductNavigationTest | 3 통과 | run01, AndroidX 실제 route matcher/디코딩 |
+| P19BodyStyleSuggestionsTest | 6 통과 | run01, 4체형/미지원/Partial/품질/성별/옷장 |
+| P19StyleSuggestionScreenTest | 1 통과 | run01, Success→Partial 및 실제 상품 ID 콜백 |
+| P19ProductDetailUiTest | 1 통과 | run02, A→B→없는 ID, 좋아요/공유/판매처 |
+| BodyMethodSelectionUiTest | 7 통과 | run01, 기존 진입·수치 기능 |
+| RecommendationIntegrationTest | 9 통과 | run01, 기존 추천 통합 |
+
+- run01: 32개 중 31 통과/1 실패, 종료 1, 7m12s. 상품 UI 브랜드가 작은 시험 화면의 스크롤 아래에 있어 표시 단언 실패. 앱의 잘못된 상품 표시가 아니었다.
+- run02: 해당 UI 1개만 재실행, 실패/오류/건너뜀 0, 종료 0, 4m1s. 브랜드·이름·이미지를 실제 스크롤한 뒤 동일 표시 단언을 적용했다. 테스트 삭제나 기대값 완화 없음.
+- 고유 검사 범위 32개(신규 P19 16 + 기존 16). 반복 실행 수를 합산하지 않는다.
+- 모든 신규 UI 테스트는 Coil 이미지 IO를 차단하고, 공유/구매 Intent는 Robolectric에서 가로챘다. 외부 게시·구매·개인 데이터 접근 없음.
+- 로컬 상세 근거는 Git 제외 `fashion_app/build/p19-private/focused-01.log`, `run01-xml/`, `focused-02.log`, `run02-xml/`에 보존.
+- 읽기 전용 검수와 `git diff --check` 완료. 보호 파일/경로·서명/배포 규칙 유지. 이번 변경에서 실측 정확도나 실기기 동작을 검증한 것은 아니다.
+
+대기: 최종 CI, APK 산출/서명/소스 SHA/해시/업데이트 호환성.
+
+## 변경 파일
+
+- `.github/workflows/android-debug-apk.yml`: 기존 Preview 검사에 P19 필터 추가.
+- `fashion_app/app/src/main/java/com/jeiu/fashionproject/navigation/{Screen,AppNavigation}.kt`: 상품 ID 및 전체 분석 상태 연결; 기존 보호 경로 유지.
+- 같은 main 패키지의 `data/ProductDetailSelection.kt`, `recommend/BodyStyleSuggestions.kt`: 조회/스타일 규칙.
+- 같은 main 패키지의 `ui/screens/{ProductDetailScreen,ShopScreen,StyleSuggestionScreen,WardrobeScreen,HomeScreen,WeatherOutfitScreen}.kt`: 화면 및 실제 호출 연결; 홈/날씨는 미사용 콜백 제거만.
+- `fashion_app/app/src/test/java/com/jeiu/fashionproject/P19{ProductDetailSelection,ProductNavigation,ProductDetailUi,BodyStyleSuggestions,StyleSuggestionScreen}Test.kt`: 합성 집중 검사.
+- 이 인수인계 문서. 실제 목록은 기준 커밋 대비 `git diff --name-only 801c614..HEAD`로 확인 가능.

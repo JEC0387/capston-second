@@ -72,9 +72,11 @@ class P19ProductDetailUiTest {
         compose.runOnIdle { while (shadowOf(context).nextStartedActivity != null) { /* Test host startup only. */ } }
         listOf(a, b).forEach { product ->
             compose.runOnIdle { selected.value = product.id }
-            compose.onNodeWithText(product.brand).assertIsDisplayed()
-            compose.onNodeWithText(product.name).assertIsDisplayed()
-            compose.onNodeWithContentDescription(product.name).assertIsDisplayed()
+            // Default Robolectric viewport is short: navigate the real scroll container,
+            // rather than assuming every field below the 320 dp image starts on-screen.
+            compose.onNodeWithText(product.brand).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(product.name).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithContentDescription(product.name).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText(product.price).performScrollTo().assertIsDisplayed()
             compose.onAllNodesWithContentDescription("관심 표시")[0].performClick()
             compose.runOnIdle { assertTrue(product.id in ProductInterestStore.ids.value) }
