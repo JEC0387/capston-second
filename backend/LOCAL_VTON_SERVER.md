@@ -1,5 +1,11 @@
 # P6 독립 자체 AI 개발 서버
 
+**P31 현재 준비 조건:** [LOCAL_VTON_PARSER_BUNDLE.md](LOCAL_VTON_PARSER_BUNDLE.md)의
+별도 Parser 로컬 번들·개별 라이선스 검토 기록·고정 설치 revision 검사가 추가됐다.
+아래 본체/DWPose 3파일 준비만으로 서버가 ready가 되지 않는다. 실제 로딩은 검증한
+로컬 번들만 사용하며 ambient HF 캐시로 대체하지 않는다. 실제 GPU 실행/법적 허가를
+검증 완료했다는 의미는 아니다. 준비 도구는 Parser를 자동 다운로드하지 않는다.
+
 `local_vton_server:app`은 기존 `main:app` 및 유료 `tryon_proxy.py`와 분리돼 있다. 운영 Railway에 배포하지 않는다. 기본 상태는 비활성이다. 가중치·CUDA GPU가 없는 PC에서 모델 생성 성공을 만들지 않는다.
 
 ## GPU 운영자가 준비할 순서
@@ -107,4 +113,6 @@ python -m pytest -q tests/test_local_vton_real_model.py
 | Human Parser | 패키지 의존성 검사·별도 준비 과정 | 실제 캐시 로딩·캐시 provenance/checksum·별도 라이선스 확인 |
 | SegFormer | 기존 연구/평가용 비상업 제한 안내 | 실제 사용 버전과 적용 범위 확인; 상용 허가로 간주하지 않음 |
 
-현재 manifest의 `files`는 본체와 DWPose 3개 파일만 포함한다. Parser/SegFormer 캐시 체크섬이나 개별 라이선스 수락 증거까지 포함했다고 주장하지 않는다. `LOCAL_VTON_RESEARCH_LICENSE_ACCEPTED`는 운영자 선언일 뿐 법적 권리의 자동 검증이 아니다.
+기존 `vton.manifest.json`의 `files`는 본체/DWPose 3개만 포함한다. P31은 별도
+`parser.manifest.json`과 로컬 번들을 필수로 검사한다. 체크섬과 검토 기록의 일치는
+독립적인 출처/권리 인증이 아니며 `LOCAL_VTON_RESEARCH_LICENSE_ACCEPTED` 또한 운영자 선언이다.

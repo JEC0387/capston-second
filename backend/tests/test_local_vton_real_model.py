@@ -30,6 +30,7 @@ def test_real_pinned_worker_generates_new_png_offline(monkeypatch):
     monkeypatch.delenv('LOCAL_VTON_TOKEN_HASHES', raising=False)
     from local_vton import read_input, require_offline_model_loading, verify_weight_manifest
     from local_vton_server import LocalSettings, SubprocessEngine
+    from local_vton_parser import PARSER_COMMIT, SEGFORMER_LICENSE_COMMIT
 
     assert os.getenv('LOCAL_VTON_RESEARCH_LICENSE_ACCEPTED') == 'true', 'Explicit dependency-license review required'
     keys = ('LOCAL_VTON_TEST_PERSON', 'LOCAL_VTON_TEST_GARMENT', 'LOCAL_VTON_WEIGHTS', 'LOCAL_VTON_TEST_OUTPUT_DIR')
@@ -74,6 +75,9 @@ def test_real_pinned_worker_generates_new_png_offline(monkeypatch):
         'model_inference_completed': True, 'android_e2e_verified': False, 'quality_review': 'pending',
         'gpu': gpu_name, 'wall_seconds': elapsed, 'metrics': metrics, 'seed': 42,
         'sha256': hashlib.sha256(result).hexdigest(), 'cost': 'not supplied by operator',
-        'manifest_sha256': hashlib.sha256((weights / 'vton.manifest.json').read_bytes()).hexdigest()}
+        'manifest_sha256': hashlib.sha256((weights / 'vton.manifest.json').read_bytes()).hexdigest(),
+        'parser_manifest_sha256': hashlib.sha256((weights / 'parser.manifest.json').read_bytes()).hexdigest(),
+        'parser_code_revision': PARSER_COMMIT, 'segformer_license_revision': SEGFORMER_LICENSE_COMMIT,
+        'license_authorization': 'operator review; not independently verified by this test'}
     with (private / 'evidence.json').open('x', encoding='utf-8') as stream:
         json.dump(receipt, stream, indent=2)

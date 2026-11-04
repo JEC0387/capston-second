@@ -11,6 +11,7 @@ from PIL import Image
 import pytest
 
 from local_vton import LocalVtonError, run_inference
+from .vton_parser_fixtures import parser_fixture
 
 
 @pytest.fixture
@@ -23,6 +24,7 @@ def inputs(tmp_path):
         path.write_bytes(b'synthetic contract fixture, not model weights')
         files[name] = hashlib.sha256(path.read_bytes()).hexdigest()
     (weights / 'vton.manifest.json').write_text(json.dumps({'files': files}))
+    parser_fixture(weights)
     person, garment = tmp_path / 'person.png', tmp_path / 'garment.png'
     Image.new('RGB', (256, 384), 'white').save(person)
     Image.new('RGB', (256, 256), 'blue').save(garment)
@@ -55,10 +57,11 @@ def test_no_clobber_filesystem_failure_does_not_fall_back_to_replacement(inputs,
     assert not list(inputs['output'].parent.glob('.vton-*'))
 
 
-def test_missing_human_parser_is_not_reported_as_ready(inputs, monkeypatch):
+@pytest.mark.parametrize('missing', ['fashn_human_parser', 'transformers'])
+def test_missing_parser_dependency_is_not_reported_as_ready(inputs, monkeypatch, missing):
     from local_vton_server import LocalSettings, SubprocessEngine
     monkeypatch.setattr('local_vton_server.importlib.util.find_spec',
-                        lambda name: None if name == 'fashn_human_parser' else object())
+                        lambda name: None if name == missing else object())
     engine = SubprocessEngine(LocalSettings(enabled=True, weights=str(inputs['weights_dir']), device='cpu', allow_cpu=True))
     assert engine.reason == 'dependencies_missing'
 

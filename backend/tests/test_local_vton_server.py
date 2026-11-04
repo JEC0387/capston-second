@@ -215,6 +215,8 @@ def test_cpu_gpu_and_memory_preflight_branches_are_explicit(settings,monkeypatch
     import sys
     from types import SimpleNamespace
     monkeypatch.setattr('local_vton_server.verify_weight_manifest',lambda _:None)
+    monkeypatch.setattr('local_vton_server.verify_parser_assets',lambda _:None)
+    monkeypatch.setattr('local_vton_server.verify_runtime_revisions',lambda:None)
     monkeypatch.setattr('local_vton_server.importlib.util.find_spec',lambda _:object())
     cuda=SimpleNamespace(is_available=lambda:False,get_device_properties=lambda _:SimpleNamespace(total_memory=4*1024**3))
     monkeypatch.setitem(sys.modules,'torch',SimpleNamespace(cuda=cuda))

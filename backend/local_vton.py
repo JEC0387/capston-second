@@ -126,6 +126,11 @@ def run_inference(
         raise LocalVtonError("Sampling steps must be 20..50")
     checked_weights = check_weights(weights_dir)
     verify_weight_manifest(checked_weights)
+    from local_vton_parser import ParserIntegrityError, verify_parser_assets, load_verified_pipeline
+    try:
+        verify_parser_assets(checked_weights)
+    except ParserIntegrityError as exc:
+        raise LocalVtonError(str(exc)) from None
     person_image = read_input(person)
     garment_image = read_input(garment)
     require_offline_model_loading()
@@ -149,11 +154,7 @@ def run_inference(
         return info  # Preflight is NOT a generated image.
 
     if pipeline_factory is None:
-        try:
-            from fashn_vton import TryOnPipeline
-        except ImportError as exc:
-            raise LocalVtonError("Install the official fashn-vton-1.5 package before generation") from exc
-        pipeline_factory = TryOnPipeline
+        pipeline_factory = load_verified_pipeline
 
     # Human Parser and model caches must already exist. A missing cache must fail
     # offline rather than downloading weights as a side effect of inference.

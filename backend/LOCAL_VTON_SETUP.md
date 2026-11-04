@@ -1,5 +1,10 @@
 # P5: 독립 실행형 자체 AI 착장 이미지 생성 (FASHN VTON v1.5)
 
+**P31 현재 기준:** 아래 P5 초기 기록의 자동 Parser 준비 절차 대신
+[LOCAL_VTON_PARSER_BUNDLE.md](LOCAL_VTON_PARSER_BUNDLE.md)의 승인된 기존 번들·고정 revision
+검사를 먼저 따른다. 현재 준비 도구는 3개 본체/DWPose 파일만 다루며 Parser를 자동
+다운로드/초기화하지 않는다. 이 문서는 새 다운로드·라이선스 수락을 승인하지 않는다.
+
 **P30 현재 기준:** 아래는 P5 당시 기록이며 자체 서버·Android 연결은 이미 구현되어 있으므로, 새 모델 다운로드·라이선스 수락 없이 승인된 준비 환경에서만 최신 [LOCAL_VTON_SERVER.md](LOCAL_VTON_SERVER.md)의 manifest 필수 검증·오프라인 실행·실제 GPU 시험 절차를 따르세요.
 
 **상태: 실행 모듈 + 합성 테스트 준비 완료. 실제 GPU 모델 추론 및 Galaxy S25+ 연결은 미검증.**

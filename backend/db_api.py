@@ -56,7 +56,7 @@ def loaded(obj, name: str):
 def require_table(db: Session, table: str) -> None:
     """마이그레이션을 아직 적용하지 않아 표가 없으면 503 + 안내 (앱은 대기열에 두었다가 나중에 다시 보낸다)"""
     if not schema_has(db, table):
-        raise HTTPException(503, f"DB 에 {table} 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+        raise HTTPException(503, f"DB 에 {table} 표가 없어요 — 운영자가 적용 이력과 스키마를 확인해야 합니다. 로컬 기록은 유지해주세요.")
 
 
 def has_prices(db: Session) -> bool:
@@ -488,7 +488,7 @@ def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_
 def update_gender(req: GenderRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """마이페이지 성별 설정 저장 (FEMALE / MALE, null 이면 해제) — 앱 UserPreferencesViewModel 과 같은 값"""
     if not schema_has(db, "users", "gender"):
-        raise HTTPException(503, "DB 에 성별 칸이 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+        raise HTTPException(503, "DB 에 성별 칸이 없어요 — 운영자가 적용 이력과 스키마를 확인해야 합니다. 로컬 기록은 유지해주세요.")
     user.gender = req.gender
     db.commit()
     return _profile_payload(db, user)

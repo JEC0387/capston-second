@@ -1,16 +1,12 @@
-"""
-migrations/ 의 SQL 파일(001, 002, …)을 번호 순서대로 Supabase DB 에 적용한다.
+"""Offline inspection, or explicitly approved isolated PostgreSQL execution.
 
-    cd backend
-    python apply_migrations.py            # 승인된 DB에만 적용; 실제 적용 이력·스키마 사전 검토 필수
-    python apply_migrations.py --dry-run  # DB 접속 없이 번호 충돌·파일 체크섬 확인
-    python apply_migrations.py --dry-run --history-file reviewed-history.json
-
-기존 SQL을 순서대로 실행한다. 파일 번호 충돌 검사는 실제 DB 스키마 안전성 검증을 대체하지 않는다.
-.env 의 DATABASE_URL 을 쓴다 (비밀번호를 화면에 출력하지 않음).
+The old no-argument command no longer applies SQL via DATABASE_URL/.env. This is
+intentional: unrecorded migrations and per-file commits cannot be safely inferred.
+See MIGRATION_PREFLIGHT.md before preparing a review for an existing test copy.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -24,42 +20,48 @@ def migration_files() -> list[Path]:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="DB 마이그레이션 적용")
+    ap = argparse.ArgumentParser(description="DB-free migration inspection / approved local test execution")
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--history-file", type=Path,
-                    help="독립 확인한 적용 이력 JSON; --dry-run 전용, 실제 DB 스키마 검증은 아님")
+    ap.add_argument("--history-file", type=Path, help="P30 identity manifest, --dry-run only")
+    ap.add_argument("--apply-local-test", action="store_true")
+    ap.add_argument("--review-file", type=Path, help="Independent reviewed schema/history/full-plan manifest")
+    ap.add_argument("--schema", help="Existing p31_migration_test_<32 lowercase hex> schema")
+    ap.add_argument("--confirm-local-test", action="store_true", help="Operator confirms an approved isolated test copy, never production")
     args = ap.parse_args()
     if args.history_file is not None and not args.dry_run:
         ap.error("--history-file requires --dry-run; no SQL was executed")
+    if args.dry_run and (args.apply_local_test or args.review_file or args.schema or args.confirm_local_test):
+        ap.error("dry-run cannot be combined with execution options")
     try:
-        files = migration_files()
         plan = inspect_plan(MIGRATIONS, args.history_file)
+        if args.dry_run:
+            print(json.dumps(plan, ensure_ascii=False, indent=2))
+            return
+        if not (args.apply_local_test and args.review_file and args.schema and args.confirm_local_test):
+            raise MigrationPlanError("explicit_reviewed_local_test_execution_required")
+        from migration_runner import load_review, local_test_connection_args, prepare_migrations, run_migrations
+        migrations = prepare_migrations(MIGRATIONS)
+        review = load_review(args.review_file, migrations, args.schema)
+        connection_args = local_test_connection_args(os.environ.get("TEST_POSTGRES_URL"))
     except MigrationPlanError as error:
         sys.exit(f"마이그레이션 사전 검사 차단: {error}; DB에 접속하지 않았습니다.")
-    if args.dry_run:
-        print(json.dumps(plan, ensure_ascii=False, indent=2))
-        return
-    # Importing database may load .env / initialise an engine. Do it only after the
-    # offline preflight has passed, never for --dry-run or duplicate SQL numbers.
-    from database import database_status, engine
-    print("적용할 파일:", ", ".join(f.name for f in files))
-    if engine is None:
-        sys.exit("DATABASE_URL 이 없어요. backend/.env 에 Supabase 주소를 넣어 주세요.")
-    raw = engine.raw_connection()
+    # No database.py/.env import, no DATABASE_URL fallback, and no automatic schema
+    # creation. The dedicated connection is never shared with application requests.
     try:
-        raw.autocommit = True          # 파일 안의 BEGIN; … COMMIT; 을 그대로 실행
-        cur = raw.cursor()
-        for f in files:
-            cur.execute(f.read_text(encoding="utf-8"))
-            print(f"  ✓ {f.name}")
-        cur.close()
-    except Exception as e:  # noqa: BLE001 — 어떤 파일에서 멈췄는지 알려 주고 끝낸다
-        sys.exit(f"적용 중 오류: {type(e).__name__} — 위에 ✓ 가 없는 첫 파일을 SQL Editor 에서 확인해 주세요")
+        import psycopg2
+        connection = psycopg2.connect(**connection_args)
+    except Exception:
+        sys.exit("local_test_database_connection_failed; 연결 정보 원문은 출력하지 않습니다.")
+    try:
+        result = run_migrations(connection, migrations, review)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    except MigrationPlanError as error:
+        sys.exit(str(error))
     finally:
-        raw.close()
-    status = database_status()
-    print("DB 상태:", "준비됨" if status.get("ready") else status.get("status"),
-          "· 빠진 항목: " + ", ".join(status["missing"]) if status.get("missing") else "· 빠진 항목 없음")
+        try:
+            connection.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

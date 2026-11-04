@@ -44,7 +44,7 @@ def test_official_only_downloader_pins_revision_and_verifies_hashes_without_netw
         observed.append((repo,name));local_dir.mkdir(parents=True,exist_ok=True)
         path=local_dir/name;path.write_bytes(data);return str(path)
     monkeypatch.setitem(sys.modules,'huggingface_hub',SimpleNamespace(HfApi=Api,hf_hub_download=download))
-    monkeypatch.setitem(sys.modules,'fashn_human_parser',SimpleNamespace(FashnHumanParser=lambda device:None))
+    monkeypatch.setitem(sys.modules,'fashn_human_parser',SimpleNamespace(FashnHumanParser=lambda device:pytest.fail('No unverified parser auto-download')))
     monkeypatch.setattr(sys,'argv',['setup','--weights-dir',str(tmp_path),'--accept-parser-research-license'])
     setup.main()
     verify_weight_manifest(tmp_path)

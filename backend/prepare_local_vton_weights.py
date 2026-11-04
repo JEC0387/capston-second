@@ -32,11 +32,10 @@ def main():
             if digest.hexdigest() != expected:
                 raise RuntimeError("Official weight checksum mismatch")
             result["files"][f"{subdir}/{name}".lstrip("/")] = expected
-    # Official parser package prepares its own Hugging Face cache. Server workers use offline mode.
-    from fashn_human_parser import FashnHumanParser
-    FashnHumanParser(device="cpu")
     (args.weights_dir / "vton.manifest.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print("Official weights and parser cache prepared; no inference performed")
+    # Do not instantiate an unpinned Parser: it fetches mutable model/cache inputs
+    # without a reviewed per-file manifest. The separate parser bundle is mandatory.
+    print("Three main weights prepared; Parser bundle/revision/license checks remain required. No inference performed.")
 
 
 if __name__ == "__main__":

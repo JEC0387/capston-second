@@ -22,6 +22,7 @@ from uuid import UUID
 from fastapi import FastAPI, HTTPException, Request, Response
 from PIL import Image, ImageOps
 from local_vton import CATEGORIES, LocalVtonError, verify_weight_manifest
+from local_vton_parser import ParserIntegrityError, verify_parser_assets, verify_runtime_revisions
 
 MAX_IMAGE = 5 * 1024 * 1024
 MAX_BODY = 15 * 1024 * 1024
@@ -113,8 +114,13 @@ class SubprocessEngine:
             if not self.settings.weights:
                 return 'weights_missing'
             verify_weight_manifest(Path(self.settings.weights))
-            if any(importlib.util.find_spec(name) is None for name in ('torch', 'fashn_vton', 'fashn_human_parser', 'onnxruntime')):
+            if any(importlib.util.find_spec(name) is None for name in ('torch', 'fashn_vton', 'fashn_human_parser', 'transformers', 'onnxruntime')):
                 return 'dependencies_missing'
+            try:
+                verify_parser_assets(Path(self.settings.weights))
+                verify_runtime_revisions()
+            except ParserIntegrityError:
+                return 'parser_integrity_unavailable'
             import torch
             if self.settings.device == 'cpu':
                 return None if self.settings.allow_cpu else 'cpu_not_approved'

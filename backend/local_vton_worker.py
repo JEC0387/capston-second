@@ -7,6 +7,7 @@ import time
 import threading
 
 from local_vton import read_input, check_weights, verify_weight_manifest, require_offline_model_loading
+from local_vton_parser import verify_parser_assets, verify_runtime_revisions, load_verified_pipeline
 
 
 def watch_parent(parent):
@@ -39,8 +40,9 @@ def main():
     # the actual worker before any model is imported/loaded; never silently reload
     # modified weights that no longer match the prepared manifest.
     verify_weight_manifest(Path(options["weights_dir"]))
+    verify_parser_assets(Path(options["weights_dir"]))
+    verify_runtime_revisions()
     import torch
-    from fashn_vton import TryOnPipeline
     device = options["device"]
     if device == "cuda":
         if not torch.cuda.is_available():
@@ -49,7 +51,7 @@ def main():
         torch.cuda.reset_peak_memory_stats()
     person, garment = read_input(folder / "person.png"), read_input(folder / "garment.png")
     started = time.perf_counter()
-    pipeline = TryOnPipeline(weights_dir=str(check_weights(Path(options["weights_dir"]))), device=device)
+    pipeline = load_verified_pipeline(weights_dir=str(check_weights(Path(options["weights_dir"]))), device=device)
     if device == "cuda":
         torch.cuda.synchronize()
     loaded = time.perf_counter()

@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from local_vton import LocalVtonError, main, read_input, run_inference
+from .vton_parser_fixtures import parser_fixture
 
 
 @pytest.fixture
@@ -20,6 +21,7 @@ def inputs(tmp_path: Path):
     names = ("model.safetensors", "dwpose/yolox_l.onnx", "dwpose/dw-ll_ucoco_384.onnx")
     (weights / "vton.manifest.json").write_text(json.dumps({'files': {
         name: hashlib.sha256((weights / name).read_bytes()).hexdigest() for name in names}}))
+    parser_fixture(weights)
     person = tmp_path / "person.png"
     garment = tmp_path / "garment.jpg"
     Image.new("RGBA", (500, 850), (20, 120, 200, 0)).save(person)
