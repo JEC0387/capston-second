@@ -162,7 +162,7 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
             }
             Text("전신 사진 → 옷장에서 한 벌 → 서버 준비 확인 → 전송 동의 → 생성·비교·저장",
                 style=MaterialTheme.typography.bodySmall,color=Brown)
-            Text("마법봉의 2D 위치 맞춤과 다른 모델 생성 경로예요. 결과가 없으면 생성 성공으로 표시하지 않아요.")
+            Text("수동 피팅의 2D 위치 자동맞춤과 구분되는 자체 모델 생성 경로예요. 결과가 없으면 생성 성공으로 표시하지 않아요.")
             Text(status ?: "자체 AI 서버 미설정",color=Brown,modifier=Modifier.testTag("localVtonServerState"))
             TextButton(onClick={connect=true},enabled=!state.pending) {Text("자체 AI 서버 설정")}
             OutlinedButton(onClick={scope.launch {checkServer()}},enabled=!checking && !state.watching) {

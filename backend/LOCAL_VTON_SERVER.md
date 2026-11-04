@@ -4,6 +4,8 @@
 
 ## GPU 운영자가 준비할 순서
 
+P30: 이 문서의 준비/실행 명령은 별도 GPU·입력·라이선스 승인을 받은 운영자를 위한 절차다. 이번 개발 중에는 가중치 다운로드·라이선스 수락·실제 추론을 실행하지 않았다.
+
 1. CUDA NVIDIA GPU와 전용 Python 3.11/3.12 환경을 준비한다. 공식 모델 카드는 약 8GB VRAM을 안내하지만 실제 GPU별 사용량은 별도 측정한다.
 2. [공식 코드](https://github.com/fashn-AI/fashn-vton-1.5)의 검토 커밋 `7c0f10af3f91ad4048fe9729c470a13ef905d25a`를 체크아웃하고 그 환경에 설치한다. PyTorch와 ONNX Runtime CUDA/cuDNN 호환성을 먼저 확인한다. 이 의존성을 운영 requirements에 추가하지 않았다.
 3. [Human Parser](https://github.com/fashn-AI/fashn-human-parser/blob/main/LICENSE) 및 [SegFormer 연구·평가용 비상업 제한](https://github.com/NVlabs/SegFormer/blob/master/LICENSE)을 검토한다. 본체 Apache-2.0만으로 전체 구성요소의 상용 사용 권한을 주장하지 않는다.
@@ -64,3 +66,45 @@ python -m uvicorn local_vton_server:app --env-file /private/fashionai/local.env 
 
 [Colab FAQ](https://research.google.com/colaboratory/faq.html): 무료 GPU와 사용 시간은 보장되지 않으며 가용량/한도는 변한다. 무료 런타임을 상시 API 호스팅으로 우회 사용하지 않는다. 승인된 사진으로 노트북 내부 CLI 연구 검증에 사용할 수 있는지 먼저 조건을 확인한다.
 [ZeroGPU](https://huggingface.co/docs/hub/spaces-zerogpu): 일일 할당량과 대기열이 있으며 Gradio 기반이므로 이 FastAPI 서버의 즉시 대체 환경이 아니다. 무료 사용과 직접 호스팅 권한을 구분해야 한다. 이번 작업에서 외부 데모에 사진을 업로드하거나 GPU 자원을 생성하지 않았다. 우선 학교/팀의 사용 권한이 있는 CUDA 머신에서 검증한다.
+
+## P30 실행 경계와 실제 모델 시험
+
+- CLI도 `vton.manifest.json`의 SHA-256을 검사한다. 이전처럼 파일이 존재한다는 사실만으로 준비 완료로 처리하지 않는다.
+- CLI/worker는 모델 라이브러리 import 전에 `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, telemetry 비활성화를 적용한다. Parser 캐시가 없다면 실패해야 하며 요청 중 새 가중치를 받지 않는다. 이는 임의 제3자 패키지의 모든 네트워크 기능을 차단하는 OS 방화벽을 의미하지 않는다.
+- 서버가 시작된 뒤 가중치가 바뀔 수 있으므로 실제 worker에서도 모델 로딩 직전 manifest를 재검사한다. 체크섬 읽기 시간은 요청 timeout 예산에 포함된다.
+- CLI의 `--overwrite` 없는 결과 저장은 완성된 임시 파일을 같은 파일시스템에 원자적으로 hard-link한다. 추론 중 다른 프로세스가 같은 출력 경로를 만들면 이를 보존하고 실패한다. hard-link 미지원 파일시스템에서도 덮어쓰기로 우회하지 않는다.
+- 준비 여부 검사에 `fashn_human_parser` 설치 여부를 추가했다. `ready=true`는 첫 모델 로딩/추론 성공 증거가 아니며, Parser 캐시 자체의 실제 로딩은 아래 GPU 시험에서 별도로 확인한다.
+
+### 실제 CUDA worker 시험 (기본값은 skip)
+
+`tests/test_local_vton_real_model.py`는 `FakeEngine`이나 pipeline factory 주입 없이 production subprocess를 실행한다. 명시적 opt-in이 없으면 skip이며 성공한 추론으로 계산하지 않는다. 준비 도구를 중복 구현하지 않고 기존 worker/manifest/이미지 입력 검증을 재사용한다.
+
+운영자가 다음 조건을 직접 확인한 후에만 전용 GPU 환경에서 환경변수를 설정한다:
+
+```text
+LOCAL_VTON_REAL_TEST_APPROVED=approved-nonpersonal-inputs
+LOCAL_VTON_RESEARCH_LICENSE_ACCEPTED=true
+LOCAL_VTON_TEST_PERSON=<사용 승인된 비개인 전신 이미지>
+LOCAL_VTON_TEST_GARMENT=<사용 승인된 상의 이미지>
+LOCAL_VTON_WEIGHTS=<이미 준비된 manifest와 가중치 디렉터리>
+LOCAL_VTON_TEST_OUTPUT_DIR=<Git 밖의 기존 비공개 결과 디렉터리>
+```
+
+이 변수 설정은 자동으로 GPU 사용 권한이나 라이선스를 부여하지 않는다. 공식 모델 패키지는 검토 커밋 `7c0f10af3f91ad4048fe9729c470a13ef905d25a`로 설치되어 `direct_url.json`의 VCS commit_id로 확인되어야 한다. 기존 editable/wheel 설치에서 해당 증거가 없으면 시험을 통과시키지 않으며, 새로운 설치도 별도 승인 대상이다.
+
+```bash
+python -m pytest -q tests/test_local_vton_real_model.py
+```
+
+성공 시 Git 밖 새 `real-vton-check-*` 디렉터리에 `new-model-result.png`와 `evidence.json`이 생긴다. 실제 GPU 이름, worker 측정 로딩/추론 시간·peak PyTorch VRAM·해상도, 전체 시간, SHA-256을 기록한다. 실제 비용은 운영자 정보가 없으면 미확인이다. 얼굴/손/패턴 품질 및 Android 수신·비교·저장은 별도 검수 전 완료로 표시하지 않는다. 실패/timeout을 자동 재실행하지 않는다.
+
+### 구성요소별 남은 확인
+
+| 구성요소 | 현재 기록 | 실행 전 남은 확인 |
+|---|---|---|
+| FASHN VTON 본체 | 검토 코드 커밋 및 기존 Apache-2.0 안내 | 실제 설치 revision·사용 범위 확인 |
+| 모델/DWPose 가중치 | 준비 도구가 다운로드 당시 repo revision과 LFS SHA-256 기록 | 해당 가중치 라이선스와 운영자 승인; manifest는 권리 증명이 아님 |
+| Human Parser | 패키지 의존성 검사·별도 준비 과정 | 실제 캐시 로딩·캐시 provenance/checksum·별도 라이선스 확인 |
+| SegFormer | 기존 연구/평가용 비상업 제한 안내 | 실제 사용 버전과 적용 범위 확인; 상용 허가로 간주하지 않음 |
+
+현재 manifest의 `files`는 본체와 DWPose 3개 파일만 포함한다. Parser/SegFormer 캐시 체크섬이나 개별 라이선스 수락 증거까지 포함했다고 주장하지 않는다. `LOCAL_VTON_RESEARCH_LICENSE_ACCEPTED`는 운영자 선언일 뿐 법적 권리의 자동 검증이 아니다.

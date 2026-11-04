@@ -6,7 +6,7 @@ import sys
 import time
 import threading
 
-from local_vton import read_input, check_weights
+from local_vton import read_input, check_weights, verify_weight_manifest, require_offline_model_loading
 
 
 def watch_parent(parent):
@@ -34,8 +34,11 @@ def main():
     options = json.loads((folder / "request.json").read_text())
     threading.Thread(target=watch_parent,args=(options['parent_pid'],),daemon=True).start()
     # Model weights must be prepared by the operator; do not download during a user's request.
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    require_offline_model_loading()
+    # Startup preflight may be older than the operator's weight files. Recheck in
+    # the actual worker before any model is imported/loaded; never silently reload
+    # modified weights that no longer match the prepared manifest.
+    verify_weight_manifest(Path(options["weights_dir"]))
     import torch
     from fashn_vton import TryOnPipeline
     device = options["device"]

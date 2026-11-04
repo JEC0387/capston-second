@@ -1,6 +1,8 @@
 """No network, downloaded models, paid calls, or real photos are used in these tests."""
 from pathlib import Path
 from types import SimpleNamespace
+import hashlib
+import json
 
 import pytest
 from PIL import Image
@@ -15,6 +17,9 @@ def inputs(tmp_path: Path):
     (weights / "model.safetensors").write_bytes(b"fixture; not a real model")
     (weights / "dwpose" / "yolox_l.onnx").write_bytes(b"fixture")
     (weights / "dwpose" / "dw-ll_ucoco_384.onnx").write_bytes(b"fixture")
+    names = ("model.safetensors", "dwpose/yolox_l.onnx", "dwpose/dw-ll_ucoco_384.onnx")
+    (weights / "vton.manifest.json").write_text(json.dumps({'files': {
+        name: hashlib.sha256((weights / name).read_bytes()).hexdigest() for name in names}}))
     person = tmp_path / "person.png"
     garment = tmp_path / "garment.jpg"
     Image.new("RGBA", (500, 850), (20, 120, 200, 0)).save(person)
@@ -77,7 +82,7 @@ def test_missing_weights_and_unconfigured_cpu_fail_closed(inputs):
     (inputs["weights_dir"] / "model.safetensors").unlink()
     with pytest.raises(LocalVtonError, match="weights missing"):
         run_inference(**inputs, dry_run=True)
-    inputs["weights_dir"].joinpath("model.safetensors").write_bytes(b"x")
+    inputs["weights_dir"].joinpath("model.safetensors").write_bytes(b"fixture; not a real model")
     inputs["allow_cpu"] = False
     with pytest.raises(LocalVtonError, match="allow-cpu"):
         run_inference(**inputs, dry_run=True)

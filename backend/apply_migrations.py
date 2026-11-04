@@ -2,33 +2,47 @@
 migrations/ 의 SQL 파일(001, 002, …)을 번호 순서대로 Supabase DB 에 적용한다.
 
     cd backend
-    python apply_migrations.py            # 모두 적용 (여러 번 실행해도 안전 — 모든 파일이 IF NOT EXISTS)
-    python apply_migrations.py --dry-run  # 적용할 파일 목록만 보기
+    python apply_migrations.py            # 승인된 DB에만 적용; 실제 적용 이력·스키마 사전 검토 필수
+    python apply_migrations.py --dry-run  # DB 접속 없이 번호 충돌·파일 체크섬 확인
+    python apply_migrations.py --dry-run --history-file reviewed-history.json
 
-Supabase SQL Editor 에 하나씩 붙여 넣는 것과 같다. 표 · 칸을 더하기만 하고 데이터는 지우지 않는다.
+기존 SQL을 순서대로 실행한다. 파일 번호 충돌 검사는 실제 DB 스키마 안전성 검증을 대체하지 않는다.
 .env 의 DATABASE_URL 을 쓴다 (비밀번호를 화면에 출력하지 않음).
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from database import database_status, engine
+from migration_plan import MigrationPlanError, inspect_plan, migration_files as checked_migration_files
 
 MIGRATIONS = Path(__file__).with_name("migrations")
 
 
 def migration_files() -> list[Path]:
-    return sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
+    return checked_migration_files(MIGRATIONS)
 
 
 def main():
     ap = argparse.ArgumentParser(description="DB 마이그레이션 적용")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--history-file", type=Path,
+                    help="독립 확인한 적용 이력 JSON; --dry-run 전용, 실제 DB 스키마 검증은 아님")
     args = ap.parse_args()
-    files = migration_files()
-    print("적용할 파일:", ", ".join(f.name for f in files))
+    if args.history_file is not None and not args.dry_run:
+        ap.error("--history-file requires --dry-run; no SQL was executed")
+    try:
+        files = migration_files()
+        plan = inspect_plan(MIGRATIONS, args.history_file)
+    except MigrationPlanError as error:
+        sys.exit(f"마이그레이션 사전 검사 차단: {error}; DB에 접속하지 않았습니다.")
     if args.dry_run:
+        print(json.dumps(plan, ensure_ascii=False, indent=2))
         return
+    # Importing database may load .env / initialise an engine. Do it only after the
+    # offline preflight has passed, never for --dry-run or duplicate SQL numbers.
+    from database import database_status, engine
+    print("적용할 파일:", ", ".join(f.name for f in files))
     if engine is None:
         sys.exit("DATABASE_URL 이 없어요. backend/.env 에 Supabase 주소를 넣어 주세요.")
     raw = engine.raw_connection()

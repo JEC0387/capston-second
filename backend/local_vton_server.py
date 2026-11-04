@@ -113,7 +113,7 @@ class SubprocessEngine:
             if not self.settings.weights:
                 return 'weights_missing'
             verify_weight_manifest(Path(self.settings.weights))
-            if any(importlib.util.find_spec(name) is None for name in ('torch', 'fashn_vton', 'onnxruntime')):
+            if any(importlib.util.find_spec(name) is None for name in ('torch', 'fashn_vton', 'fashn_human_parser', 'onnxruntime')):
                 return 'dependencies_missing'
             import torch
             if self.settings.device == 'cpu':

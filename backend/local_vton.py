@@ -28,6 +28,13 @@ class LocalVtonError(Exception):
     """Actionable error with no input image or token content."""
 
 
+def require_offline_model_loading() -> None:
+    """Call before importing model libraries; preparation is a separate approved operation."""
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+
 def check_weights(directory: Path) -> Path:
     directory = directory.expanduser().resolve()
     model = directory / "model.safetensors"
@@ -118,15 +125,17 @@ def run_inference(
     if not 20 <= num_timesteps <= 50:
         raise LocalVtonError("Sampling steps must be 20..50")
     checked_weights = check_weights(weights_dir)
+    verify_weight_manifest(checked_weights)
     person_image = read_input(person)
     garment_image = read_input(garment)
+    require_offline_model_loading()
     validate_device(device, allow_cpu)
 
     if output.suffix.lower() != ".png":
         raise LocalVtonError("Output must be a PNG file")
     if not output.parent.is_dir():
         raise LocalVtonError("Output directory must exist (keep private photos out of Git)")
-    if output.is_symlink() or (output.exists() and not overwrite):
+    if output.is_symlink() or (output.exists() and (not output.is_file() or not overwrite)):
         raise LocalVtonError("Output already exists or is a symlink; use --overwrite only for a regular file")
 
     info = {
@@ -146,8 +155,8 @@ def run_inference(
             raise LocalVtonError("Install the official fashn-vton-1.5 package before generation") from exc
         pipeline_factory = TryOnPipeline
 
-    # The official pipeline uses locally prepared model weights and may download
-    # human parser weights on first use. It does NOT invoke the paid FASHN API.
+    # Human Parser and model caches must already exist. A missing cache must fail
+    # offline rather than downloading weights as a side effect of inference.
     try:
         pipeline = pipeline_factory(weights_dir=str(checked_weights), device=device)
         result = pipeline(
@@ -175,8 +184,18 @@ def run_inference(
             generated.save(temporary, format="PNG")
             temporary.flush()
             os.fsync(temporary.fileno())
-        # This replaces the destination only when --overwrite was explicitly set.
-        os.replace(name, output)
+        if overwrite:
+            os.replace(name, output)
+        else:
+            # An existence check before inference is not enough: another process
+            # can create the destination while the model runs. Hard-link the fully
+            # flushed same-directory temporary file with atomic no-clobber semantics.
+            try:
+                os.link(name, output)
+            except FileExistsError as exc:
+                raise LocalVtonError("Output appeared during inference; existing file preserved") from exc
+            except OSError as exc:
+                raise LocalVtonError("Output could not be published safely; no replacement attempted") from exc
     finally:
         if name and os.path.exists(name):
             os.unlink(name)

@@ -62,8 +62,37 @@ object SilhouetteMeasurer {
             if(y>0)visit(i-maskWidth);if(y+1<maskHeight)visit(i+maskWidth)
         }
         if(count<confidence.size*.03f) return fail(SilhouetteIssue.NO_BODY)
-        if(foreground.count{it}-count>count*.05f) return fail(SilhouetteIssue.EXTRA_FOREGROUND)
+        val extraForegroundAllowance=count*.05f
+        if(foreground.count{it}-count>extraForegroundAllowance) return fail(SilhouetteIssue.EXTRA_FOREGROUND)
         if(confidenceSum/count<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        // A hand or thin bridge can join a second foreground region to this component.
+        // Above the shoulder line, substantial foreground separate from the head must
+        // not become the crown used for height calibration. This does not count people.
+        val upperRows=(minOf(ls.y,rs.y)/sy).toInt().coerceIn(0,maskHeight)
+        val headComponent=BooleanArray(upperRows*maskWidth)
+        val noseX=(p(Joint.NOSE).x/sx).toInt();val noseY=(p(Joint.NOSE).y/sy).toInt()
+        var headSeed=-1;var nearestDistance=Int.MAX_VALUE
+        // Match the existing two-mask-pixel landmark coverage tolerance, including a
+        // tiny segmentation hole at the nose; do not invent a replacement head point.
+        for(dy in -2..2)for(dx in -2..2) {
+            val x=noseX+dx;val y=noseY+dy;val distance=dx*dx+dy*dy
+            if(x in 0 until maskWidth && y in 0 until upperRows && component[y*maskWidth+x] &&
+                distance<nearestDistance) {headSeed=y*maskWidth+x;nearestDistance=distance}
+        }
+        if(headSeed<0)return fail(SilhouetteIssue.LANDMARKS)
+        var headRead=0;var headCount=1;queue[0]=headSeed;headComponent[headSeed]=true
+        fun visitHead(i:Int) {
+            if(i in headComponent.indices && component[i]&&!headComponent[i]) {
+                headComponent[i]=true;queue[headCount++]=i
+            }
+        }
+        while(headRead<headCount) {
+            val i=queue[headRead++];val x=i%maskWidth
+            if(x>0)visitHead(i-1);if(x+1<maskWidth)visitHead(i+1)
+            visitHead(i-maskWidth);visitHead(i+maskWidth)
+        }
+        val extraUpperForeground=headComponent.indices.count { component[it]&&!headComponent[it] }
+        if(extraUpperForeground>extraForegroundAllowance)return fail(SilhouetteIssue.EXTRA_FOREGROUND)
         data class Boundary(val left:Float,val right:Float,val y:Float) {val width get()=right-left}
         fun run(imageY:Float,threshold:Float=.65f):Boundary? {
             val y=(imageY/sy).roundToInt();val x=(center(imageY)/sx).roundToInt()
