@@ -1,20 +1,11 @@
 name: Android debug APK
 
-# 이지민의 body-analysis-debug-apk.yml 을 이 저장소 구조(fashion_app/ 이 최상위)에 맞게 옮긴 것.
-# fashion_app 이 바뀐 커밋을 올리면 단위 테스트 → 디버그 APK 빌드 → Lint 를 돌리고,
-# 폰에 설치할 수 있는 APK 를 Actions 실행 화면의 Artifacts 에 올려 준다. (API 키는 넣지 않음)
+# Routine development: run focused tests locally; pushes do not consume Actions minutes.
+# PR checks retain their existing names and full coverage. Manual runs default to light
+# release-tool checks; select full only for an approved final Android/backend release check.
+# Manual dispatch is not operational until this workflow path is registered on the
+# default branch. See docs/P29_CI_USAGE_PROTECTION_20261105.md; no default-branch merge implied.
 on:
-  push:
-    branches:
-      - main
-      - 'merge/**'
-      - 'feature/**'
-      - 'codex/**'
-    paths:
-      - .github/workflows/android-debug-apk.yml
-      - fashion_app/**
-      - backend/**
-      - tools/**
   pull_request:
     paths:
       - .github/workflows/android-debug-apk.yml
@@ -22,17 +13,40 @@ on:
       - backend/**
       - tools/**
   workflow_dispatch:
+    inputs:
+      check_level:
+        description: 'light: release-tool checks only; full: complete tests and guarded APK publication'
+        required: true
+        type: choice
+        default: light
+        options:
+          - light
+          - full
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: android-debug-apk-${{ github.ref }}
-  cancel-in-progress: true
+  # A lightweight manual check must never cancel a full release run or a PR check.
+  group: android-debug-apk-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || inputs.check_level || 'full' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  development:
+    if: github.event_name == 'workflow_dispatch' && inputs.check_level == 'light'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Lightweight release-tool safety checks (not Android or backend validation)
+        working-directory: tools
+        run: python3 -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
+
   build:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
     # Never publish an update APK when a backend regression or startup matrix has failed.
     needs: [backend, server-start]
     # Serialize distribution checks/uploads across branches to reject stale builds.
@@ -294,6 +308,7 @@ jobs:
           retention-days: 7
 
   backend:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -325,7 +340,7 @@ jobs:
         run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
       - name: APK release safety tests
         working-directory: tools
-        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention
+        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
@@ -343,6 +358,7 @@ jobs:
 
   # 팀원 PC 와 같은 방법(requirements.txt 전체 설치 → uvicorn)으로 서버가 실제로 켜지는지 확인
   server-start:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
     strategy:
       fail-fast: false
       matrix:
