@@ -75,6 +75,8 @@ class P23DataPreservationTest {
             assertTrue(vault.write(JSONObject().put("token",originalToken).put("origin",destination)
                 .put("recovery",originalRecovery).put("enabled",true)))
             DataAuth.initialize(context,vault)
+            assertEquals("Synthetic account must initialize before recovery scenarios",originalToken,DataAuth.accessToken)
+            assertTrue("Synthetic account starts enabled",DataAuth.canSync)
 
             assertSame(BackupRestore.Result.InvalidCode,BackupRestore.restore(context,"cancelled-invalid-input"))
             assertEquals(0,server.requestCount)
