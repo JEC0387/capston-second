@@ -10,8 +10,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.material.icons.filled.CenterFocusStrong
 import com.jeiu.fashionproject.data.TryOnPlan
 import com.jeiu.fashionproject.data.TryOnGarment
-import com.jeiu.fashionproject.data.TryOnRepository
-import com.jeiu.fashionproject.data.LocalVtonSession
+import com.jeiu.fashionproject.data.DeviceGarmentInput
+import com.jeiu.fashionproject.data.DeviceGarmentRole
+import com.jeiu.fashionproject.data.DeviceVtonSelection
+import com.jeiu.fashionproject.ui.viewmodel.OnDeviceVtonViewModel
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -116,6 +118,22 @@ internal data class WornGarment(
 )
 
 internal data class Placement(val center: Offset, val width: Float, val rotation: Float)
+
+/** Snapshot all selected originals and placement state. Never silently discard an unsupported slot. */
+internal fun onDeviceFittingSelection(person: String?, revision: Long, garments: Collection<WornGarment>,
+    canvas: Size): DeviceVtonSelection? {
+    if (person.isNullOrBlank() || garments.any { it.item.category !in setOf("상의", "하의", "신발") }) return null
+    return DeviceVtonSelection(person, revision, garments.map { g ->
+        DeviceGarmentInput(g.item.id, when (g.item.category) {
+            "상의" -> DeviceGarmentRole.TOP
+            "하의" -> DeviceGarmentRole.BOTTOM
+            else -> DeviceGarmentRole.SHOES
+        }, g.item.originalUri?.takeIf { it.isNotBlank() }
+            ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() },
+            listOf(canvas.width, canvas.height, g.center.x, g.center.y, g.baseWidth,
+                g.scale, g.rotation, g.aspect).joinToString(","))
+    }.sortedBy { it.role.ordinal })
+}
 
 /** Null means preserve the existing placement; never report a fallback as detection. */
 internal fun photoAutoPlacement(slot: FitSlot, item: WardrobeItem, aspect: Float,
@@ -266,13 +284,15 @@ internal class ManualFittingViewModel : ViewModel() {
     val selectionRequests = mutableMapOf<FitSlot,Long>()
     var showAi by mutableStateOf(false)
     var showLocalAi by mutableStateOf(false)
+    var showOnDeviceAi by mutableStateOf(false)
+    var deviceSelection by mutableStateOf<DeviceVtonSelection?>(null)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
     var photoDropUndo by mutableStateOf<PhotoDropUndo?>(null)
     val pendingPhotoDrops = mutableStateMapOf<FitSlot, PhotoDropTicket>()
 
     fun beginPhotoDrop(slot: FitSlot, center: Offset): PhotoDropTicket? {
         val photo = photoDisplaySize ?: return null
-        if (avatarMode || showAi || showLocalAi || bodyPhoto == null || !photo.isUsableFittingSize() || !canvasSize.isUsableFittingSize() ||
+        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || bodyPhoto == null || !photo.isUsableFittingSize() || !canvasSize.isUsableFittingSize() ||
             !center.x.isFinite() || !center.y.isFinite()) return null
         val request = (selectionRequests[slot] ?: 0L) + 1
         selectionRequests[slot] = request
@@ -289,8 +309,16 @@ internal class ManualFittingViewModel : ViewModel() {
 
     fun cancelPhotoDrops() { pendingPhotoDrops.keys.toList().forEach(::cancelPhotoDrop) }
 
+    fun openOnDevice(selection: DeviceVtonSelection) {
+        cancelPhotoDrops()
+        // An earlier card-click decode must not replace the visible outfit after it was frozen.
+        selectionRequests.keys.toList().forEach { slot -> selectionRequests[slot] = (selectionRequests[slot] ?: 0L) + 1L }
+        deviceSelection = selection.copy()
+        showOnDeviceAi = true
+    }
+
     fun applyPhotoDrop(ticket: PhotoDropTicket, garment: WornGarment): Boolean {
-        if (avatarMode || showAi || showLocalAi || bodyPhoto == null || ticket.generation != photoGeneration ||
+        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || bodyPhoto == null || ticket.generation != photoGeneration ||
             selectionRequests[ticket.slot] != ticket.request || pendingPhotoDrops[ticket.slot] != ticket ||
             slotOf(garment.item) != ticket.slot) return false
         finishPhotoDrop(ticket)
@@ -375,6 +403,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     val manual: ManualFittingViewModel = viewModel(factory = remember { viewModelFactory { initializer { ManualFittingViewModel() } } })
     val scope = manual.viewModelScope
     val aiModel = sharedTryOnViewModel()
+    val deviceModel: OnDeviceVtonViewModel = viewModel(factory = remember { viewModelFactory { initializer { OnDeviceVtonViewModel() } } })
     var bodyPhoto by manual::bodyPhoto
     var photoGeneration by manual::photoGeneration
     var body by manual::body
@@ -383,6 +412,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var avatarMode by manual::avatarMode
     LaunchedEffect(startAvatar) {if(startAvatar)manual.avatarMode=true}
     val worn = if (avatarMode) manual.avatarWorn else manual.worn
+    val currentDeviceSelection = onDeviceFittingSelection(bodyPhoto?.toString(), photoGeneration, manual.worn.values.toList(), canvasSize)
+    LaunchedEffect(currentDeviceSelection) { deviceModel.selectionChanged(currentDeviceSelection) }
     var activeSlot by manual::activeSlot
     var overlayAlpha by manual::overlayAlpha
     var inputNotice by remember { mutableStateOf<String?>(null) }
@@ -394,9 +425,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var dragGeneration by remember { mutableLongStateOf(-1L) }
     var canvasBounds by remember { mutableStateOf(Rect.Zero) }
     var screenOrigin by remember { mutableStateOf(Offset.Zero) }
-    LaunchedEffect(avatarMode, photoGeneration, manual.showAi, manual.showLocalAi) {
+    LaunchedEffect(avatarMode, photoGeneration, manual.showAi, manual.showLocalAi, manual.showOnDeviceAi) {
         dragItem = null
-        if (avatarMode || manual.showAi || manual.showLocalAi) manual.cancelPhotoDrops()
+        if (avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi) manual.cancelPhotoDrops()
     }
     val controlsScroll = rememberScrollState()
     LaunchedEffect(inputNotice) {
@@ -591,7 +622,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             val image = try { GarmentGeometry.load(context.applicationContext, item) }
             catch (cancelled: CancellationException) { manual.finishPhotoDrop(ticket); throw cancelled }
             catch (_: Exception) { null }
-            if (manual.avatarMode || manual.showAi || manual.showLocalAi ||
+            if (manual.avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi ||
                 manual.photoGeneration != ticket.generation || manual.selectionRequests[slot] != ticket.request) {
                 manual.finishPhotoDrop(ticket); return@launch
             }
@@ -621,6 +652,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var showAi by manual::showAi
     var showLocalAi by manual::showLocalAi
     var aiSelection by manual::aiSelection
+    if (manual.showOnDeviceAi) {
+        manual.deviceSelection?.let { selection ->
+            OnDeviceVtonScreen(selection, onBack = { manual.showOnDeviceAi = false }, model = deviceModel)
+        }
+        return
+    }
     if (showLocalAi) {
         LocalVtonScreen(
             defaultPhoto = bodyPhoto,
@@ -722,23 +759,20 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
             if (!avatarMode) TextButton(onClick = {
                 inputNotice = when {
-                    aiModel.state.pending -> null // re-open the existing job without generating
                     bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
                     worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
-                    else -> TryOnPlan.build(worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
-                        g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }).issue
+                    currentDeviceSelection == null -> "이 온디바이스 경로는 상의·하의·신발만 받아요. 원피스·아우터·액세서리를 제외하고 다시 선택해주세요."
+                    else -> null
                 }
                 if (inputNotice == null) {
-                    aiSelection = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
-                        g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }
-                    showAi = true
+                    currentDeviceSelection?.let(manual::openOnDevice)
                 }
             }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (aiModel.state.pending) "진행 중인 AI 착장 보기" else "마법봉 · AI 착장 사진 생성", color = Camel)
+                Text(if (deviceModel.state.pending) "진행 중인 AI 착장 보기" else "마법봉 · AI 착장 사진 생성", color = Camel)
             }
-            if (!avatarMode && !compact && !TryOnRepository.isConfigured() && LocalVtonSession.connection == null) Text("AI 생성에는 자체 GPU 서버 또는 외부 유료 서버가 필요해요. 별도 동의 전에는 사진을 전송하지 않아요.",
+            if (!avatarMode && !compact) Text("마법봉은 기기 내 생성형 모델의 준비 상태를 확인해요. 모델이 없으면 AI 생성은 실행되지 않아요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
@@ -920,6 +954,19 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
             Spacer(Modifier.width(6.dp))
             Text("자체 AI로 입어보기 · 옷장에서 한 벌 선택", color = Camel)
+        }
+        if (!avatarMode) TextButton(onClick = {
+            val selected = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
+                g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }
+            inputNotice = when {
+                aiModel.state.pending -> null
+                bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
+                worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
+                else -> TryOnPlan.build(selected).issue
+            }
+            if (inputNotice == null) { aiSelection = selected; showAi = true }
+        }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openExternalTryOnFromFitting")) {
+            Text("외부 AI 서버 · 별도 설정·전송 동의 필요", color = Camel)
         }
         if(avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {

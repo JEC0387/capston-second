@@ -109,7 +109,7 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
-    @Test fun photoMagicWandOpensGenerativeFlowWithoutUnapprovedNetworkCall() {
+    @Test fun photoMagicWandOpensOnDeviceFlowWithoutModelOrNetworkFallback() {
         com.jeiu.fashionproject.data.TryOnSession.clear()
         var requestCode = 0
         val registry = object : ActivityResultRegistry() {
@@ -128,9 +128,16 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertExists()
         compose.onNodeWithTag("aiTryOnWand").assertTextContains("마법봉 · AI 착장 사진 생성", substring = true)
         compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("aiTryOnGuide").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("aiTryOnGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("onDeviceVtonScreen").assertExists()
+        compose.onNodeWithTag("deviceVtonReadiness").assertTextContains("모델 미준비", substring = true)
+        compose.onNodeWithTag("deviceVtonGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("deviceVtonResultLabel").assertDoesNotExist()
+        compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
+        compose.onNodeWithTag("deviceVtonBack").performScrollTo().performClick()
+        compose.onNodeWithTag("manualAutoAlign").assertExists()
+        compose.onNodeWithTag("openExternalTryOnFromFitting").performScrollTo().assertExists()
+        compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().assertExists()
     }
 
     @Test fun photoAndAvatarModesKeepSeparateEntryPaths() {
