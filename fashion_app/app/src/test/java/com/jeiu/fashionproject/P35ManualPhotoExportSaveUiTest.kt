@@ -18,6 +18,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.core.app.ActivityOptionsCompat
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.ui.screens.*
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -30,8 +32,11 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35], application=Application::class, qualifiers="w500dp-h900dp")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
+@OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class P35ManualPhotoExportSaveUiTest {
-    @get:Rule val compose=createComposeRule()
+    // The default Unconfined test dispatcher can resume dialog composition on the IO
+    // completion thread. Queue recomposition on the Compose test clock, as UI work requires.
+    @get:Rule val compose=createComposeRule(effectContext = StandardTestDispatcher())
     @Test fun pickerPinsChosenBytesAndReentryOpensSavedFileWithoutGenerating() {
         val first=ManualPhotoSnapshot("file:///synthetic-red.png",1,Size(100f,200f),emptyList(),1f)
         val input=mutableStateOf<ManualPhotoSnapshot?>(first); val visible=mutableStateOf(true)

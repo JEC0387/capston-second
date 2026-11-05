@@ -112,9 +112,75 @@ internal object LocalDrapeCompositor {
         }
     }
 
+    /** Visible clothing outline on a near-uniform backdrop, NOT semantic body segmentation.
+     * Joint centres are not silhouette edges. Only bounded, contiguous, stable evidence may
+     * enlarge a fit; reaching a search cap or image edge is uncertainty, never a measured edge. */
+    private class PhotoOutline private constructor(val photo:Bitmap,val scale:Float,val offset:Offset,val background:Int) {
+        val step=max(.25f,scale)
+        var supportedSections=0;private set
+        private fun foreground(point:Offset):Boolean? {
+            val x=((point.x-offset.x)/scale).roundToInt();val y=((point.y-offset.y)/scale).roundToInt()
+            if(x !in 0 until photo.width || y !in 0 until photo.height)return null
+            val color=photo.getPixel(x,y)
+            return Color.alpha(color)>=240 && maxOf(abs(Color.red(color)-Color.red(background)),
+                abs(Color.green(color)-Color.green(background)),abs(Color.blue(color)-Color.blue(background)))>24
+        }
+        private fun edge(seed:Offset,direction:Offset,limit:Float):Float? {
+            if(foreground(seed)!=true)return null
+            var distance=step
+            while(distance<=limit) {
+                val present=foreground(seed+direction*distance) ?: return null
+                if(!present)return distance
+                distance+=step
+            }
+            return null
+        }
+        fun span(center:Offset,direction:Offset,maxWidth:Float):Pair<Offset,Offset>? {
+            if(!maxWidth.isFinite() || maxWidth<step*4)return null
+            val across=Offset(-direction.y,direction.x)
+            val before=mutableListOf<Float>();val after=mutableListOf<Float>()
+            for(shift in listOf(-step,0f,step)) {
+                val seed=center+across*shift
+                before+=edge(seed,direction*-1f,maxWidth*.75f) ?: return null
+                after+=edge(seed,direction,maxWidth*.75f) ?: return null
+            }
+            val low=before.sorted()[1];val high=after.sorted()[1];val width=low+high
+            if(width !in step*4..maxWidth || max(low,high)>min(low,high)*3f ||
+                before.max()-before.min()>max(step*3,width*.18f) ||
+                after.max()-after.min()>max(step*3,width*.18f))return null
+            supportedSections++
+            return center-direction*low to center+direction*high
+        }
+        fun toeBoundary(toe:Offset,direction:Offset,maxExtension:Float):Offset? {
+            val across=Offset(-direction.y,direction.x)
+            val distances=listOf(-step,0f,step).map {
+                edge(toe+across*it,direction,maxExtension) ?: return null
+            }
+            if(distances.max()-distances.min()>step*3)return null
+            supportedSections++
+            return toe+direction*distances.sorted()[1]
+        }
+        companion object {
+            fun create(photo:Bitmap,size:Size):PhotoOutline? {
+                if(photo.width<8 || photo.height<8)return null
+                val border=mutableListOf<Int>()
+                for(i in 0..31) {
+                    val x=i*(photo.width-1)/31;val y=i*(photo.height-1)/31
+                    border+=photo.getPixel(x,0);border+=photo.getPixel(x,photo.height-1)
+                    border+=photo.getPixel(0,y);border+=photo.getPixel(photo.width-1,y)
+                }
+                fun median(channel:(Int)->Int)=border.map(channel).sorted()[border.size/2]
+                val r=median(Color::red);val g=median(Color::green);val b=median(Color::blue)
+                if(border.count {Color.alpha(it)>=240 && abs(Color.red(it)-r)<=12 &&
+                        abs(Color.green(it)-g)<=12 && abs(Color.blue(it)-b)<=12}<border.size*.98)return null
+                val scale=min(size.width/photo.width,size.height/photo.height)
+                return PhotoOutline(photo,scale,Offset((size.width-photo.width*scale)/2,(size.height-photo.height*scale)/2),Color.rgb(r,g,b))
+            }
+        }
+    }
     private data class Person(val left:FittingPoseDetector.SidePoints, val right:FittingPoseDetector.SidePoints,
-        val map:(Offset)->Offset, val shoulderWidth:Float, val hipWidth:Float)
-    private fun person(body:FittingPoseDetector.BodyPoints,size:Size):Person {
+        val map:(Offset)->Offset, val shoulderWidth:Float, val hipWidth:Float,val outline:PhotoOutline?)
+    private fun person(body:FittingPoseDetector.BodyPoints,size:Size,photo:Bitmap):Person {
         if(body.imageWidth<=0 || body.imageHeight<=0)reject("사진 크기와 인체 좌표를 확인할 수 없어요.")
         val one=body.left ?: reject("좌우 인체 기준점이 부족해요. 정면 전신 사진을 선택해주세요.")
         val two=body.right ?: reject("좌우 인체 기준점이 부족해요. 정면 전신 사진을 선택해주세요.")
@@ -135,14 +201,34 @@ internal object LocalDrapeCompositor {
             reject("몸이 겹치거나 크게 기울어 자동 변형하기 어려워요. 정면 사진을 사용해주세요.")
         val scale=min(size.width/body.imageWidth,size.height/body.imageHeight)
         val offset=Offset((size.width-body.imageWidth*scale)/2,(size.height-body.imageHeight*scale)/2)
-        return Person(left,right,{offset+it*scale},(s1-s2).getDistance()*scale,(h1-h2).getDistance()*scale)
+        return Person(left,right,{offset+it*scale},(s1-s2).getDistance()*scale,(h1-h2).getDistance()*scale,PhotoOutline.create(photo,size))
     }
     private fun requirePoint(point:Offset?,name:String)=point ?: reject("${name} 기준점이 부족해 자동 착장을 적용하지 않았어요.")
     private fun mix(a:Offset,b:Offset,t:Float)=a+(b-a)*t
     private fun normal(direction:Offset):Offset {val length=direction.getDistance();if(length<1f)reject("인체 기준점이 너무 가까워요.");return Offset(-direction.y/length,direction.x/length)}
+    private fun torsoSection(p:Person,left:Offset,right:Offset,sampleY:Float=(left.y+right.y)/2):Pair<Offset,Offset> {
+        val measured=p.outline?.span(Offset((left.x+right.x)/2,sampleY),Offset(1f,0f),p.shoulderWidth*1.7f)
+            ?: return left to right
+        return Offset(min(left.x,measured.first.x),left.y) to Offset(max(right.x,measured.second.x),right.y)
+    }
+    private fun waistSection(p:Person):Pair<Offset,Offset> {
+        val sl=p.map(p.left.shoulder!!);val sr=p.map(p.right.shoulder!!)
+        val hl=p.map(p.left.hip!!);val hr=p.map(p.right.hip!!)
+        // Hip joints can lie below the existing top or inside separated thighs. Sample the
+        // visible torso just above that level; do not mistake the empty crotch for a body edge.
+        val sampleY=mix(mix(sl,sr,.5f),mix(hl,hr,.5f),.90f).y
+        return torsoSection(p,hl-Offset(p.hipWidth*.12f,0f),hr+Offset(p.hipWidth*.12f,0f),sampleY)
+    }
+    private fun legSection(p:Person,center:Offset,half:Float):Pair<Offset,Offset> {
+        val measured=p.outline?.span(center,Offset(1f,0f),p.shoulderWidth*.60f)
+        return Offset(min(center.x-half,measured?.first?.x ?: center.x-half),center.y) to
+            Offset(max(center.x+half,measured?.second?.x ?: center.x+half),center.y)
+    }
     private fun torsoAnchors(mask:Mask,p:Person,skirt:Boolean=false):MutableList<Anchor> {
         val sl=p.map(p.left.shoulder!!);val sr=p.map(p.right.shoulder!!)
         val hl=p.map(p.left.hip!!);val hr=p.map(p.right.hip!!)
+        val sectionsBefore=p.outline?.supportedSections ?: 0
+        val waistSection=waistSection(p)
         val a=mutableListOf<Anchor>()
         if(skirt) {
             val kl=p.map(requirePoint(p.left.knee,"양쪽 무릎"));val kr=p.map(requirePoint(p.right.knee,"양쪽 무릎"))
@@ -150,10 +236,15 @@ internal object LocalDrapeCompositor {
             val topY=(mask.top+mask.spanY*.04f).toInt()
             val waist=mask.runs(topY)
             if(waist.size!=1 || bottomY<max(hl.y,hr.y)+p.hipWidth*.4f)reject("치마 허리 윤곽이나 무릎 길이를 확인하지 못했어요.")
-            a+=Anchor(Offset(waist.single().first.toFloat(),topY.toFloat()),hl-Offset(p.hipWidth*.12f,p.hipWidth*.12f))
-            a+=Anchor(Offset(waist.single().last.toFloat(),topY.toFloat()),hr+Offset(p.hipWidth*.12f,-p.hipWidth*.12f))
-            a+=Anchor(mask.point(0f,1f),Offset(center-p.hipWidth*.85f,bottomY))
-            a+=Anchor(mask.point(1f,1f),Offset(center+p.hipWidth*.85f,bottomY))
+            val leftLeg=legSection(p,kl,p.hipWidth*.27f);val rightLeg=legSection(p,kr,p.hipWidth*.27f)
+            val outlineAvailable=(p.outline?.supportedSections ?: 0)>sectionsBefore
+            val baselineHalf=p.hipWidth*.85f
+            val half=if(outlineAvailable)max(baselineHalf,maxOf((waistSection.second.x-waistSection.first.x)*.68f,
+                center-leftLeg.first.x,rightLeg.second.x-center).coerceAtMost(p.shoulderWidth*1.1f))else baselineHalf
+            a+=Anchor(Offset(waist.single().first.toFloat(),topY.toFloat()),waistSection.first-Offset(0f,p.hipWidth*.12f))
+            a+=Anchor(Offset(waist.single().last.toFloat(),topY.toFloat()),waistSection.second-Offset(0f,p.hipWidth*.12f))
+            a+=Anchor(mask.point(0f,1f),Offset(center-half,bottomY))
+            a+=Anchor(mask.point(1f,1f),Offset(center+half,bottomY))
             a+=Anchor(mask.point(.5f,.5f),Offset(center,(hl.y+hr.y+2*bottomY)/4))
         } else {
             val bottom=mask.runs((mask.top+mask.spanY*.87f).toInt())
@@ -163,10 +254,11 @@ internal object LocalDrapeCompositor {
             val shoulderY=mask.top+mask.spanY*.16f
             a+=Anchor(Offset(x1,shoulderY),sl-Offset(p.shoulderWidth*.08f,0f))
             a+=Anchor(Offset(x2,shoulderY),sr+Offset(p.shoulderWidth*.08f,0f))
-            a+=Anchor(Offset(x1,mask.top+mask.spanY*.58f),mix(sl,hl,.58f)-Offset(p.shoulderWidth*.06f,0f))
-            a+=Anchor(Offset(x2,mask.top+mask.spanY*.58f),mix(sr,hr,.58f)+Offset(p.shoulderWidth*.06f,0f))
-            a+=Anchor(Offset(x1,mask.bottom.toFloat()),hl-Offset(p.hipWidth*.12f,0f))
-            a+=Anchor(Offset(x2,mask.bottom.toFloat()),hr+Offset(p.hipWidth*.12f,0f))
+            val middle=torsoSection(p,mix(sl,hl,.58f)-Offset(p.shoulderWidth*.06f,0f),mix(sr,hr,.58f)+Offset(p.shoulderWidth*.06f,0f))
+            a+=Anchor(Offset(x1,mask.top+mask.spanY*.58f),middle.first)
+            a+=Anchor(Offset(x2,mask.top+mask.spanY*.58f),middle.second)
+            a+=Anchor(Offset(x1,mask.bottom.toFloat()),waistSection.first)
+            a+=Anchor(Offset(x2,mask.bottom.toFloat()),waistSection.second)
             a+=Anchor(mask.point(.5f,0f),mix(sl,sr,.5f)-Offset(0f,p.shoulderWidth*.15f))
         }
         return a
@@ -227,19 +319,20 @@ internal object LocalDrapeCompositor {
             if(runs.size!=2)reject("바지의 좌우 다리를 구분하지 못했어요.")
             return listOf(runs[0].first,runs[0].last,runs[1].first,runs[1].last).map(Int::toFloat)
         }
-        val waistLeft=hl-Offset(p.hipWidth*.15f,p.hipWidth*.12f)
-        val waistRight=hr+Offset(p.hipWidth*.15f,-p.hipWidth*.12f)
+        val visibleWaist=waistSection(p)
+        val waistLeft=Offset(min(hl.x-p.hipWidth*.15f,visibleWaist.first.x),hl.y-p.hipWidth*.12f)
+        val waistRight=Offset(max(hr.x+p.hipWidth*.15f,visibleWaist.second.x),hr.y-p.hipWidth*.12f)
+        val leftKnee=legSection(p,kl,p.hipWidth*.27f);val rightKnee=legSection(p,kr,p.hipWidth*.27f)
+        val leftAnkle=legSection(p,al,p.hipWidth*.20f);val rightAnkle=legSection(p,ar,p.hipWidth*.20f)
         val mid=mix(hl,hr,.5f);val crotchY=max(hl.y,hr.y)+p.hipWidth*.26f
         if(crotchY>=min(kl.y,kr.y)-p.hipWidth*.2f)reject("골반과 무릎 간격이 부족해요.")
         val rows=listOf(
             Row(waistY.toFloat(),listOf(0f,1f/3,2f/3,1f).map {waist[0].first+(waist[0].last-waist[0].first)*it},
                 listOf(0f,1f/3,2f/3,1f).map {mix(waistLeft,waistRight,it)}),
-            Row(splitY.toFloat(),source(splitY),listOf(Offset(hl.x-p.hipWidth*.22f,crotchY),
-                Offset(mid.x-p.hipWidth*.08f,crotchY),Offset(mid.x+p.hipWidth*.08f,crotchY),Offset(hr.x+p.hipWidth*.22f,crotchY))),
-            Row(kneeY.toFloat(),source(kneeY),listOf(kl-Offset(p.hipWidth*.27f,0f),kl+Offset(p.hipWidth*.27f,0f),
-                kr-Offset(p.hipWidth*.27f,0f),kr+Offset(p.hipWidth*.27f,0f))),
-            Row(ankleY.toFloat(),source(ankleY),listOf(al-Offset(p.hipWidth*.20f,0f),al+Offset(p.hipWidth*.20f,0f),
-                ar-Offset(p.hipWidth*.20f,0f),ar+Offset(p.hipWidth*.20f,0f)))
+            Row(splitY.toFloat(),source(splitY),listOf(Offset(min(hl.x-p.hipWidth*.22f,visibleWaist.first.x),crotchY),
+                Offset(mid.x-p.hipWidth*.08f,crotchY),Offset(mid.x+p.hipWidth*.08f,crotchY),Offset(max(hr.x+p.hipWidth*.22f,visibleWaist.second.x),crotchY))),
+            Row(kneeY.toFloat(),source(kneeY),listOf(leftKnee.first,leftKnee.second,rightKnee.first,rightKnee.second)),
+            Row(ankleY.toFloat(),source(ankleY),listOf(leftAnkle.first,leftAnkle.second,rightAnkle.first,rightAnkle.second))
         )
         for(row in rows)if(row.target.zipWithNext().any {(a,b)->a.x>=b.x})
             reject("다리 사이 간격이 부족해 바지 윤곽이 겹쳐요.")
@@ -373,6 +466,31 @@ internal object LocalDrapeCompositor {
         val requiredSeparation=((leftToe-leftHeel).getDistance()+(rightToe-rightHeel).getDistance())*.27f
         if(leftHeel.x>=rightHeel.x || leftToe.x>=rightToe.x || intersects || separation<=maxOf(2f,requiredSeparation))
             reject("좌우 발이 겹치거나 방향이 교차해 신발을 개별 정렬할 수 없어요.")
+        data class Foot(val heel:Offset,val toe:Offset,val half:Float)
+        val feet=listOf(p.left,p.right).map {side ->
+            val heel=p.map(requirePoint(side.heel,"양쪽 발뒤꿈치"));val toe=p.map(requirePoint(side.toe,"양쪽 발끝"))
+            val ankle=p.map(requirePoint(side.ankle,"양쪽 발목"));val length=(toe-heel).getDistance()
+            if(length<p.shoulderWidth*.07f || length>p.shoulderWidth*.65f || (ankle-heel).getDistance()>length*1.5f)
+                reject("발끝 방향이나 발목 좌표가 불확실해 신발 자동 정렬을 중단했어요.")
+            val direction=(toe-heel)/length
+            val tip=p.outline?.toeBoundary(toe,direction,p.shoulderWidth*.65f-length) ?: toe
+            val across=Offset(-direction.y,direction.x).let {if(it.x<0)it*-1f else it}
+            val center=mix(heel,tip,.5f)
+            val span=p.outline?.span(center,across,p.shoulderWidth*.45f)
+            val half=max(length*.32f,span?.let {max((it.first-center).getDistance(),(it.second-center).getDistance())} ?: 0f)
+            Foot(heel,tip,half)
+        }
+        // Extending toes and widths can make previously disjoint short landmark segments
+        // collide. Recheck the expanded footprints, not only the original pose segments.
+        val a=feet[0];val b=feet[1]
+        val expandedSeparation=minOf(pointSegment(a.heel,b.heel,b.toe),pointSegment(a.toe,b.heel,b.toe),
+            pointSegment(b.heel,a.heel,a.toe),pointSegment(b.toe,a.heel,a.toe))
+        val expandedBoxes=min(max(a.heel.x,a.toe.x),max(b.heel.x,b.toe.x))>=max(min(a.heel.x,a.toe.x),min(b.heel.x,b.toe.x)) &&
+            min(max(a.heel.y,a.toe.y),max(b.heel.y,b.toe.y))>=max(min(a.heel.y,a.toe.y),min(b.heel.y,b.toe.y))
+        val expandedCross=expandedBoxes && cross(a.toe-a.heel,b.heel-a.heel)*cross(a.toe-a.heel,b.toe-a.heel)<=0f &&
+            cross(b.toe-b.heel,a.heel-b.heel)*cross(b.toe-b.heel,a.toe-b.heel)<=0f
+        if(a.toe.x>=b.toe.x || expandedCross || expandedSeparation<=a.half+b.half+max(1f,p.outline?.step ?: 1f))
+            reject("확인한 신발 윤곽이 서로 겹쳐 자동 정렬을 중단했어요. 수동 배치로 확인해주세요.")
         val seen=BooleanArray(mask.width*mask.height);val components=mutableListOf<List<Int>>()
         val queue=IntArray(seen.size)
         for(seed in seen.indices)if(!seen[seed] && Color.alpha(mask.pixels[seed])>=96) {
@@ -387,11 +505,7 @@ internal object LocalDrapeCompositor {
         if(components.size!=2)reject(if(components.size==1)"신발 한 개의 좌우를 확정할 수 없어요. 분리된 한 쌍의 위에서 본 PNG를 사용해주세요." else "신발 두 개의 윤곽을 구분하지 못했어요.")
         val sorted=components.sortedBy {it.map {n->n%mask.width}.average()}
         return sorted.mapIndexed {index,component ->
-            val side=if(index==0)p.left else p.right
-            val heel=p.map(requirePoint(side.heel,"양쪽 발뒤꿈치"));val toe=p.map(requirePoint(side.toe,"양쪽 발끝"))
-            val ankle=p.map(requirePoint(side.ankle,"양쪽 발목"));val length=(toe-heel).getDistance()
-            if(length<p.shoulderWidth*.07f || length>p.shoulderWidth*.65f || (ankle-heel).getDistance()>length*1.5f)
-                reject("발끝 방향이나 발목 좌표가 불확실해 신발 자동 정렬을 중단했어요.")
+            val (heel,toe,half)=feet[index]
             val l=component.minOf {it%mask.width};val r=component.maxOf {it%mask.width}
             val t=component.minOf {it/mask.width};val b=component.maxOf {it/mask.width}
             if((b-t).toFloat()/(r-l+1)<1.35f)reject("신발 방향이 모호해요. 발끝이 위쪽인 분리된 위에서 본 한 쌍을 사용해주세요.")
@@ -402,7 +516,6 @@ internal object LocalDrapeCompositor {
             val pixels=IntArray(mask.pixels.size);component.forEach {pixels[it]=mask.pixels[it]}
             val part=Mask(mask.width,mask.height,pixels,l,t,r,b,mask.removedBorder)
             val direction=toe-heel;val n=normal(direction).let {if(it.x<0)it*-1f else it}
-            val half=length*.32f
             val anchors=listOf(Anchor(Offset(l.toFloat(),t.toFloat()),toe-n*half),Anchor(Offset(r.toFloat(),t.toFloat()),toe+n*half),
                 Anchor(Offset(l.toFloat(),b.toFloat()),heel-n*half*.72f),Anchor(Offset(r.toFloat(),b.toFloat()),heel+n*half*.72f))
             // Source image y runs toe -> heel. If target toe is below heel, avoid reflection by
@@ -474,7 +587,7 @@ internal object LocalDrapeCompositor {
         val aspectTolerance=minOf(.015,maxOf(.005,2.0/minOf(photo.width,photo.height,body.imageWidth,body.imageHeight).coerceAtLeast(1)))
         if(!poseAspect.isFinite() || poseAspect<=0 || abs(photoAspect/poseAspect-1)>aspectTolerance)
             reject("사진 방향과 인체 분석 좌표가 달라요. 사진을 다시 분석해주세요.")
-        val p=person(body,size);val reports=mutableListOf<String>()
+        val p=person(body,size,photo);val reports=mutableListOf<String>()
         val pieces=layers.sortedBy {when(it.first.item.category){"하의"->0;"신발"->1;"상의"->2;else->3}}.flatMap { (g,image) ->
             val mask=mask(image)
             if(mask.removedBorder)reports+="균일 배경의 연결 영역만 제거했어요. 복잡한 배경·비슷한 색의 의류는 지원하지 않아요."
@@ -517,6 +630,9 @@ internal object LocalDrapeCompositor {
             val restored=preserveFaceAndHands(output,preserved,p,body,outputScale)
             val wristCount=listOf(p.left,p.right).count {it.wrist!=null && it.elbow!=null}
             reports+="얼굴 영역 보존·확인 가능한 손목 ${wristCount}곳의 피부색 추정 가림 적용($restored 픽셀). 머리카락·팔 전체의 의미 분할은 미지원이에요."
+            val sections=p.outline?.supportedSections ?: 0
+            reports+=if(sections>0)"균일 배경의 기존 의상·발 윤곽 ${sections}곳을 제한 범위에서 반영했어요. 인체 실측이나 의미 분할 결과가 아니에요."
+                else "사진 윤곽을 확인하지 못해 관절 기준 추정만 사용했어요. 기존 의상 노출·착장 품질은 직접 확인해주세요."
             reports+="경계 안쪽 블렌딩·밝기 ±6% 제한. 기존 의상 제거·새 주름·그림자 생성은 하지 않아요. 실사진 품질 미검증."
             val bytes=ByteArrayOutputStream().use {out->if(!output.compress(Bitmap.CompressFormat.PNG,100,out)||out.size()>8*1024*1024)reject("PNG 크기가 너무 커서 저장하지 않았어요.");out.toByteArray()}
             return DrapeRenderResult(bytes,reports)
