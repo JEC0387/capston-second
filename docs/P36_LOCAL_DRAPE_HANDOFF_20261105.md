@@ -1,5 +1,43 @@
 # P36 로컬 의류 드래그·변형 합성 인수
 
+## 최신 완료 상태 — 2026-11-05 21:40 KST
+
+- 실행 코드 커밋: `232ccbf632e87b5c9c4a7f0f10d31698bc9c9f06`.
+  독립 P36 브랜치에 `[skip ci]`로 Commit·Push했고 원격 SHA 일치를 확인했다.
+- QA 후보: `1.1.86.7-qa` / **18607**, 패키지 `com.jeiu.fashionproject.preview.qa`.
+  Preview 업데이트 파일이 아니며 **휴대폰 미설치**다.
+- APK: `fashionai-1.1.86.7-qa-vc18607-232ccbf6.apk`, 148,879,597 bytes.
+  SHA-256: `651e901d061eaeb01428fb95b61413892572fc02b44dd465a18d01a9c402f07c`.
+- 서명 SHA-256: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`.
+  기존 QA/Preview 신뢰 인증서를 사용했으며 정식 Release 키로 전용하지 않았다.
+- 로컬 `assembleDebug` + `lintDebug` 성공(15분 36초). Lint Error/Fatal 0,
+  Warning 173, Hint 2. 경고가 모두 해소됐다는 의미는 아니다.
+- APK 패키지·버전·내부 실행 SHA·깨끗한 소스 표시·CRC·서명·기능 DEX 표식을 확인했다.
+  새 APK의 ZIP 16KB 정렬을 검사하고 모든 네이티브 파일이 기존 LLVM 검증본과 바이트 단위로
+  일치함을 확인하여 ELF 정적 근거를 재사용했다. 16KB 기기 실행은 미검증이다.
+- 후보는 기존 QA 후보 18606 및 마지막 확인된 설치 QA 18001보다 높다.
+  `VERSION_FLOOR.json`의 18001은 과거 확인값이며 P36에서 새 ADB 조회를 한 값이 아니다.
+  실제 설치 직전에 현재 기기 조건을 다시 확인해야 한다.
+- 신규 독립 납품 폴더:
+  `C:\Users\USER\Documents\ChatGPT\capston\deliveries\P36-QA-18607-20261105-214057-KST`.
+  APK·검증 메타데이터·집중 검사 요약·설치/QA 안내·합성 비교 PNG를 복사하고 원본과 해시를 대조했다.
+  GitHub Artifact가 아닌 로컬 납품 후보다. Git에는 코드·테스트·인수 문서만 반영했다.
+- 18605 Preview와 18606 QA 원본 APK 해시가 기존 값과 일치했다.
+  일시 복원한 서명키 디렉터리는 정리됐고 키/비밀번호를 납품본이나 Git에 포함하지 않았다.
+  P36 브랜치 Actions 조회는 실행 목록 없음이며 새 전체 CI를 시작하지 않았다.
+
+| 기능 | IMPLEMENTED | TESTED | DEVICE_VERIFIED | 실기기 END_TO_END_VERIFIED |
+|---|---|---|---|---|
+| 카드 드래그·교체·취소·되돌리기 | 완료 | 합성 Compose 검사 통과 | NOT TESTED | NOT TESTED |
+| 상의·하의·양발 제한적 변형 | 완료 | 합성 픽셀/거절 검사 통과 | NOT TESTED | NOT TESTED |
+| PNG 생성·비교·저장·재열기 | 완료 | 실제 로컬 디코더/파일 자동 검사 통과 | NOT TESTED | NOT TESTED |
+| 실사진 자연스러운 착장 | 일부만 구현 | 품질 합격 아님 | NOT TESTED | NOT TESTED |
+| 실제 생성형 AI·실측 정확도·정식 출시 | 미완료 | BLOCKED | BLOCKED | BLOCKED |
+
+드래그 중에는 기존 2D 배치 미리보기를 사용한다. 비강체 변형 결과는 자동 합성 PNG를
+생성한 뒤 비교 화면에서 확인한다. 라이브 화면 전체를 자연스러운 착장으로 바꾼 것은 아니다.
+실기기 설치와 실사진 품질 인수는 별도 승인/자료가 필요하며 출시 판정은 **NO-GO**다.
+
 ## 범위와 판정
 
 P35 HEAD `08b3492dd7a7827b34dce0c85f3223618dc46252`에서 독립 브랜치
