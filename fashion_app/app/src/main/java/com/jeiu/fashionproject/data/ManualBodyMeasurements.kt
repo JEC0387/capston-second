@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,8 +41,13 @@ object ManualBodyStore {
     val saved: StateFlow<Boolean> = _saved
     private val _issue = MutableStateFlow<String?>(null)
     val issue: StateFlow<String?> = _issue
+    // A failed commit may already have changed SharedPreferences' memory map.
+    // Until an explicit retry succeeds, load must not promote those unconfirmed values.
+    private var unconfirmedWriteSnapshot: Map<String, *>? = null
 
+    @Synchronized
     fun load(context: Context) {
+        if (unconfirmedWriteSnapshot != null) return
         try {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean("save", false)) return
@@ -69,30 +75,72 @@ object ManualBodyStore {
     private fun readOptional(prefs: android.content.SharedPreferences, key: String): Float? =
         if (prefs.contains(key)) prefs.getFloat(key, 0f) else null
 
+    @Synchronized
     fun update(context: Context, value: ManualBodyMeasurements, saveOnDevice: Boolean): Boolean {
         if (!value.isValid()) return false
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val edit = prefs.edit().clear()
-        if (saveOnDevice) {
-            edit.putBoolean("save", true).putLong("entered_at", value.enteredAt)
-                .putFloat("height", value.heightCm)
-            listOf(value.shoulderWidthCm, value.chestCircumferenceCm,
-                value.waistCircumferenceCm, value.hipCircumferenceCm,
-                value.legLengthCm, value.torsoLengthCm).forEachIndexed { index, number ->
-                if (number != null) edit.putFloat(keys[index + 1], number)
+        if (!commitChange(context) { edit ->
+            edit.clear()
+            if (saveOnDevice) {
+                edit.putBoolean("save", true).putLong("entered_at", value.enteredAt)
+                    .putFloat("height", value.heightCm)
+                listOf(value.shoulderWidthCm, value.chestCircumferenceCm,
+                    value.waistCircumferenceCm, value.hipCircumferenceCm,
+                    value.legLengthCm, value.torsoLengthCm).forEachIndexed { index, number ->
+                    if (number != null) edit.putFloat(keys[index + 1], number)
+                }
             }
-        }
-        if (!edit.commit()) return false
+        }) return false
         _current.value = value
         _saved.value = saveOnDevice
         _issue.value = null
         return true
     }
 
-    fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+    @Synchronized
+    fun clear(context: Context): Boolean {
+        if (!commitChange(context) { it.clear() }) return false
         _current.value = null
         _saved.value = false
         _issue.value = null
+        return true
+    }
+
+    private fun commitChange(context: Context, change: (SharedPreferences.Editor) -> Unit): Boolean {
+        val prefs: SharedPreferences
+        val previous: Map<String, *>
+        try {
+            prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            previous = unconfirmedWriteSnapshot ?: prefs.all.toMap()
+        } catch (_: Exception) {
+            _issue.value = "기기 저장소에 접근하지 못했어요. 마지막으로 확인한 입력값을 유지해요."
+            return false
+        }
+        val committed = runCatching { prefs.edit().let { change(it); it.commit() } }.getOrDefault(false)
+        if (committed) {
+            unconfirmedWriteSnapshot = null
+            return true
+        }
+        unconfirmedWriteSnapshot = previous
+        // Best-effort compensation restores the cached map too. Disk durability remains
+        // unconfirmed on I/O failure; never report this attempt as saved or deleted.
+        runCatching {
+            val rollback = prefs.edit().clear()
+            previous.forEach { (key, value) ->
+                when (value) {
+                    is Boolean -> rollback.putBoolean(key, value)
+                    is Float -> rollback.putFloat(key, value)
+                    is Int -> rollback.putInt(key, value)
+                    is Long -> rollback.putLong(key, value)
+                    is String -> rollback.putString(key, value)
+                    is Set<*> -> {
+                        @Suppress("UNCHECKED_CAST")
+                        rollback.putStringSet(key, value as Set<String>)
+                    }
+                }
+            }
+            rollback.commit()
+        }
+        _issue.value = "기기 저장을 확인하지 못했어요. 마지막으로 확인한 입력값을 유지해요. 다시 시도해주세요."
+        return false
     }
 }

@@ -42,6 +42,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     private var submitted = false
     private var submitting = false
     private var cancelAfterSubmit = false
+    private val cancellingIds = mutableSetOf<String>()
     val requestId: String? get() = saved["requestId"]
 
     private fun restoredGarments(): List<TryOnGarment> = runCatching {
@@ -112,7 +113,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                 // is still being created. For the local engine, send it after acceptance.
                 if (localMode && cancelAfterSubmit) {
                     cancelAfterSubmit = false
-                    gateway.cancel(config, id)
+                    if (cancellingIds.add(id)) sendCancellation(config, id)
                 }
                 watch(config, id)
             } catch (cancelled: CancellationException) { throw cancelled
@@ -200,16 +201,28 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
         }
         val id = requestId ?: return
         val config = connection ?: session() ?: return
+        // Guard synchronously: rapid taps and deferred POST cancellation share it.
+        if (!cancellingIds.add(id)) return
         // Do not cancel an in-flight POST; resolve its outcome with the same ID.
         viewModelScope.launch {
             try {
-                gateway.cancel(config, id)
+                sendCancellation(config, id)
+                if (requestId != id || !state.pending) return@launch
                 state = state.copy(error = if (localMode) "자체 AI 작업 중단을 요청했어요." else "대기 중단을 요청했어요. 이미 전송된 FASHN 작업·요금은 취소되지 않을 수 있어요.")
                 if (!state.watching) resume()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                state = state.copy(error = "중단 여부를 확인하지 못했어요. 기존 작업 상태를 확인해주세요.")
+                if (requestId == id && state.pending) {
+                    state = state.copy(error = "중단 여부를 확인하지 못했어요. 기존 작업 상태를 확인해주세요.")
+                }
             }
         }
+    }
+
+    private suspend fun sendCancellation(config: TryOnConnection, id: String) {
+        try { gateway.cancel(config, id) }
+        finally { cancellingIds.remove(id) }
     }
 
     /** Explicit local-only recovery from a lost server journal; never submits a new job. */

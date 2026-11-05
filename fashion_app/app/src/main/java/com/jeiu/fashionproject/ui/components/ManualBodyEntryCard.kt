@@ -99,8 +99,8 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                 }, modifier = Modifier.fillMaxWidth().testTag("manualBodyApply")) { Text("입력값 적용") }
             }
             if (current != null) TextButton(onClick = {
-                ManualBodyStore.clear(context)
-                message = "직접 입력한 치수를 삭제했어요."
+                message = if (ManualBodyStore.clear(context)) "직접 입력한 치수를 삭제했어요."
+                    else "직접 입력값을 삭제하지 못했어요. 다시 시도해주세요."
             }, modifier = Modifier.testTag("manualBodyClear")) { Text("직접 입력값 삭제") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (current != null || photo != null) BodyDimensionsCard(BodyDimensions.resolve(current,photo))

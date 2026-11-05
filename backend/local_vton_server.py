@@ -167,6 +167,7 @@ class LocalVtonService:
         self.settings = settings
         self.engine = engine or SubprocessEngine(settings)
         self.jobs, self.results, self.tasks = {}, {}, {}
+        self.cancellations = {}
         self.active = None
         self.uploads = 0
         self.budgets = defaultdict(deque)
@@ -291,11 +292,16 @@ class LocalVtonService:
 
     async def run(self, job, person, garment, options):
         result_to_publish = None
+        engine_task = None
+        timed_out = False
         try:
             job['status']='running'
             if not self.persist_job_state(job):
                 return
-            result, metrics = await asyncio.wait_for(self.engine.generate(person,garment,options),self.settings.timeout)
+            engine_task = asyncio.create_task(self.engine.generate(person,garment,options))
+            # Timeout/DELETE cancels the waiter, not the worker's cleanup. This
+            # method owns the one cancellation and confirms worker exit below.
+            result, metrics = await asyncio.wait_for(asyncio.shield(engine_task),self.settings.timeout)
             # Validate and strip all output metadata before publishing a real worker result.
             if len(result) > 8 * 1024 * 1024:
                 raise ValueError('invalid_result')
@@ -310,7 +316,7 @@ class LocalVtonService:
             result_to_publish = result
             job.update(status='completed',error=None)
         except asyncio.TimeoutError:
-            job.update(status='timeout',error='timeout')
+            timed_out = True
         except asyncio.CancelledError:
             job.update(status='cancelled',error='cancelled')
         except EngineFailure as error:
@@ -318,15 +324,51 @@ class LocalVtonService:
         except Exception:
             job.update(status='failed',error='model_failed')
         finally:
+            if engine_task is not None and not engine_task.done():
+                engine_task.cancel()
+                stopped = asyncio.gather(engine_task, return_exceptions=True)
+                while not stopped.done():
+                    try:
+                        await asyncio.shield(stopped)
+                    except asyncio.CancelledError:
+                        # A DELETE or shutdown arriving during timeout cleanup
+                        # must neither re-cancel the worker nor free its slot.
+                        pass
+            if timed_out and job['status'] != 'cancelled':
+                job.update(status='timeout',error='timeout')
             self.active=None
             self.tasks.pop(job['id'],None)
             if self.persist_job_state(job) and result_to_publish is not None and job['status']=='completed':
                 # No await separates durable completion from publishing RAM bytes.
                 self.results[job['id']]=(result_to_publish,time.time()+self.settings.result_ttl)
 
+    async def cancel_task(self, id):
+        pending = self.cancellations.get(id)
+        if pending is None:
+            task = self.tasks.get(id)
+            if task is None:
+                return
+            # Send cancellation once. A second cancel can interrupt wait_for's
+            # worker cleanup and release the GPU slot while the child still lives.
+            task.cancel()
+            async def finish():
+                try:
+                    await asyncio.gather(task, return_exceptions=True)
+                finally:
+                    # Also handles a queued task cancelled before run() starts.
+                    if self.tasks.get(id) is task:
+                        self.tasks.pop(id, None)
+                    if self.active == id:
+                        self.active = None
+                    self.cancellations.pop(id, None)
+            pending = asyncio.create_task(finish())
+            self.cancellations[id] = pending
+        # A disconnected DELETE waiter must not cancel the cleanup task itself.
+        await asyncio.shield(pending)
+
     async def close(self):
-        for task in list(self.tasks.values()):task.cancel()
-        if self.tasks:await asyncio.gather(*list(self.tasks.values()),return_exceptions=True)
+        ids = set(self.tasks) | set(self.cancellations)
+        if ids:await asyncio.gather(*(self.cancel_task(id) for id in ids))
         self.results.clear()
         if self.lease:self.lease.close();self.lease=None
 
@@ -424,11 +466,7 @@ def create_app(settings=None, engine=None):
     async def cancel(id:str,request:Request):
         job=service.owned(id,service.authenticate(request));service.results.pop(id,None)
         job.update(status='cancelled',error='cancelled')
-        if id in service.tasks:
-            task=service.tasks[id];task.cancel()
-            await asyncio.gather(task,return_exceptions=True)
-            service.tasks.pop(id,None)
-            if service.active==id:service.active=None
+        await service.cancel_task(id)
         if not service.persist_job_state(job):
             raise HTTPException(503,'journal_unavailable')
         return service.view(job)
