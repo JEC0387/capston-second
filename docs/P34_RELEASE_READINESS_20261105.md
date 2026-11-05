@@ -1,6 +1,6 @@
 # P34 출시 준비 및 결함 수정
 
-## 현재 판정: NO-GO (진행 중)
+## 최종 출시 판정: NO-GO
 
 P33 HEAD `19e27459b8841eeddf637c6d968b6f9e7cc78db6`에서 시작했다.
 통합 브랜치는 `codex/fashionai-p34-release-readiness-20261105`다.
@@ -54,7 +54,7 @@ Android `data/ManualBodyMeasurements.kt`, `ui/components/ManualBodyEntryCard.kt`
 `ui/viewmodel/TryOnViewModel.kt`, 위 P34 신규 테스트 3개 및 이 문서.
 이 체크포인트 이후 APK/Lint 검증은 별도 기록하며 전체 CI는 실행하지 않는다.
 
-## 실기기 읽기 전용 사전 검사
+## 최초 실기기 읽기 전용 사전 검사 (16:30, 설치 승인 전 기록)
 
 P34의 새 기록: `fashion_app/build/p34-private/qa/readonly-20261105-163056-4edcde/P34_READONLY_QA_SUMMARY.json`.
 기기 식별값·사진·설정 원문은 이 문서에 넣지 않는다.
@@ -89,6 +89,10 @@ P34의 새 기록: `fashion_app/build/p34-private/qa/readonly-20261105-163056-4e
   Preview 신뢰 인증서 `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`를
   정식 키로 전용하지 않는다. 키·비밀번호는 Git/APK/로그/Artifact에 넣지 않는다.
 - Google Play App Signing 등록 여부·인증서·보관 담당자는 미확인이다.
+- 공식 GitHub CLI로 Secret **이름만** 조회했다: `ANDROID_DEBUG_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD`. Workflow는 이 세 항목과
+  공개 별칭·인증서 변수만 참조한다. 별도 Release/Play 키 연결은 발견하지 못했다.
+  Secret 값이나 기존 인증정보를 추출하지 않았으며, 외부 정식 키 부재를 증명하는 결과는 아니다.
 - 사용자 지시에 따라 새 키 생성·담당자 지정은 별도 명시 승인 전 수행하지 않는다.
 
 승인 전 준비 순서:
@@ -100,6 +104,8 @@ P34의 새 기록: `fashion_app/build/p34-private/qa/readonly-20261105-163056-4e
 5. 인증서 지문을 고정한 Release 서명·패키지·버전 게이트를 연결한 뒤 비디버그/CRC/SHA/ZIP·ELF/비밀정보 검사를 수행한다.
 6. 버전별 설치 승인 후 별도 정식 패키지의 설치·인증·저장·재조회 검증을 수행한다.
    Preview 데이터가 새 패키지로 자동 이전된다고 가정하지 않는다.
+   정식 패키지가 기기에 이미 설치돼 있다면 그 설치본 인증서도 먼저 비교해야 한다.
+   불일치/기존 키 유실을 앱 삭제나 데이터 초기화로 우회하지 않는다.
 
 기존 primary distribution 차단, Preview 서명 검사, Actions 비용 보호는 유지한다.
 정식 앱은 서명 준비만으로 출시 완료가 아니다. 기본 설정의 cleartext 허용 및
@@ -124,3 +130,78 @@ P34의 새 기록: `fashion_app/build/p34-private/qa/readonly-20261105-163056-4e
 
 **GO 조건 미충족:** 실제 자체 모델 신규 PNG, 실측 기준 정확도, 최신 APK 실기기 E2E,
 정식 서명·운영 API 호환성. 자동 검사·읽기 전용 ADB PASS로 이 항목들을 대체하지 않는다.
+
+## 최종 로컬 후보 및 백업
+
+- 실행/검증 코드 커밋: `59982bef545862aa97945998521837b84805a4ec`.
+  P34 전용 브랜치에 정상 Push하고 원격 SHA 일치를 확인했다. P32·팀 main은 변경하지 않았다.
+- APK: `fashionai-1.1.86.5-preview-vc18605-59982bef.apk`, 148,748,525 bytes.
+- 패키지 `com.jeiu.fashionproject.preview`, `1.1.86.5-preview` / 18605,
+  build 86.5, sourceDirty=false, preview=true, deviceQa=false.
+- SHA256: `820f62c3c98602a0ff8dfbd1b3da3e61092444eb6d991622f72a726612eb51ce`.
+- 인증서: 기존 Preview 신뢰 지문 `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9` 일치.
+  기존 Preview 키를 **Preview에만** 사용했다. 새 정식 키 생성/전용/등록은 하지 않았다.
+- `assembleDebug` + `lintDebug` 성공(23m12s). Lint Error/Fatal 0, Warning 164, Hint 2.
+  기존 경고 억제·검사 삭제 없음. 비대상 전체 Android/Backend/CI를 재실행하지 않았다.
+- CRC, 내장 코드 SHA·브랜치·버전, 새 수정/기존 기능 DEX 표식, 금지 파일·서명 비밀값 검사 통과.
+- 모든 native 바이너리가 P22 LLVM 검사 자료와 byte-for-byte 일치하고, 현 APK SDK zipalign 16KB 통과.
+  실제 16KB 런타임은 미검증이다.
+- 알려진 로컬/원격 version floor 18604를 빌드 전후 확인했고 18605 증가 검사 통과.
+- 기존 임시 키 복원은 빌드/Lint 성공 후에만 수행했고 검사 후 제거했다. 임시 signing 디렉터리 잔존 0.
+- `distributionVerified=false`: GitHub CI/Artifact로 배포한 파일이 아니라 로컬 검증 후보다.
+  `localCandidateChecksPassed=true`, `versionFloorVerified=true`, `installedOnDevice=false`.
+- Push 후 이 브랜치 Actions 실행 0건 확인. 새 CI/PR/Release/Artifact 업로드 없음.
+
+원본 후보: `fashion_app/build/p34-release/`.
+독립 납품 폴더:
+`C:/Users/USER/Documents/ChatGPT/capston/deliveries/P34-Preview-18605-20261105-174218-KST`.
+APK와 BUILD_INFO, SHA256SUMS, LOCAL_VERIFICATION, native-alignment, VERSION_FLOOR,
+zipalign, 집중 검사/보존 결과 및 ACCEPTANCE_NOTES를 복사하고 APK 복사본 SHA 일치를 확인했다.
+키 파일·비밀번호·사진·전체 기기 로그는 납품/Git에 포함하지 않았다.
+18602/18603/18604 원본·납품 APK 총 6개는 기존 SHA와 모두 일치한다.
+
+위 LOCAL_VERIFICATION 및 P34_ACCEPTANCE_STATUS는 빌드 직후 **미설치 시점** 기록이다.
+그 기록을 덮어쓰지 않고, 아래 사용자 승인 후 설치·사용 결과를 별도로 남겼다.
+
+## 사용자 승인 후 18605 설치·최소 화면 검사
+
+사용자가 `18605 안전 업데이트·읽기 중심 화면 검사 허용`이라고 명시적으로 승인했다.
+새 설치 직전 기준으로 재확인하고 Preview만 `install -r`로 업데이트했다.
+QA 18001·개인 사진·카메라·갤러리·기존 기록의 수동 편집은 하지 않았다.
+새 권한 승인, 외부 AI 생성 요청, 앱 삭제/초기화, 원상 덮어쓰기는 0회다.
+
+증거: `fashion_app/build/p34-private/qa/update18605-20261105-174612-fc1c98/`.
+`UPDATE_SUMMARY.json`, `UI_SUMMARY.json`, `FINAL_DEVICE_ACCEPTANCE_REVIEW.json`,
+`POST_UI_STATIC_FILE_METADATA.json`을 구분한다. 후속 결과로 최초 기록을 덮어쓰지 않는다.
+
+| 검사 | 결과 | 실제 범위 |
+|---|---|---|
+| 삭제 없는 Preview 업데이트 | PASS | 18602 → 18605, 패키지·신뢰 서명·후보 해시·소스 SHA 일치 |
+| 설치 직전 기준 안정성 | PASS | 새 24개 해시를 두 번 조회해 전부 동일 |
+| 설치 직후, 화면 탐색 전 비교 | PASS | 24 동일 / 변경·누락·신규 0 |
+| 기록 유지 게스트 진입·홈 | PASS | 스타일을 저장하는 시작 버튼 대신 기록 유지 진입 사용 |
+| 앱 정보 | PASS | 1.1.86.5-preview / 18605 / 59982bef / 신뢰 지문 표시 확인 |
+| 체형 선택·뒤로·재진입·홈 복귀 | PASS | 사진/아바타/사이즈 항목 표시와 선택 화면 왕복; 분석/편집 실행 아님 |
+| 화면 사용 후 데이터 비교 | BLOCKED (변경 내용 미확인) | 19 동일 / 5 변경 / 누락·신규 0; REVIEW_REQUIRED 보존, 추가 UI 조작 중단 |
+| 사용 후 반복 해시 안정성 | PASS | 최종 상태 두 번 조회 시 24/24 동일 |
+| 자체 AI 미준비 화면 | NOT TESTED | 정상 경로가 개인 옷장/피팅을 지나므로 이번 제한에 따라 진입하지 않음 |
+| 촬영·전신 분석·3D 편집·개인 VTON·결과 비교/저장 | NOT TESTED | 승인된 입력/실행 환경 및 해당 시험 범위 없음 |
+| 정식 Release·16KB 런타임 | BLOCKED / NOT TESTED | Preview 검사로 대체하지 않음 |
+
+사용 후 변경된 고정 파일과 소스상 변경 가능 경로:
+
+- `shared_prefs/weather_alert.xml`: WeatherViewModel → 위치/기온 기억.
+- `shared_prefs/recommendation_log.xml`: HomeScreen → 추천 노출 기록.
+- `files/profileInstalled`: androidx.profileinstaller 1.4.0 ProfileVerifier 표식.
+- `no_backup/androidx.work.workdb-wal`, `-shm`: WorkManager SQLite 런타임 파일;
+  앱 시작의 WeatherAlertScheduler와 연결된다.
+
+파일 역할과 쓰기 경로는 확인했지만 **변경된 필드 본문은 읽지 않았다**.
+따라서 모든 변경의 내용이 정상이라거나 모든 사용자 데이터가 보존됐다고 보증하지 않는다.
+원래 UI_SUMMARY의 REVIEW_REQUIRED를 유지하며, 변경을 숨기거나 이전 파일로 맞추지 않았다.
+Preview의 DbSync.isEnabled는 PREVIEW_BUILD에서 false이며 enqueue/flush도 이 조건을 검사한다.
+일반 날씨/카탈로그 네트워크 요청은 가능하므로 외부 네트워크 사용 0회라는 주장은 하지 않는다.
+
+기기 도구의 window metadata/TTY 출력 문제는 조작 전 차단·해결한 검사 도구 문제로 기록했다.
+이번 최소 화면 범위에서 새 앱 결함은 재현하지 못했으며, 나머지 버튼 정상 여부를 확장 판정하지 않는다.
+정식 키·실제 GPU 모델·실측 기준·전체 사용자 E2E 조건은 여전히 충족되지 않았다.
