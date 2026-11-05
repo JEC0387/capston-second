@@ -102,7 +102,8 @@ Preview 키의 전용·새 정식 키 발급을 하지 않는다. 담당자 및 
 | 접근 가능한 데이터 보존/구조 | PASS | 위 24개 범위; 앱 전체/과거 필드 변화 보증 아님 |
 | Preview 업데이트·홈·앱정보·선택화면 왕복 | PASS (P34 재사용) | 18605; P35 재실행 없음 |
 | 오류·취소·중복 방지·저장 실패 보호 | PASS (자동 검사만) | P34 Android 53 / Backend 9; 실기기 전체 버튼 미검증 |
-| 동일 코드 QA 준비 | 진행 중 | 결과 아래 추가; 아직 미설치 |
+| 새 로컬 합성 코드 QA 후보 | PASS (정적 검증) | 18606 / 0755757d; 아래 납품 경로, 미설치 |
+| 로컬 수동 PNG 생성·비교·저장·재열기 | PASS (자동 검사) | 새 P35 8개 + 관련 회귀 21개; 실기기 NOT TESTED |
 | 체형 사진→분석→저장→재실행→재조회 | BLOCKED | 승인된 입력 및 새 QA 버전 설치 승인 없음 |
 | 실측 정확도 | BLOCKED | 대응하는 실측 기준 없음 |
 | 실제 자체 모델→Android→저장/재조회 | BLOCKED | 승인된 실행 서비스/모델/입력 없음 |
@@ -167,3 +168,56 @@ Gradle heap 1GiB→512MiB, 테스트 heap 512MiB/단일 worker로 낮춘 focused
 신규 화면 기능 상태: IMPLEMENTED / TESTED. DEVICE_VERIFIED 아님.
 정식 사용자 입력부터의 END_TO_END_VERIFIED 아님.
 P35 Python 구조 검사 5개와 Android 29개는 서로 다른 구성으로 별도 보고한다.
+
+## 최종 QA 후보 및 보존
+
+- 실행 Commit: `0755757d37369d10840331c08fe939fb94955756`.
+- `com.jeiu.fashionproject.preview.qa` / `1.1.86.6-qa` / versionCode **18606**.
+- APK: `fashionai-1.1.86.6-qa-vc18606-0755757d.apk`.
+- SHA-256: `c72b1bc193a3685a955855b586922fe03a9f76596b0c4e7e679ca889dff8f907`.
+- 신뢰 인증서: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`.
+- QA 빌드 + Lint 성공(13m52s). Error/Fatal 0, Warning 168, Hint 2.
+  추가된 4개 경고는 ManualPhotoExport의 KTX 함수 사용 권고다. 억제/게이트 완화 없음.
+- APK CRC, 내장 SHA/버전/분리 패키지/clean identity, 실제 키·비밀번호 누출 검사,
+  새 기능 DEX 표식 확인. 모든 native 바이너리의 기존 검증본 byte 일치 + 현 ZIP 16KB 정렬 통과.
+- `localCandidateChecksPassed=true`, `versionFloorVerified=true`(읽기 검사에서 확인한 QA 18001 기준),
+  `distributionVerified=false`, `installedOnDevice=false`.
+- Android 자동 검사는 Preview 구성 소스에서 수행했다. QA는 동일 최종 제품 소스와 별도
+  패키지/이름/빌드 식별 구성이며 PREVIEW_BUILD 격리를 유지한다. QA 기기 실행으로 확대하지 않는다.
+- 서명용 임시 디렉터리 잔존 0. 기존 Preview/QA 키만 재사용했고 정식 키 생성·전용 없음.
+- 기존 P34 Preview 18605 원본 SHA를 재확인해 일치했다. APK에 baseline profile 항목 0개임도
+  확인하여 profileInstalled의 327680 상태와 대조했다. 성능 최적화 여부와 데이터 보존을 구분한다.
+- P35에서 기기 설치·앱 화면 조작·데이터 쓰기 0. Preview 18605 / QA 18001 그대로 유지.
+  기존 모든 납품본을 삭제/덮어쓰기/이동하지 않았다. 이번에 이전 납품본 전체를 다시 해시한 것은 아니다.
+
+새 독립 납품 폴더:
+`C:/Users/USER/Documents/ChatGPT/capston/deliveries/P35-QA-18606-20261105-191331-KST`.
+APK 복사 후 SHA 일치 확인. BUILD_INFO, LOCAL_VERIFICATION, SHA256SUMS, native-alignment,
+Lint/집중 검사 요약, 데이터 구조 검사 집계, 운영 GET 결과, QA 인수 안내를 포함한다.
+`synthetic-only/manual-2d-synthetic.png`의 SHA:
+`1627c58379d655859ba3f5af9fd1542f2704d9b6d91ddcac75af3738b63fc2cc`.
+실제 인물 사진이 아닌 단색 검사용 PNG이다. 개인 사진·토큰·원문 DB/환경변수/기기 식별값은 없다.
+
+**이 QA APK는 Preview 업데이트 파일 또는 정식 Release가 아니다.** 설치에는 별도 버전 승인이
+필요하며 설치 직전 현재 QA 버전/서명/데이터 해시를 다시 확인해야 한다.
+
+## 남은 조건과 최종 상태
+
+외부 의존 없는 경로로 실제 구현한 것은 기존 선택 후 드래그/확대/회전/위치맞춤을 활용하는
+2D PNG 합성이다. 옷장 카드 자체를 끌어 놓는 새 drag-and-drop 방식이나 고품질 생성형 착장은 구현하지 않았다.
+현재 Android 의존성은 포즈/피사체 분리/비전 기능이며 착장 생성 모델을 APK에서 실행하는 경로는 없다.
+외부 GPU 없는 생성형 착장에는 별도로 사용 권한·런타임·메모리/지연/품질이 검증된
+온디바이스 모델 경로가 필요하다. 이를 확보했다고 가정하거나 다운로드하지 않았다.
+기존 자체 서버 worker와 동의·인증·취소 경로도 그대로 보존한다.
+
+실측 및 유효 전신 입력 없음은 사용자 확정 조건이다. 실제 분석/정확도와 실제 모델 생성은 BLOCKED.
+운영 인증/AI API 404, 정식 서명 관리 미확정, 새 QA 실기기 버튼·저장·프로세스 재시작 미검증이 남는다.
+정식 패키지 기존 설치본의 서명 호환성/안전 이전도 별도 확인 대상이며 Preview 데이터가 자동 공유되지는 않는다.
+**정식 출시 NO-GO**를 유지한다. 단순 PNG 성공으로 고품질 AI 착장이나 정식 출시 완료를 선언하지 않는다.
+
+변경 파일은 이 문서, tools의 구조 검사/기기 읽기 도구/합성 테스트 3개,
+ManualPhotoExport.kt, ManualPhotoExportPanel.kt, VirtualFittingScreen.kt,
+P35ManualPhotoExportTest.kt, P35ManualPhotoExportUiTest.kt, P35ManualPhotoExportSaveUiTest.kt 총 10개.
+Backend/Auth/DB/서명/Workflow 제품 설정은 변경하지 않았다.
+기능별 `[skip ci]` Commit·Push 사용, 팀 main·운영 서비스·Actions 전체 실행/Artifact 업로드 없음.
+빌드 후 문서만 갱신하며 실행 SHA와 최종 문서 HEAD를 구분한다.
