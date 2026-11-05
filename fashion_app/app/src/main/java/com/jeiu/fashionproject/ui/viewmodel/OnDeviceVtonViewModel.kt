@@ -67,8 +67,9 @@ class OnDeviceVtonViewModel(
     private val roles = DeviceGarmentRole.entries.toSet()
     private val shaPattern = Regex("[a-f0-9]{64}")
 
-    fun issueFor(selection: DeviceVtonSelection?): String? {
-        val available = availability
+    fun issueFor(selection: DeviceVtonSelection?): String? = issueFor(selection, availability)
+
+    private fun issueFor(selection: DeviceVtonSelection?, available: DeviceEngineAvailability): String? {
         if (available is DeviceEngineAvailability.Unavailable) return available.reason
         val model = (available as DeviceEngineAvailability.Ready).model
         if (model.id.isBlank() || model.revision.isBlank() || !shaPattern.matches(model.sha256) ||
@@ -102,14 +103,17 @@ class OnDeviceVtonViewModel(
         if (operation != null || cleared) return
         val frozen = selection.copy()
         currentSelection = frozen
-        val issue = issueFor(frozen)
+        // Validate and prepare the same immutable readiness snapshot. A runtime
+        // can unload or replace its model between two availability reads.
+        val available = availability
+        val issue = issueFor(frozen, available)
         if (issue != null || !approved) {
             state = state.copy(status = DeviceVtonStatus.BLOCKED, pending = false,
                 error = issue ?: "기기 내 AI 처리 안내를 확인하고 동의해주세요.",
                 resultFromPreviousAttempt = state.result != null)
             return
         }
-        val model = (availability as DeviceEngineAvailability.Ready).model.snapshot()
+        val model = (available as DeviceEngineAvailability.Ready).model.snapshot()
         val id = UUID.randomUUID().toString()
         cancelled = false
         timedOut = false

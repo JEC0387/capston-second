@@ -97,14 +97,14 @@ def save_png(encoded, destination):
     return hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
-def main():
+def main(prompt: str = PROMPT):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inputs", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--execute-public-research-once", action="store_true")
     args = parser.parse_args()
     public = load_public_inputs(args.inputs)
-    request = TrialRequest(*(item.sha256 for item in public), hashlib.sha256(PROMPT.encode()).hexdigest())
+    request = TrialRequest(*(item.sha256 for item in public), hashlib.sha256(prompt.encode()).hexdigest())
     if not args.execute_public_research_once:
         print(json.dumps({"preflight": "PASS", "network": False, "fingerprint": request.fingerprint}))
         return
@@ -160,13 +160,13 @@ def main():
         persist()
         # Same client/session is required for the server's gr.State. The returned
         # prepare placeholder is deliberately ignored and never a generated image.
-        prepare = client.submit(gallery, PROMPT, False, True, "speed", 42, False, api_name="/prepare_request")
+        prepare = client.submit(gallery, prompt, False, True, "speed", 42, False, api_name="/prepare_request")
         prepare.result(timeout=180)
         record["phase"] = "generation"
         record["generation_started_at"] = now()
         record["generation_submit_count"] = 1
         persist()
-        job = client.submit(PROMPT, False, True, "./generation_logs_paper_case", 42, 1024, 768, "", api_name="/generate_request")
+        job = client.submit(prompt, False, True, "./generation_logs_paper_case", 42, 1024, 768, "", api_name="/generate_request")
         result = job.result(timeout=480)
         record["result_received_at"] = now()
         record["phase"] = "download"
