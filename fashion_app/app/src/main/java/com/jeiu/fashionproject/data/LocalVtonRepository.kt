@@ -166,6 +166,7 @@ object LocalVtonRepository : TryOnGateway {
             while(true) {
                 coroutineContext.ensureActive()
                 val count=input.read(buffer);if(count<0) break
+                if(count==0) throw TryOnFailure("저장 이미지 읽기가 중단됐어요. 파일을 다시 선택해주세요.")
                 if(out.size()+count>8*1024*1024) throw TryOnFailure("저장 이미지가 너무 커요.")
                 out.write(buffer,0,count)
             }
