@@ -788,6 +788,13 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         // Status changes must not resize the avatar viewport and move an otherwise unchanged auto-fit.
         inputNotice?.let { Text(it, color = Brown,
             modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingInputNotice")) }
+        if (!avatarMode) {
+            val exportInput = bodyPhoto?.takeIf { manual.photoDisplaySize != null && canvasSize.isUsableFittingSize() && worn.isNotEmpty() }?.let {
+                ManualPhotoSnapshot(it.toString(), photoGeneration, canvasSize,
+                    worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha)
+            }
+            ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
+        }
         TextButton(onClick = { showLocalAi = true },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
             Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
