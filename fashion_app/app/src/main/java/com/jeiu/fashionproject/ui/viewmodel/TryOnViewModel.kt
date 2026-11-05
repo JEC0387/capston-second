@@ -30,7 +30,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     var gateway: TryOnGateway = if (localMode) LocalVtonRepository else TryOnRepository
     private fun session() = if (localMode) LocalVtonSession.connection else TryOnSession.connection
     private fun message(code: String?) = if (localMode) LocalVtonRepository.friendly(code) else TryOnRepository.friendly(code)
-    var selectedGarments by mutableStateOf<List<TryOnGarment>>(emptyList())
+    var selectedGarments by mutableStateOf(restoredGarments())
         private set
     var selectedPerson by mutableStateOf<Uri?>(saved.get<String>("person")?.let(Uri::parse))
         private set
@@ -44,9 +44,20 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
     private var cancelAfterSubmit = false
     val requestId: String? get() = saved["requestId"]
 
+    private fun restoredGarments(): List<TryOnGarment> = runCatching {
+        val values = saved.get<ArrayList<String>>("requestGarments") ?: return@runCatching emptyList()
+        if (values.isEmpty() || values.size % 4 != 0 || values.size > 128) return@runCatching emptyList()
+        values.chunked(4).map { TryOnGarment(it[0], it[1], it[2], it[3]) }
+    }.getOrDefault(emptyList())
+
+    /** Returning to a screen is not a new inference. No request or image is persisted here. */
+    fun markResultAsPrevious() {
+        if (state.result != null) state = state.copy(resultFromPreviousAttempt = true)
+    }
+
     /** Only display a real AI result when its original inputs match the current draft. */
     fun resultMatches(person: Uri?, garments: List<TryOnGarment>): Boolean =
-        state.result != null && person != null && state.resultPerson == person.toString() &&
+        state.result != null && state.resultGarments.isNotEmpty() && person != null && state.resultPerson == person.toString() &&
             state.resultGarments == garments
 
     fun generate(context: Context, person: Uri?, garments: List<TryOnGarment>, approved: Boolean) {
@@ -90,6 +101,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                 saved["requestId"] = id
                 saved["base"] = config.base
                 saved["person"] = person.toString() // URI metadata only; no images or credentials
+                saved["requestGarments"] = ArrayList(garments.flatMap { listOf(it.id, it.name, it.category, it.image) })
                 submitted = true // outcome may be unknown once HTTP transmission starts
                 submitting = true
                 try {
@@ -130,7 +142,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
         connection = config
         state = state.copy(pending = true, watching = true, progress = "기존 AI 작업 상태 확인 중…", error = null)
         operation = viewModelScope.launch {
-            try { watch(config, id)
+            try { watch(config, id, previousRequest = true)
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) {
                 state = state.copy(pending = true, watching = false, progress = null,
@@ -139,7 +151,7 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
         }
     }
 
-    private suspend fun watch(config: TryOnConnection, id: String) {
+    private suspend fun watch(config: TryOnConnection, id: String, previousRequest: Boolean = false) {
         // Bound client polling. Server has an independent per-garment deadline.
         withTimeoutOrNull(430_000) {
             while (true) {
@@ -152,10 +164,11 @@ class TryOnViewModel(private val saved: SavedStateHandle) : ViewModel() {
                             } else null
                         if (localMode && bytes == null) saved.remove<String>("requestId")
                         state = state.copy(pending = false, watching = false, progress = null,
-                            error = if (bytes == null) message("result_expired") else null,
+                            error = if (bytes == null) message("result_expired")
+                                else if (selectedGarments.isEmpty()) "기존 작업의 의류 연결 정보를 복원하지 못했어요. 이 결과를 현재 옷의 결과로 표시하거나 새 생성 요청을 보내지 않았어요." else null,
                             result = bytes ?: state.result, resultPerson = if (bytes != null) saved["person"] else state.resultPerson,
                             resultGarments = if (bytes != null) selectedGarments.toList() else state.resultGarments,
-                            resultFromPreviousAttempt = if (bytes != null) false else state.resultFromPreviousAttempt)
+                            resultFromPreviousAttempt = if (bytes != null) previousRequest else state.resultFromPreviousAttempt)
                         return@withTimeoutOrNull true
                     }
                     "failed", "timeout", "cancelled", "interrupted", "expired" -> {

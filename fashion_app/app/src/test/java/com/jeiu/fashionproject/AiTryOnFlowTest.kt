@@ -123,6 +123,29 @@ class AiTryOnFlowTest {
         compose.waitUntil(5000) { file.exists() && file.length() == fake.jpeg.size.toLong() }
         assertArrayEquals(fake.jpeg, file.readBytes()); file.delete()
     }
+    @Test fun documentPickerExportsChosenBytesEvenIfNextMockRequestFinishes() {
+        screen();approve();finished()
+        val chosen=fake.jpeg.copyOf()
+        fake.submitGate=CompletableDeferred()
+        approve()
+        compose.waitUntil(5000) {fake.posts==2}
+        compose.onNodeWithText("결과 이미지 저장").performScrollTo().performClick()
+        compose.runOnIdle {
+            fake.jpeg=java.io.ByteArrayOutputStream().also { out ->
+                val bitmap=android.graphics.Bitmap.createBitmap(32,48,android.graphics.Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(android.graphics.Color.BLUE)
+                bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG,90,out);bitmap.recycle()
+            }.toByteArray()
+            assertFalse(chosen.contentEquals(fake.jpeg))
+            fake.submitGate!!.complete(Unit)
+        }
+        finished()
+        val file=File(app.cacheDir,"p32-mock-export-snapshot.jpg")
+        compose.runOnIdle {registry.dispatchResult(registryCode,Uri.fromFile(file))}
+        compose.waitUntil(5000) {compose.onAllNodesWithText("AI 결과 이미지를 저장했어요.").fetchSemanticsNodes().isNotEmpty()}
+        assertArrayEquals(chosen,file.readBytes())
+        assertEquals(2,fake.posts)
+    }
     @Test fun missingPhotoAndMissingClothesNeverReachGateway() {
         screen()
         compose.runOnIdle {
@@ -183,7 +206,7 @@ class AiTryOnFlowTest {
         var statusValue = TryOnJob("completed", null, 1, 1, true)
         val images = mutableListOf<String>()
         // A genuine local JPEG, never a manual-composite fallback.
-        val jpeg: ByteArray = java.io.ByteArrayOutputStream().also {
+        var jpeg: ByteArray = java.io.ByteArrayOutputStream().also {
             val bitmap = android.graphics.Bitmap.createBitmap(32, 48, android.graphics.Bitmap.Config.ARGB_8888)
             bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it); bitmap.recycle()
         }.toByteArray()

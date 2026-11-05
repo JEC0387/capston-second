@@ -32,7 +32,7 @@ ENGINE = 'fashn-vton-1.5-local'
 
 class EngineFailure(LocalVtonError):
     def __init__(self,code):
-        self.code=code if code=='cuda_out_of_memory' else 'model_failed'
+        self.code=code if code in ('cuda_out_of_memory','model_load_failed','model_inference_failed') else 'model_failed'
         super().__init__(self.code)
 
 
@@ -201,7 +201,11 @@ class LocalVtonService:
                         raise ValueError('journal_schema')
                     if not all(re.fullmatch('[a-f0-9]{64}', job[key]) for key in ('owner','fingerprint')):
                         raise ValueError('journal_schema')
-                    if job['status'] not in TERMINAL:
+                    if job['status'] == 'completed':
+                        # PNGs intentionally live only in RAM. A restarted process
+                        # cannot serve this earlier result or silently regenerate it.
+                        job.update(status='expired', error='result_expired')
+                    elif job['status'] not in TERMINAL:
                         job.update(status='interrupted', error='server_restarted')
             self.journal_ready = True
             self.persist()
@@ -217,6 +221,18 @@ class LocalVtonService:
             json.dump(self.jobs, stream, separators=(',', ':'))
             stream.flush();os.fsync(stream.fileno())
         os.replace(temporary, path)
+
+    def persist_job_state(self, job):
+        """Do not acknowledge a terminal result/delete after its durable write fails."""
+        if self.journal_ready:
+            try:
+                self.persist()
+                return True
+            except OSError:
+                self.journal_ready = False
+        self.results.pop(job['id'], None)
+        job.update(status='failed', error='journal_unavailable', metrics={})
+        return False
 
     def authenticate(self, request):
         local = (self.settings.allow_loopback_http and request.url.scheme == 'http' and request.client
@@ -274,8 +290,11 @@ class LocalVtonService:
             'engine':ENGINE,'step':1,'count':1,'result_available':job['id'] in self.results}
 
     async def run(self, job, person, garment, options):
+        result_to_publish = None
         try:
-            job['status']='running';self.persist()
+            job['status']='running'
+            if not self.persist_job_state(job):
+                return
             result, metrics = await asyncio.wait_for(self.engine.generate(person,garment,options),self.settings.timeout)
             # Validate and strip all output metadata before publishing a real worker result.
             if len(result) > 8 * 1024 * 1024:
@@ -288,7 +307,7 @@ class LocalVtonService:
             allowed=('model_load_seconds','inference_seconds','vram_peak_bytes','width','height')
             job['metrics']={k:metrics[k] for k in allowed if k in metrics and
                 (metrics[k] is None or isinstance(metrics[k],(float,int)) and math.isfinite(metrics[k]) and metrics[k]>=0)}
-            self.results[job['id']]=(result,time.time()+self.settings.result_ttl)
+            result_to_publish = result
             job.update(status='completed',error=None)
         except asyncio.TimeoutError:
             job.update(status='timeout',error='timeout')
@@ -301,7 +320,9 @@ class LocalVtonService:
         finally:
             self.active=None
             self.tasks.pop(job['id'],None)
-            self.persist()
+            if self.persist_job_state(job) and result_to_publish is not None and job['status']=='completed':
+                # No await separates durable completion from publishing RAM bytes.
+                self.results[job['id']]=(result_to_publish,time.time()+self.settings.result_ttl)
 
     async def close(self):
         for task in list(self.tasks.values()):task.cancel()
@@ -408,7 +429,8 @@ def create_app(settings=None, engine=None):
             await asyncio.gather(task,return_exceptions=True)
             service.tasks.pop(id,None)
             if service.active==id:service.active=None
-        service.persist()
+        if not service.persist_job_state(job):
+            raise HTTPException(503,'journal_unavailable')
         return service.view(job)
     return app
 

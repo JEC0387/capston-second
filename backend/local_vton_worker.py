@@ -5,9 +5,35 @@ from pathlib import Path
 import sys
 import time
 import threading
+from contextlib import contextmanager
 
 from local_vton import read_input, check_weights, verify_weight_manifest, require_offline_model_loading
 from local_vton_parser import verify_parser_assets, verify_runtime_revisions, load_verified_pipeline
+
+
+class WorkerStageFailure(RuntimeError):
+    """Fixed public code only; never contains input paths or model exception text."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+def failure_code(error):
+    if error.__class__.__name__ == 'OutOfMemoryError':
+        return 'cuda_out_of_memory'
+    if isinstance(error, WorkerStageFailure) and error.code in ('model_load_failed', 'model_inference_failed'):
+        return error.code
+    return 'model_failed'
+
+
+@contextmanager
+def model_stage(code):
+    try:
+        yield
+    except Exception as error:
+        if error.__class__.__name__ == 'OutOfMemoryError':
+            raise
+        raise WorkerStageFailure(code) from None
 
 
 def watch_parent(parent):
@@ -51,16 +77,18 @@ def main():
         torch.cuda.reset_peak_memory_stats()
     person, garment = read_input(folder / "person.png"), read_input(folder / "garment.png")
     started = time.perf_counter()
-    pipeline = load_verified_pipeline(weights_dir=str(check_weights(Path(options["weights_dir"]))), device=device)
-    if device == "cuda":
-        torch.cuda.synchronize()
+    with model_stage('model_load_failed'):
+        pipeline = load_verified_pipeline(weights_dir=str(check_weights(Path(options["weights_dir"]))), device=device)
+        if device == "cuda":
+            torch.cuda.synchronize()
     loaded = time.perf_counter()
-    with torch.inference_mode():
-        result = pipeline(person_image=person, garment_image=garment, category=options["category"],
-            garment_photo_type=options["garment_photo_type"], num_samples=1,
-            num_timesteps=options["num_timesteps"], seed=options["seed"], segmentation_free=True)
-    if device == "cuda":
-        torch.cuda.synchronize()
+    with model_stage('model_inference_failed'):
+        with torch.inference_mode():
+            result = pipeline(person_image=person, garment_image=garment, category=options["category"],
+                garment_photo_type=options["garment_photo_type"], num_samples=1,
+                num_timesteps=options["num_timesteps"], seed=options["seed"], segmentation_free=True)
+        if device == "cuda":
+            torch.cuda.synchronize()
     finished = time.perf_counter()
     image = result.images[0].convert("RGB")
     image.info.clear()
@@ -76,7 +104,7 @@ if __name__ == "__main__":
         main()
     except Exception as error:
         # No traceback/input paths/photos/provider payloads are logged.
-        code='cuda_out_of_memory' if error.__class__.__name__=='OutOfMemoryError' else 'model_failed'
+        code = failure_code(error)
         try:
             (Path(sys.argv[1])/'error.json').write_text(json.dumps({'error':code}))
         except Exception:

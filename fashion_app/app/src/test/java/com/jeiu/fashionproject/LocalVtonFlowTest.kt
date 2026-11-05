@@ -2,6 +2,8 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
 import android.net.Uri
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResultRegistry
@@ -26,12 +28,17 @@ import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
+import java.io.ByteArrayInputStream
 import java.io.IOException
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35],application=Application::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LocalVtonFlowTest {
     @get:Rule val compose=createComposeRule()
     private val photo=Uri.parse("content://test-original/person.png")
@@ -41,13 +48,25 @@ class LocalVtonFlowTest {
     private val model=TryOnViewModel(saved).also {it.gateway=fake}
     private var visible by mutableStateOf(true)
     private var inputsAbsent by mutableStateOf(false)
-    private val owner=object:ActivityResultRegistryOwner {
-        override val activityResultRegistry=object:ActivityResultRegistry() {
-            override fun <I,O> onLaunch(requestCode:Int,contract:ActivityResultContract<I,O>,input:I,options:ActivityOptionsCompat?) {}
-        }
+    private var registryCode=0
+    private val registry=object:ActivityResultRegistry() {
+        override fun <I,O> onLaunch(requestCode:Int,contract:ActivityResultContract<I,O>,input:I,options:ActivityOptionsCompat?) {registryCode=requestCode}
     }
+    private val owner=object:ActivityResultRegistryOwner { override val activityResultRegistry=registry }
     private val app get()=ApplicationProvider.getApplicationContext<Application>()
     @Before fun connect() {
+        // Native Coil decoding needs real, reopenable fixture streams. These are
+        // synthetic inputs, not real people, remote images or inference results.
+        val input=Bitmap.createBitmap(32,64,Bitmap.Config.ARGB_8888)
+        val bytes=try {
+            input.eraseColor(Color.GRAY)
+            ByteArrayOutputStream().apply {check(input.compress(Bitmap.CompressFormat.PNG,100,this))}.toByteArray()
+        } finally {input.recycle()}
+        listOf("person.png","shirt.png","pants.png","other-shirt.png","other.png").forEach {name ->
+            shadowOf(app.contentResolver).registerInputStreamSupplier(Uri.parse("content://test-original/$name")) {
+                ByteArrayInputStream(bytes)
+            }
+        }
         assertTrue(LocalVtonSession.configure("https://self-hosted.example","local-only-test-token-000000000000001"))
         assertTrue(TryOnSession.configure("https://paid.example","paid-only-test-token-0000000000000001"))
     }
@@ -126,12 +145,26 @@ class LocalVtonFlowTest {
         compose.onNodeWithTag("localGarment-top").performScrollTo().performClick()
         approve();done()
         compose.onNodeWithContentDescription("자체 AI 생성 결과").assertExists()
+        val firstResult=requireNotNull(model.state.result).copyOf()
+        val firstRequest=model.requestId
         compose.onNodeWithTag("localGarment-other-top").performScrollTo().performClick()
         compose.onNodeWithTag("localVtonSuccess").assertDoesNotExist()
         compose.onNodeWithText("PNG 저장").assertDoesNotExist()
         compose.onNodeWithContentDescription("자체 AI 생성 결과").assertDoesNotExist()
         compose.onNodeWithContentDescription("원본 사진").assertExists()
         compose.runOnIdle {assertEquals(1,fake.posts)}
+        compose.runOnIdle {fake.resultColor=Color.BLUE}
+        approve();done()
+        compose.runOnIdle {
+            assertEquals(2,fake.posts)
+            assertNotEquals(firstRequest,model.requestId)
+            assertEquals(listOf(other),model.state.resultGarments)
+            assertEquals(other.image,fake.images.last())
+            assertFalse(firstResult.contentEquals(requireNotNull(model.state.result)))
+            assertFalse(model.resultMatches(photo,listOf(garment)))
+            assertTrue(model.resultMatches(photo,listOf(other)))
+            assertFalse(model.state.resultFromPreviousAttempt)
+        }
     }
     @Test fun unreadyServerBlocksGenerationUntilExplicitSuccessfulReadinessCheck() {
         fake.notReady=true
@@ -147,12 +180,15 @@ class LocalVtonFlowTest {
         fake.uncertain=true
         compose.runOnIdle {model.generate(app,photo,listOf(garment),true)}
         compose.waitUntil(5000) {model.state.pending && !model.state.watching}
-        val restored=TryOnViewModel(saved).also {it.gateway=fake}
+        val restored=TryOnViewModel(SavedStateHandle(saved.keys().associateWith {saved.get<Any?>(it)})).also {it.gateway=fake}
         compose.runOnIdle {fake.uncertain=false;restored.resume()}
         compose.waitUntil(5000) {!restored.state.pending}
         compose.runOnIdle {
             assertEquals(1,fake.posts)
             assertFalse(saved.keys().any {it.contains("token",true)})
+            assertEquals("Restored output must retain the submitted garment, not an empty/current draft", listOf(garment), restored.state.resultGarments)
+            assertTrue(restored.resultMatches(photo, listOf(garment)))
+            assertTrue("GET recovery is a previous request, not a new generation", restored.state.resultFromPreviousAttempt)
             restored.viewModelScope.cancel()
         }
     }
@@ -214,10 +250,90 @@ class LocalVtonFlowTest {
             assertTrue(model.state.error.orEmpty().contains("만료"))
         }
     }
+    @Test fun savePickerKeepsTheResultChosenBeforeAnotherRequestCompletes() {
+        fake.resultColor=Color.RED
+        screen();approve();done()
+        fake.gate=CompletableDeferred()
+        approve()
+        compose.waitUntil(5000) {fake.posts==2}
+        compose.onNodeWithText("PNG 저장").performScrollTo().performClick()
+        val target=File(app.cacheDir,"p32-export-snapshot.png")
+        compose.runOnIdle {fake.resultColor=Color.BLUE;fake.gate!!.complete(Unit)}
+        done()
+        compose.runOnIdle {registry.dispatchResult(registryCode,Uri.fromFile(target))}
+        compose.waitUntil(5000) {compose.onAllNodesWithText("자체 AI 결과를 저장했어요.").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("자체 AI 결과를 저장했어요.").performScrollTo().assertIsDisplayed()
+        val decoded=BitmapFactory.decodeFile(target.path)
+        assertNotNull(decoded)
+        assertEquals("Save must export the selected red result A, not later blue result B",Color.RED,decoded.getPixel(100,100))
+        decoded.recycle()
+        assertEquals(2,fake.posts)
+    }
+    @Test fun explicitlyReopenedSavedImageIsNotANewGeneratedResult() {
+        // Synthetic saved output in the test app sandbox; no real photo or model execution.
+        val target=File(app.cacheDir,"p32-previous-synthetic.png")
+        runBlocking {target.writeBytes(fake.result(LocalVtonSession.connection!!,"unused-synthetic"))}
+        screen()
+        compose.onNodeWithText("저장한 이미지 다시 열기").performScrollTo().performClick()
+        compose.runOnIdle {registry.dispatchResult(registryCode,Uri.fromFile(target))}
+        compose.waitUntil(5000) {compose.onAllNodesWithTag("localSavedImage").fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithText("이전에 저장한 이미지 · 새 AI 생성 결과가 아니에요").assertIsDisplayed()
+        compose.onNodeWithTag("localVtonSuccess").assertDoesNotExist()
+        compose.runOnIdle {assertEquals(0,fake.posts);assertNull(model.state.result)}
+        compose.onNodeWithText("저장 이미지 닫기").performClick()
+        compose.onNodeWithTag("localSavedImage").assertDoesNotExist()
+    }
+    @Test fun returningToCompletedResultClearlyLabelsItAsPreviousWithoutPosting() {
+        screen();approve();done()
+        compose.runOnIdle {visible=false}
+        compose.runOnIdle {visible=true}
+        compose.onNodeWithTag("localVtonSuccess").performScrollTo().assertTextContains("이전",substring=true)
+        compose.runOnIdle {assertEquals(1,fake.posts)}
+    }
+    @Test fun legacyJobWithoutGarmentMetadataNeverMatchesAnEmptyOrNewSelection() {
+        val legacy=TryOnViewModel(SavedStateHandle(mapOf("engine" to "local", "requestId" to java.util.UUID.randomUUID().toString(),
+            "base" to LocalVtonSession.connection!!.base, "person" to photo.toString()))).also {it.gateway=fake}
+        compose.runOnIdle {legacy.resume()}
+        compose.waitUntil(5000) {!legacy.state.pending}
+        compose.runOnIdle {
+            assertFalse(legacy.resultMatches(photo,emptyList()))
+            assertFalse(legacy.resultMatches(photo,listOf(garment)))
+            assertEquals(0,fake.posts)
+            legacy.viewModelScope.cancel()
+        }
+    }
+    @Test fun restoredScreenKeepsResultAndSaveActionsWhenEntryHasNoGarments() = restoredScreen(emptyList())
+    @Test fun restoredScreenSelectsSubmittedGarmentAmongSeveralThenHidesResultForAnother() =
+        restoredScreen(listOf(garment,TryOnGarment("other","다른 옷","상의","content://test-original/other.png")))
+
+    private fun restoredScreen(incoming: List<TryOnGarment>) {
+        fake.uncertain=true
+        compose.runOnIdle {model.generate(app,photo,listOf(garment),true)}
+        compose.waitUntil(5000) {model.state.pending && !model.state.watching}
+        val restored=TryOnViewModel(SavedStateHandle(saved.keys().associateWith {saved.get<Any?>(it)})).also {it.gateway=fake}
+        fake.uncertain=false
+        try {
+            compose.setContent {CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
+                Box(Modifier.height(480.dp)) {LocalVtonScreen(null,incoming,{},restored)}
+            }}
+            compose.onNodeWithText("기존 자체 AI 작업 조회").performScrollTo().performClick()
+            compose.waitUntil(5000) {!restored.state.pending}
+            compose.onNodeWithTag("localVtonSuccess").performScrollTo().assertTextContains("이전",substring=true)
+            compose.onNodeWithText("PNG 저장").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("localGarment-top").performScrollTo().assertIsSelected()
+            if(incoming.size>1) {
+                compose.onNodeWithTag("localGarment-other").performScrollTo().performClick()
+                compose.onNodeWithTag("localVtonSuccess").assertDoesNotExist()
+                compose.onNodeWithText("PNG 저장").assertDoesNotExist()
+            }
+            compose.runOnIdle {assertEquals(1,fake.posts)}
+        } finally {compose.runOnIdle {restored.viewModelScope.cancel()}}
+    }
     private class Fake:TryOnGateway {
         val images=mutableListOf<String>()
         var posts=0;var cancels=0;var base="";var categories=listOf<String>();var notReady=false
         var gate:CompletableDeferred<Unit>?=null;var fail=false;var uncertain=false;var expiredResult=false
+        var resultColor=Color.TRANSPARENT
         override suspend fun image(context:android.content.Context,source:String):String {images+=source;return "prepared-inline-image"}
         override suspend fun check(connection:TryOnConnection) {
             base=connection.base
@@ -232,7 +348,7 @@ class LocalVtonFlowTest {
             TryOnJob("cancelled","cancelled",1,1,false) else TryOnJob("completed",null,1,1,true)
         override suspend fun result(connection:TryOnConnection,id:String):ByteArray {
             if(expiredResult) throw TryOnHttpFailure(410,LocalVtonRepository.friendly("result_expired"))
-            val image=Bitmap.createBitmap(256,384,Bitmap.Config.ARGB_8888);val out=ByteArrayOutputStream()
+            val image=Bitmap.createBitmap(256,384,Bitmap.Config.ARGB_8888);image.eraseColor(resultColor);val out=ByteArrayOutputStream()
             image.compress(Bitmap.CompressFormat.PNG,100,out);image.recycle();return out.toByteArray()
         }
         override suspend fun cancel(connection:TryOnConnection,id:String) {cancels++}

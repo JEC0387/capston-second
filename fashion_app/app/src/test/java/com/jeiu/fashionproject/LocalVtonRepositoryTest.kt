@@ -2,6 +2,7 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.*
@@ -14,12 +15,14 @@ import org.junit.Assert.*
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk=[35],application=Application::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class LocalVtonRepositoryTest {
     private val server=MockWebServer()
     private lateinit var connection: TryOnConnection
@@ -108,5 +111,36 @@ class LocalVtonRepositoryTest {
             LocalVtonRepository.prepare(app,"android.resource://another.app/drawable/sample_01",TryOnInputRole.GARMENT)
             fail("Only this app's bundled sample may be used")
         } catch(_:TryOnFailure) {}
+    }
+    @Test fun savedImagesCanBeReadBackWithoutAnyNetworkOrGeneration()=runBlocking {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        for(isPng in listOf(true,false)) {
+            val file=File(app.cacheDir,if(isPng) "p32-saved.png" else "p32-saved.jpg")
+            LocalVtonRepository.save(app,png(),Uri.fromFile(file),isPng)
+            val reopened=LocalVtonRepository.openSavedImage(app,Uri.fromFile(file))
+            assertArrayEquals(file.readBytes(),reopened)
+            val image=BitmapFactory.decodeByteArray(reopened,0,reopened.size)
+            assertEquals(256,image.width);assertEquals(384,image.height);image.recycle()
+        }
+        assertEquals(0,server.requestCount)
+    }
+    @Test fun invalidOrOversizedDocumentsAndWebUrlsAreRejectedBeforeDisplay()=runBlocking {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val file=File(app.cacheDir,"p32-invalid.png")
+        for(bytes in listOf("not an image".toByteArray(),png().copyOf(33),ByteArray(8*1024*1024+1))) {
+            file.writeBytes(bytes)
+            try {LocalVtonRepository.openSavedImage(app,Uri.fromFile(file));fail("Invalid output must not be displayed")}
+            catch(_:TryOnFailure) {}
+        }
+        try {LocalVtonRepository.openSavedImage(app,Uri.parse(server.url("/photo.png").toString()));fail("No URL fetching")}
+        catch(_:TryOnFailure) {}
+        assertEquals(0,server.requestCount)
+    }
+    @Test fun parserAndWorkerStageErrorsExplainTheActualBlockedStage() {
+        assertTrue(LocalVtonRepository.friendly("parser_integrity_unavailable").contains("운영자"))
+        assertTrue(LocalVtonRepository.friendly("cpu_not_approved").contains("승인"))
+        assertTrue(LocalVtonRepository.friendly("model_load_failed").contains("불러오지"))
+        assertTrue(LocalVtonRepository.friendly("model_inference_failed").contains("생성 중"))
+        assertTrue(LocalVtonRepository.friendly("cuda_out_of_memory").contains("메모리"))
     }
 }

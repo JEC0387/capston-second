@@ -85,10 +85,11 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                     style = MaterialTheme.typography.bodySmall)
                 Button(onClick = {
                     val numbers = fields.map { if (it.isBlank()) null else it.toFloatOrNull() }
+                    val incompleteNumber = fields.indices.any { fields[it].isNotBlank() && numbers[it] == null }
                     val value = numbers[0]?.let { height -> ManualBodyMeasurements(
                         height, numbers[1], numbers[2], numbers[3], numbers[4],
                         numbers[5], numbers[6], System.currentTimeMillis()) }
-                    if (value == null || !value.isValid()) message = "입력 범위를 확인해주세요. 키 100~230 cm, 어깨 15~75 cm, 둘레 40~200 cm이며 다리·상체 길이는 키와 비례해야 해요."
+                    if (incompleteNumber || value == null || !value.isValid()) message = "입력 범위를 확인해주세요. 키 100~230 cm, 어깨 15~75 cm, 둘레 40~200 cm이며 다리·상체 길이는 키와 비례해야 해요."
                     else if (!ManualBodyStore.update(context, value, saveOnDevice)) message = "기기에 입력값을 저장하지 못했어요. 다시 시도해주세요."
                     else {
                         onUseHeight(fields[0])

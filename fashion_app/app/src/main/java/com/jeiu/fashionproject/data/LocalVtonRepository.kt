@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -137,10 +138,13 @@ object LocalVtonRepository : TryOnGateway {
         val signature=byteArrayOf(-119,80,78,71,13,10,26,10)
         if (bytes.size !in 8..8*1024*1024 || !bytes.take(8).toByteArray().contentEquals(signature))
             throw TryOnFailure("유효한 자체 AI PNG 결과가 없어요.")
+        validateDecodedImage(bytes,setOf("image/png"))
+    }
+    private fun validateDecodedImage(bytes: ByteArray, types: Set<String>) {
         val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
         try {BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)}
         catch (_: RuntimeException) {throw TryOnFailure("자체 AI PNG 결과를 읽지 못했어요.")}
-        if (minOf(bounds.outWidth,bounds.outHeight)<32 || bounds.outWidth.toLong()*bounds.outHeight>20_000_000)
+        if (bounds.outMimeType !in types || minOf(bounds.outWidth,bounds.outHeight)<32 || bounds.outWidth.toLong()*bounds.outHeight>20_000_000)
             throw TryOnFailure("자체 AI 결과 크기가 유효하지 않아요.")
         var sample=1
         while(maxOf(bounds.outWidth,bounds.outHeight)/sample>1024)sample*=2
@@ -149,6 +153,33 @@ object LocalVtonRepository : TryOnGateway {
             catch (_: RuntimeException) {throw TryOnFailure("자체 AI PNG 결과를 끝까지 읽지 못했어요.")}
             ?: throw TryOnFailure("자체 AI PNG 결과를 끝까지 읽지 못했어요.")
         decoded.recycle()
+    }
+    /** Explicit document selection only. Never uploads, changes a job, or proves AI provenance. */
+    suspend fun openSavedImage(context: Context, source: Uri): ByteArray = withContext(Dispatchers.IO) {
+        val sandboxFile=source.scheme=="file" && runCatching {
+            val path=File(requireNotNull(source.path)).canonicalPath
+            listOf(context.filesDir,context.cacheDir).any { path.startsWith(it.canonicalPath+File.separator) }
+        }.getOrDefault(false)
+        if(source.scheme!="content" && !sandboxFile) throw TryOnFailure("직접 선택한 저장 이미지 문서만 열 수 있어요.")
+        val bytes=context.contentResolver.openInputStream(source)?.use { input ->
+            val out=ByteArrayOutputStream();val buffer=ByteArray(8192)
+            while(true) {
+                coroutineContext.ensureActive()
+                val count=input.read(buffer);if(count<0) break
+                if(out.size()+count>8*1024*1024) throw TryOnFailure("저장 이미지가 너무 커요.")
+                out.write(buffer,0,count)
+            }
+            out.toByteArray()
+        } ?: throw TryOnFailure("저장 이미지를 열지 못했어요.")
+        if(bytes.size<8) throw TryOnFailure("유효한 저장 이미지가 아니에요.")
+        if(bytes[0]==(-119).toByte()) validatePng(bytes)
+        else {
+            if(bytes[0]!=(-1).toByte() || bytes[1]!=(-40).toByte() ||
+                bytes[bytes.size-2]!=(-1).toByte() || bytes.last()!=(-39).toByte())
+                throw TryOnFailure("PNG/JPG 저장 이미지만 열 수 있어요.")
+            validateDecodedImage(bytes,setOf("image/jpeg"))
+        }
+        bytes
     }
     suspend fun save(context: Context,bytes: ByteArray,target: Uri,png: Boolean) = withContext(Dispatchers.IO) {
         validatePng(bytes)
@@ -164,11 +195,15 @@ object LocalVtonRepository : TryOnGateway {
     fun friendly(reason: String?): String = when(reason) {
         "disabled" -> "자체 AI 서버의 모델 실행이 꺼져 있어요."
         "research_license_required" -> "운영자가 Human Parser의 연구·평가용 라이선스를 확인해야 해요."
+        "parser_integrity_unavailable" -> "운영자가 Human Parser·SegFormer 파일 무결성과 라이선스 검토 기록을 확인해야 해요. 사진을 다시 선택해도 해결되지 않아요."
+        "cpu_not_approved" -> "자체 AI 서버의 CPU 실행이 승인되지 않았어요. 운영자가 허가된 실행 환경을 준비해야 해요."
         "cuda_unavailable","vram_below_model_guidance" -> "자체 AI 서버에 사용 가능한 CUDA GPU 또는 충분한 VRAM이 없어요."
         "weights_missing","weights_or_runtime_unavailable","dependencies_missing" -> "자체 AI 서버의 모델 가중치·파서 캐시·실행 환경이 준비되지 않았어요."
         "journal_unavailable","authentication_not_configured" -> "자체 AI 서버의 안전한 인증·작업 기록 설정이 필요해요."
         "timeout" -> "자체 AI 생성 시간이 초과되어 작업을 중단했어요. 새 생성에는 다시 동의해야 해요."
         "cuda_out_of_memory" -> "자체 AI 서버의 GPU 메모리가 부족해 생성하지 못했어요. 운영자가 GPU 사용량을 확인해야 해요."
+        "model_load_failed" -> "자체 AI 모델을 불러오지 못했어요. 운영자가 모델 파일과 실행 환경을 확인해야 해요. 자동 재생성하지 않아요."
+        "model_inference_failed" -> "모델을 불러온 뒤 착장 생성 중 오류가 발생했어요. 새 결과는 없으며 자동 재생성하지 않아요."
         "cancelled" -> "자체 AI 작업을 취소했어요."
         "result_expired","expired" -> "자체 AI 결과의 보관 시간이 만료됐어요. 자동으로 재생성하지 않아요."
         "server_restarted","interrupted" -> "자체 AI 서버가 재시작되어 결과를 복구할 수 없어요. 자동 재생성하지 않았어요."

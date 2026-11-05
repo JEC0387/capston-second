@@ -55,12 +55,16 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
     val state=model.state
+    LaunchedEffect(model) { model.markResultAsPrevious() }
     var chosenPhoto by rememberSaveable { mutableStateOf(defaultPhoto?.toString()) }
-    var chosenId by rememberSaveable { mutableStateOf(garments.singleOrNull()?.id) }
-    LaunchedEffect(garments) {
-        if (garments.none { it.id == chosenId }) chosenId = garments.singleOrNull()?.id
+    val availableGarments=garments.ifEmpty {model.selectedGarments}
+    fun restoredChoice()=model.selectedGarments.singleOrNull()?.id?.takeIf {id -> availableGarments.any {it.id==id}}
+        ?: availableGarments.singleOrNull()?.id
+    var chosenId by rememberSaveable { mutableStateOf(restoredChoice()) }
+    LaunchedEffect(availableGarments) {
+        if (availableGarments.none { it.id == chosenId }) chosenId = restoredChoice()
     }
-    val selected=if(state.pending) model.selectedGarments else garments.filter { it.id==chosenId }
+    val selected=if(state.pending) model.selectedGarments else availableGarments.filter { it.id==chosenId }
     val person=if(state.pending) model.selectedPerson else chosenPhoto?.let(Uri::parse) ?: model.selectedPerson
     val issue=LocalVtonRepository.selectionIssue(selected)
     val currentResult=state.result?.takeIf { model.resultMatches(person,selected) }
@@ -76,7 +80,14 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     var compare by remember { mutableStateOf(false) }
     var originalVisible by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    // Keep the exact bytes the user chose, even if a pending request finishes in the picker.
+    // Not saveable: process loss must fail closed, not export a different result.
+    var exportSnapshot by remember { mutableStateOf<ByteArray?>(null) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
+    var openedSavedImage by remember { mutableStateOf<ByteArray?>(null) }
+    var readingSavedImage by remember { mutableStateOf(false) }
+    var choosingSavedImage by remember { mutableStateOf(false) }
+    var savedImageError by remember { mutableStateOf<String?>(null) }
     val connection=LocalVtonSession.connection
 
     suspend fun checkServer() {
@@ -97,11 +108,13 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     }
     LaunchedEffect(connection) { checkServer() }
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if(uri!=null && !state.pending) chosenPhoto=uri.toString()
+        if(uri!=null && !state.pending) {chosenPhoto=uri.toString();model.markResultAsPrevious()}
     }
     fun save(target: Uri?,png: Boolean) {
-        val bytes=currentResult ?: return
-        if(target==null || saving) return
+        val bytes=exportSnapshot
+        exportSnapshot=null
+        if(target==null) return
+        if(bytes==null || saving) {saveMessage="저장할 결과 연결이 사라졌어요. 결과를 확인하고 저장을 다시 선택해주세요.";return}
         saving=true
         scope.launch {
             try { LocalVtonRepository.save(context,bytes,target,png);saveMessage="자체 AI 결과를 저장했어요."
@@ -112,6 +125,27 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
     }
     val pngPicker=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { save(it,true) }
     val jpgPicker=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { save(it,false) }
+    fun export(png: Boolean) {
+        val bytes=currentResult ?: return
+        if(saving || exportSnapshot!=null) return
+        exportSnapshot=bytes.copyOf();saveMessage=null
+        try {
+            if(png) pngPicker.launch("local-vton-"+System.currentTimeMillis()+".png")
+            else jpgPicker.launch("local-vton-"+System.currentTimeMillis()+".jpg")
+        } catch(_: Exception) {exportSnapshot=null;saveMessage="저장 위치 선택 화면을 열지 못했어요."}
+    }
+    val savedImagePicker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        choosingSavedImage=false
+        if(uri!=null && !readingSavedImage) {
+            openedSavedImage=null;savedImageError=null;readingSavedImage=true
+            scope.launch {
+                try {openedSavedImage=LocalVtonRepository.openSavedImage(context,uri)}
+                catch(cancelled: CancellationException) {throw cancelled}
+                catch(_: Exception) {savedImageError="저장 이미지를 읽지 못했어요. 접근 권한·PNG/JPG 형식·파일 크기를 확인해주세요."}
+                finally {readingSavedImage=false}
+            }
+        }
+    }
 
     // Keep the private-server screen's input draft remembered while visiting the separate public mode.
     if (BuildConfig.DEBUG && BuildConfig.PREVIEW_BUILD && showOfficialDemo) {
@@ -144,6 +178,13 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
         dismissButton={TextButton(onClick={review=false}) {Text("전송하지 않기")}})
     if(compare && currentResult!=null) TryOnComparisonDialog(state.resultPerson,currentResult,
         state.resultFromPreviousAttempt) {compare=false}
+    if(openedSavedImage!=null) AlertDialog(onDismissRequest={openedSavedImage=null},
+        title={Text("이전에 저장한 이미지 · 새 AI 생성 결과가 아니에요")},
+        text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("선택한 파일만 기기에서 열었어요. 원본·의류·AI 생성 출처는 이 파일만으로 확인할 수 없어요.")
+            AsyncImage(openedSavedImage,"사용자가 다시 연 저장 이미지",contentScale=ContentScale.Fit,
+                modifier=Modifier.fillMaxWidth().height(320.dp).testTag("localSavedImage"))
+        }},confirmButton={TextButton(onClick={openedSavedImage=null}) {Text("저장 이미지 닫기")}})
     if(stopTracking) AlertDialog(onDismissRequest={stopTracking=false},title={Text("기기에서 작업 추적을 종료할까요?")},
         text={Text("서버 작업이 취소됐다는 뜻은 아니에요. 먼저 서버 상태를 확인하고, 새 생성은 별도 동의 후 시작해요. 자동 재요청하지 않아요.")},
         confirmButton={TextButton(onClick={stopTracking=false;model.stopLocalTracking()}) {Text("추적만 종료")}},
@@ -172,9 +213,10 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
                 enabled=!state.pending) {Text("원본 전신 사진 선택")}
             Text("얼굴·양쪽 어깨·발목까지 보이는 정면 사진과 의류 전체가 보이는 사진을 사용해요.")
             Text("옷장에서 의류 한 벌 선택",style=MaterialTheme.typography.titleMedium,color=Brown)
-            (if(state.pending) model.selectedGarments else garments).forEach { garment ->
+            if(garments.isEmpty() && availableGarments.isNotEmpty()) Text("이전 요청의 의류 정보를 다시 표시했어요. 원본 파일 접근이 만료되면 사진을 다시 선택해주세요.")
+            (if(state.pending) model.selectedGarments else availableGarments).forEach { garment ->
                 Row {
-                    RadioButton(selected=chosenId==garment.id,onClick={chosenId=garment.id},
+                    RadioButton(selected=selected.any {it.id==garment.id},onClick={chosenId=garment.id},
                         enabled=!state.pending && TryOnPlan.categoryFor(garment.category)!=null,
                         modifier=Modifier.testTag("localGarment-"+garment.id))
                     Text(garment.category+" · "+garment.name)
@@ -213,13 +255,20 @@ fun LocalVtonScreen(defaultPhoto: Uri?,garments: List<TryOnGarment>,onBack: () -
                     else "자체 AI 생성 결과 · 실제 착용·정체성 보존 미보장",modifier=Modifier.testTag("localVtonSuccess"))
                 OutlinedButton(onClick={originalVisible=!originalVisible}) {Text("자체 AI 원본/결과 비교")}
                 OutlinedButton(onClick={compare=true}) {Text("자체 AI 확대 비교")}
-                OutlinedButton(onClick={pngPicker.launch("local-vton-"+System.currentTimeMillis()+".png")},enabled=!saving) {Text("PNG 저장")}
-                OutlinedButton(onClick={jpgPicker.launch("local-vton-"+System.currentTimeMillis()+".jpg")},enabled=!saving) {Text("JPG 저장")}
+                OutlinedButton(onClick={export(true)},enabled=!saving && exportSnapshot==null) {Text("PNG 저장")}
+                OutlinedButton(onClick={export(false)},enabled=!saving && exportSnapshot==null) {Text("JPG 저장")}
             }
             saveMessage?.let {Text(it)}
+            OutlinedButton(onClick={
+                choosingSavedImage=true
+                try {savedImagePicker.launch(arrayOf("image/png","image/jpeg"))}
+                catch(_: Exception) {choosingSavedImage=false;savedImageError="저장 이미지 선택 화면을 열지 못했어요."}
+            },enabled=!choosingSavedImage && !readingSavedImage && !saving && exportSnapshot==null) {Text("저장한 이미지 다시 열기")}
+            if(readingSavedImage) Text("선택한 저장 이미지 읽는 중…")
+            savedImageError?.let {Text(it)}
             Text("Human Parser는 NVIDIA SegFormer 연구·평가용 비상업 라이선스를 따라요. 3D 아바타 스크린샷을 전신 사진 대신 보내지 않아요.")
         }
-        Button(onClick={review=true},enabled=ready && person!=null && issue==null && !state.pending && !saving,
+        Button(onClick={review=true},enabled=ready && person!=null && issue==null && !state.pending && !saving && exportSnapshot==null,
             colors=ButtonDefaults.buttonColors(containerColor=Camel),
             modifier=Modifier.fillMaxWidth().padding(16.dp).testTag("localVtonGenerate")) {Text("자체 AI 생성 시작 · 의류 한 벌")}
     }

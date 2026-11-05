@@ -58,6 +58,7 @@ fun AiTryOnScreen(
     val configured = serviceConfigured && TryOnRepository.isConfigured()
     val scope = rememberCoroutineScope()
     val state = model.state
+    LaunchedEffect(model) { model.markResultAsPrevious() }
     val selection = if ((state.pending || garments.isEmpty()) && model.selectedGarments.isNotEmpty()) model.selectedGarments else garments
     val plan = remember(selection) { TryOnPlan.build(selection) }
     var personText by rememberSaveable { mutableStateOf(defaultPhoto?.toString()) }
@@ -74,6 +75,7 @@ fun AiTryOnScreen(
     var connectionCheck by remember { mutableStateOf<String?>(null) }
     var checkingConnection by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var exportSnapshot by remember { mutableStateOf<ByteArray?>(null) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
     fun leave() { review = null; onBack() }
     BackHandler(onBack = ::leave)
@@ -82,7 +84,8 @@ fun AiTryOnScreen(
         if (photo != null && !state.pending) { review = null; personText = photo.toString(); saveMessage = null }
     }
     val savePicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/jpeg")) { target ->
-        val source = model.state.result?.takeIf { model.resultMatches(person, selection) }
+        val source = exportSnapshot
+        exportSnapshot = null
         if (target != null && source != null && !saving) {
             saving = true
             scope.launch {
@@ -93,6 +96,8 @@ fun AiTryOnScreen(
                 } catch (_: Exception) { saveMessage = "이미지를 저장하지 못했어요. 다시 시도해주세요."
                 } finally { saving = false }
             }
+        } else if (target != null && source == null) {
+            saveMessage = "저장할 결과 연결이 사라졌어요. 결과를 확인하고 저장을 다시 선택해주세요."
         }
     }
     if (showConnection) AlertDialog(
@@ -195,14 +200,19 @@ fun AiTryOnScreen(
                 Text(if (state.resultFromPreviousAttempt) "이전 AI 생성 결과 · 이번 요청의 성공 결과가 아니에요" else "AI 생성 결과 · 얼굴·체형·실제 핏은 보장하지 않아요", color = Brown, modifier = Modifier.testTag("aiTryOnSuccess"))
                 OutlinedButton(onClick = { showOriginal = !showOriginal }) { Text(if (showOriginal) "AI 결과 보기" else "원본과 비교") }
                 OutlinedButton(onClick = { zoomComparison = true }, modifier = Modifier.testTag("aiTryOnZoom")) { Text("확대해서 비교") }
-                OutlinedButton(enabled = !saving, onClick = { savePicker.launch("ai-fitting-${System.currentTimeMillis()}.jpg") }) { Text(if (saving) "저장 중…" else "결과 이미지 저장") }
+                OutlinedButton(enabled = !saving && exportSnapshot == null, onClick = {
+                    exportSnapshot = currentResult.copyOf()
+                    saveMessage = null
+                    try { savePicker.launch("ai-fitting-${System.currentTimeMillis()}.jpg") }
+                    catch (_: Exception) { exportSnapshot = null; saveMessage = "저장 위치 선택 화면을 열지 못했어요." }
+                }) { Text(if (saving) "저장 중…" else "결과 이미지 저장") }
             }
             saveMessage?.let { Text(it, color = Brown) }
             extraContent()
             TextButton(onClick = ::leave) { Text("수동 피팅으로 돌아가기") }
         }
         Button(modifier = Modifier.fillMaxWidth().padding(16.dp).height(48.dp).testTag("aiTryOnGenerate"),
-            enabled = configured && person != null && plan.issue == null && !state.pending && !saving,
+            enabled = configured && person != null && plan.issue == null && !state.pending && !saving && exportSnapshot == null,
             colors = ButtonDefaults.buttonColors(containerColor = Camel), onClick = {
                 person?.let { review = it to selection.toList() }
             }) {
