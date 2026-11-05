@@ -97,6 +97,27 @@ def save_png(encoded, destination):
     return hashlib.sha256(destination.read_bytes()).hexdigest()
 
 
+def safe_error_fields(exc):
+    """Provider errors may contain signed URLs or paths even for public inputs.
+
+    Never stringify an exception or persist its arbitrary type name. Preserve
+    only reviewed local reason codes; the caller also records the failed phase.
+    """
+    if isinstance(exc, TimeoutError):
+        return {"error_type": "timeout", "error": "request_timeout"}
+    if isinstance(exc, ValueError):
+        known = {
+            "response_too_large", "public_api_contract_changed",
+            "invalid_image_size", "unexpected_result_format_or_dimensions",
+            "saved_png_verification_failed", "reviewed_space_revision_not_running",
+            "unexpected_auth_header",
+        }
+        reason = exc.args[0] if type(exc) is ValueError and len(exc.args) == 1 else None
+        code = reason if type(reason) is str and reason in known else "validation_failed"
+        return {"error_type": "validation", "error": code}
+    return {"error_type": "external_request", "error": "external_request_failed"}
+
+
 def main(prompt: str = PROMPT):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inputs", type=Path, required=True)
@@ -185,10 +206,9 @@ def main(prompt: str = PROMPT):
             journal.mark_blocked(reservation.reservation_id, "preflight_failed")
         elif state == "SUBMITTING":
             journal.mark_unknown(reservation.reservation_id, "remote_or_download_error_no_retry")
-        # Only public trial inputs were used; keep a bounded provider error for
-        # diagnosis. No headers, environment, full traceback or input bytes.
-        record.update(phase="blocked", error_type=type(exc).__name__,
-                      error=str(exc)[:1200], elapsed_seconds=round(time.monotonic()-start, 3))
+        # Public inputs do not make provider exception messages safe to retain.
+        record.update(failed_phase=record["phase"], phase="blocked",
+                      **safe_error_fields(exc), elapsed_seconds=round(time.monotonic()-start, 3))
         persist()
         raise SystemExit(2)
     finally:
