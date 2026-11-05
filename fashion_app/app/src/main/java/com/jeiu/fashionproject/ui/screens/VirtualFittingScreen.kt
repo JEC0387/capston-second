@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -40,11 +41,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -56,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
@@ -262,10 +267,55 @@ internal class ManualFittingViewModel : ViewModel() {
     var showAi by mutableStateOf(false)
     var showLocalAi by mutableStateOf(false)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
+    var photoDropUndo by mutableStateOf<PhotoDropUndo?>(null)
+    val pendingPhotoDrops = mutableStateMapOf<FitSlot, PhotoDropTicket>()
+
+    fun beginPhotoDrop(slot: FitSlot, center: Offset): PhotoDropTicket? {
+        val photo = photoDisplaySize ?: return null
+        if (avatarMode || showAi || showLocalAi || bodyPhoto == null || !photo.isUsableFittingSize() || !canvasSize.isUsableFittingSize() ||
+            !center.x.isFinite() || !center.y.isFinite()) return null
+        val request = (selectionRequests[slot] ?: 0L) + 1
+        selectionRequests[slot] = request
+        return PhotoDropTicket(slot, photoGeneration, request, center, canvasSize, photo).also { pendingPhotoDrops[slot] = it }
+    }
+
+    fun finishPhotoDrop(ticket: PhotoDropTicket) {
+        if (pendingPhotoDrops[ticket.slot] == ticket) pendingPhotoDrops.remove(ticket.slot)
+    }
+
+    fun cancelPhotoDrop(slot: FitSlot) {
+        if (pendingPhotoDrops.remove(slot) != null) selectionRequests[slot] = (selectionRequests[slot] ?: 0L) + 1
+    }
+
+    fun cancelPhotoDrops() { pendingPhotoDrops.keys.toList().forEach(::cancelPhotoDrop) }
+
+    fun applyPhotoDrop(ticket: PhotoDropTicket, garment: WornGarment): Boolean {
+        if (avatarMode || showAi || showLocalAi || bodyPhoto == null || ticket.generation != photoGeneration ||
+            selectionRequests[ticket.slot] != ticket.request || pendingPhotoDrops[ticket.slot] != ticket ||
+            slotOf(garment.item) != ticket.slot) return false
+        finishPhotoDrop(ticket)
+        photoDropUndo = PhotoDropUndo(ticket.slot, worn[ticket.slot], activeSlot, photoGeneration)
+        worn[ticket.slot] = garment
+        activeSlot = ticket.slot
+        return true
+    }
+
+    fun undoPhotoDrop(): Boolean {
+        val undo = photoDropUndo ?: return false
+        if (avatarMode || undo.generation != photoGeneration) return false
+        cancelPhotoDrop(undo.slot)
+        selectionRequests[undo.slot] = (selectionRequests[undo.slot] ?: 0L) + 1
+        if (undo.previous == null) worn.remove(undo.slot) else worn[undo.slot] = undo.previous
+        activeSlot = undo.previousActive?.takeIf { worn.containsKey(it) } ?: worn.keys.maxByOrNull { it.ordinal }
+        photoDropUndo = null
+        return true
+    }
 
     fun selectPhoto(uri: Uri): Long {
         bodyPhoto = uri
         photoGeneration++
+        cancelPhotoDrops()
+        photoDropUndo = null
         photoDisplaySize = null
         body = null
         poseStatus = PoseStatus.LOADING
@@ -294,6 +344,11 @@ internal class ManualFittingViewModel : ViewModel() {
                     worn[slot] = g.copy(center=p.center,baseWidth=p.width)
                 }
             } }
+            photoDropUndo = photoDropUndo?.let { undo -> undo.copy(previous = undo.previous?.let { g ->
+                resizePhotoPlacement(Placement(g.center, g.baseWidth, g.rotation), photoDisplaySize, old, updated)?.let { p ->
+                    g.copy(center = p.center, baseWidth = p.width)
+                } ?: g
+            }) }
         }
         canvasSize = updated
     }
@@ -334,6 +389,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var avatarCameraReset by remember { mutableIntStateOf(0) }
     var inspectAvatar by remember { mutableStateOf(false) }
     var fittingHelp by remember { mutableStateOf(false) }
+    var dragItem by remember { mutableStateOf<WardrobeItem?>(null) }
+    var dragRootPoint by remember { mutableStateOf(Offset.Zero) }
+    var dragGeneration by remember { mutableLongStateOf(-1L) }
+    var canvasBounds by remember { mutableStateOf(Rect.Zero) }
+    var screenOrigin by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(avatarMode, photoGeneration, manual.showAi, manual.showLocalAi) {
+        dragItem = null
+        if (avatarMode || manual.showAi || manual.showLocalAi) manual.cancelPhotoDrops()
+    }
     val controlsScroll = rememberScrollState()
     LaunchedEffect(inputNotice) {
         if (inputNotice != null) controlsScroll.scrollTo(0)
@@ -476,6 +540,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             return
         }
         val slot = slotOf(item)
+        if (!avatarMode) manual.cancelPhotoDrop(slot)
         if (worn[slot]?.item?.id == item.id) {
             manual.selectionRequests[slot]=(manual.selectionRequests[slot] ?: 0L)+1
             worn.remove(slot)
@@ -513,6 +578,45 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
     }
 
+    fun drop(item: WardrobeItem, rootPoint: Offset) {
+        if (avatarMode || dragGeneration != photoGeneration) return
+        val center = photoDropPosition(rootPoint, canvasBounds, manual.photoDisplaySize)
+        if (center == null) {
+            inputNotice = "사진 밖에 놓아 배치를 취소했어요. 기존 옷은 그대로예요."
+            return
+        }
+        val slot = slotOf(item)
+        val ticket = manual.beginPhotoDrop(slot, center) ?: return
+        scope.launch {
+            val image = try { GarmentGeometry.load(context.applicationContext, item) }
+            catch (cancelled: CancellationException) { manual.finishPhotoDrop(ticket); throw cancelled }
+            catch (_: Exception) { null }
+            if (manual.avatarMode || manual.showAi || manual.showLocalAi ||
+                manual.photoGeneration != ticket.generation || manual.selectionRequests[slot] != ticket.request) {
+                manual.finishPhotoDrop(ticket); return@launch
+            }
+            if (image == null) {
+                manual.finishPhotoDrop(ticket)
+                inputNotice = "의류 사진을 읽지 못했어요. 기존 배치는 유지했어요."
+                return@launch
+            }
+            val dropCenter = resizePhotoPlacement(Placement(ticket.center, 1f, 0f), ticket.photoSize,
+                ticket.canvas, manual.canvasSize)?.center ?: run { manual.finishPhotoDrop(ticket); return@launch }
+            // Seed the compositor reference, not the finger offset, only with bilateral foot evidence.
+            val automatic = photoDropPlacement(slot, item, image.aspect, manual.canvasSize, manual.body)
+            val fallback = fit(slot, item, image.aspect, manual.canvasSize, null)
+            val placement = automatic ?: fallback.copy(center = dropCenter)
+            val garment = WornGarment(item, image.uri, image.aspect, placement.center,
+                placement.width.coerceAtMost(manual.canvasSize.width * 2f), rotation = placement.rotation, region = image.region)
+            if (manual.applyPhotoDrop(ticket, garment)) inputNotice = when {
+                slot == FitSlot.SHOES && automatic != null -> "신발 사진을 발목 기준 초기 위치에 배치했어요. 현재는 한 쌍 미리보기이며, 좌우 발 방향과 변형은 자동합성 결과에서 별도 확인해요."
+                slot == FitSlot.SHOES -> "발끝·발뒤꿈치 근거가 부족해 놓은 위치에 수동 배치했어요. 자동 발 정렬 성공이 아니에요."
+                automatic != null -> "관절 기준 초기 위치에 배치했어요. 자동 착장 합성과 품질 검사는 별도예요. 드래그·크기·회전으로 조절할 수 있어요."
+                else -> "신체 위치를 확인하지 못해 놓은 위치에 수동 배치했어요. 자동 정렬 성공이 아니에요."
+            } + if (image.region == null) " 의류 배경이 남아 있을 수 있어요." else ""
+        }
+    }
+
     val active = activeSlot?.let { worn[it] }
     var showAi by manual::showAi
     var showLocalAi by manual::showLocalAi
@@ -540,7 +644,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     }
 
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Cream)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Cream).onGloballyPositioned { screenOrigin = it.boundsInRoot().topLeft }) {
     val compact = maxHeight < 480.dp
     val controlsMaxHeight = (maxHeight * if (compact) 0.3f else 0.4f).coerceAtMost(260.dp)
     Column(modifier = Modifier.fillMaxSize()) {
@@ -646,6 +750,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 .padding(horizontal = 20.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(LightGray)
+                .onGloballyPositioned { canvasBounds = it.boundsInRoot() }
                 .onSizeChanged { size ->
                     val old = canvasSize
                     val updated = Size(size.width.toFloat(), size.height.toFloat())
@@ -657,6 +762,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 .testTag("fittingCanvas"),
             contentAlignment = Alignment.Center
         ) {
+            if (dragItem != null) {
+                val inPhoto = photoDropPosition(dragRootPoint, canvasBounds, manual.photoDisplaySize) != null
+                val target = photoDropBounds(canvasBounds, manual.photoDisplaySize)
+                Box(Modifier.matchParentSize().zIndex(3f).drawWithContent {
+                    drawContent()
+                    target?.let { drawRect(if (inPhoto) Camel else MediumGray,
+                        topLeft = it.topLeft-canvasBounds.topLeft, size = it.size, style = Stroke(3.dp.toPx())) }
+                }.testTag("photoDropTarget"))
+            }
             if (avatarMode && avatarProfile == null) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -791,9 +905,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         if (!avatarMode) {
             val exportInput = bodyPhoto?.takeIf { manual.photoDisplaySize != null && canvasSize.isUsableFittingSize() && worn.isNotEmpty() }?.let {
                 ManualPhotoSnapshot(it.toString(), photoGeneration, canvasSize,
-                    worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha)
+                    worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha, body = body)
             }
             ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
+            if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
+                manual.cancelPhotoDrops(); inputNotice = "의류 읽기를 취소했어요. 기존 배치는 그대로예요."
+            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropCancelLoading")) { Text("의류 읽기 취소") }
+            if (manual.photoDropUndo != null) TextButton(onClick = {
+                if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
+            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
         }
         TextButton(onClick = { showLocalAi = true },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
@@ -933,12 +1053,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
+        if (!avatarMode) Text("카드를 길게 누른 뒤 사진에 놓으세요 · 클릭 선택도 가능해요",
+            style = MaterialTheme.typography.labelSmall, color = Brown, modifier = Modifier.padding(horizontal = 20.dp))
         LazyRow(
             contentPadding = PaddingValues(horizontal = 20.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(bottom = 20.dp).testTag("manualWardrobe")
         ) {
             items(wardrobeItems, key = { it.id }) { item ->
+                var cardOrigin by remember(item.id) { mutableStateOf(Offset.Zero) }
                 val isWorn = worn[slotOf(item)]?.item?.id == item.id
                 val cut = hasCutout(item)
                 Column(
@@ -947,7 +1070,23 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 ) {
                     Card(
                         onClick = { toggle(item) },
-                        modifier = Modifier.testTag("manualGarment-${item.id}"),
+                        modifier = Modifier.testTag("manualGarment-${item.id}")
+                            .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
+                            .pointerInput(item.id, avatarMode, bodyPhoto, photoGeneration) {
+                                if (!avatarMode) detectDragGesturesAfterLongPress(
+                                    onDragStart = { local ->
+                                        if (manual.bodyPhoto != null && manual.photoDisplaySize != null) {
+                                            dragItem = item; dragGeneration = manual.photoGeneration
+                                            dragRootPoint = cardOrigin + local
+                                        } else inputNotice = "먼저 전신 사진을 선택하고 사진 표시를 기다려주세요."
+                                    },
+                                    onDrag = { change, amount ->
+                                        if (dragItem?.id == item.id) { change.consume(); dragRootPoint += amount }
+                                    },
+                                    onDragEnd = { val chosen = dragItem; dragItem = null; if (chosen != null) drop(chosen, dragRootPoint) },
+                                    onDragCancel = { dragItem = null }
+                                )
+                            },
                         shape = RoundedCornerShape(14.dp),
                         border = if (isWorn) BorderStroke(2.dp, Camel) else null,
                         colors = CardDefaults.cardColors(containerColor = if (isWorn) CamelLight else White)
@@ -974,6 +1113,14 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
         }
 
+    }
+    dragItem?.let { item ->
+        Surface(Modifier.offset { IntOffset((dragRootPoint.x-screenOrigin.x).roundToInt()-36.dp.roundToPx(),
+            (dragRootPoint.y-screenOrigin.y).roundToInt()-36.dp.roundToPx()) }
+            .size(72.dp).testTag("wardrobeDragGhost"), shape = RoundedCornerShape(12.dp), shadowElevation = 8.dp,
+            color = Cream, border = BorderStroke(2.dp, Camel)) {
+            AsyncImage(fittingUri(item), "이동 중인 의류", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+        }
     }
     }
 }
