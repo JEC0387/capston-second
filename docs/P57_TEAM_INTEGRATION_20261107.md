@@ -1,5 +1,7 @@
 # P57 team integration candidate
 
+**Final closeout, 2026-11-07 KST:** installed S25+ QA 18611 image-contract and actual USB-loopback transmission to FastAPI **PASS**, with synthetic inputs only and **zero Genlook calls**. The old 1024 resize failure was reproduced; the server's 2048 contract retained all four input dimensions/pixels and strict product references. All 42 accessible QA files stayed identical during this diagnostic. New backend review-image retention and build-signing/dirty-source guards passed focused checks. The existing QA APK is preserved. Formal Release signing and a working approved operating endpoint remain **BLOCKED / NO-GO**. See the final closeout section; it supersedes only the relevant older pending items below.
+
 **Latest device acceptance, 2026-11-07 KST:** separately approved QA 18610 → 18611 deletion-free update PASS; 42 accessible internal files identical before/after installation, before UI launch. Guest/home/wardrobe, photo-tidy cancellation, body-method selection, 3D entry/back, size-comparison entry, fitting and the existing P54 PNG reopen/restart/reopen passed within the read-only scope. No new Genlook generation. Runtime-file review and remaining limitations are recorded below. Production remains **NO-GO**.
 
 ## Source boundaries
@@ -112,3 +114,53 @@ The changed files were:
 No crash was observed during the exercised flows; the current QA process crash buffer had zero fatal-exception markers. This is not an exhaustive OS crash audit. No personal image, original data value, token, device identifier or private evidence is included in Git. Private backup/hashes/UI evidence remain in the ignored `fashion_app/build/p57-device-private/` directory.
 
 Team review: [Draft PR #19](https://github.com/JEC0387/capston-second/pull/19). APK/source identity remains `11d15476580b83680f1ca22d714756424e9b20ff`; this addendum changes documentation only. Original APKs and prior evidence remain preserved. **The approved update/read-oriented acceptance passes; full functionality/production release remains NO-GO.**
+
+## Final closeout — installed contract, retention and Release safeguards
+
+The preceding device addendum was documentation-only. This closeout additionally changes the server's intermediate-image retention and build-time safety guards. It does **not** change Android application source/resources or dependencies relative to the verified APK source `11d15476580b83680f1ca22d714756424e9b20ff`. No identical APK rebuild/reinstallation, external generation, database migration, full Actions run or main merge was performed.
+
+### Actual S25+ input-contract evidence
+
+`OutfitContractProbe` loaded the installed, read-only QA 18611 APK, independently checked its exact APK SHA and embedded source SHA, and called its real config parser, `imageSpec`, image normalization, receipt digest and request encoder. A separate Android diagnostic sender sent those frozen bytes over a single owned USB ADB reverse mapping to a PC-loopback FastAPI validator. Neither component loaded a provider, real user credential, app-private image or `.env`.
+
+| Synthetic source | Old 1024 contract (reproduced) | Installed 2048 contract | Pixel/reference result |
+| --- | --- | --- | --- |
+| Person | 512×676 | 1024×1353 | Exact RGBA retained |
+| Top | 465×600 | 930×1200 | Exact RGBA/reference retained |
+| Bottom, with sRGB ICC | 425×600 | 850×1200 | Exact RGBA/reference retained |
+| Shoes | 600×352 | 1200×704 | Exact RGBA/reference retained |
+
+Original-file, Android PNG, API-normalized PNG and provider-normalized PNG hashes were recorded separately; file hashes legitimately differ after re-encoding. Actual received request bytes matched the device request SHA **`7e9294fce3535b54b43c24f06588d837e7b396da3a8284ab99956ac1bf204655`**. Server `parse_submission → verified_png → ProductReferences` passed, including an independently changed product pixel that was correctly rejected. EXIF 90° rotation produced 704×1200, removed EXIF and preserved all pixels after reopening. This does not establish correctness for every non-sRGB ICC profile.
+
+The diagnostic is an actual-device code/HTTP byte proof, **not** a fresh UI picker/magic-wand/production HTTPS/Bearer/Genlook E2E. Its local ephemeral capability rejected missing/wrong tokens with 401; it is not the user's authentication. The server and owned reverse mapping were stopped/removed; capability files were removed. New private evidence is under ignored `fashion_app/build/p57-closeout-private/installed-wire-20261107-053356-05be23/`. QA file comparison: **42 same / 0 changed / 0 missing / 0 new**. Preview 18605 was not manipulated. The diagnostic's response/bounded-read/concurrency guards were subsequently hardened and locally checked; the unchanged installed app contract was not needlessly rerun.
+
+### Defects corrected and verification
+
+| Defect | Before | Fix and observed result |
+| --- | --- | --- |
+| Review image outlives its purpose | One focused pre-fix test failed: completed review retained `intermediate.png` | New files get a ledger/job/input/result/contract-bound ownership marker; completion/reject/cancel/timeout removes only the exact owned PNG. Startup reconciles owned remnants while preserving spend blocks. Cleanup failure prevents shoes/further requests. **59 focused provider/review/reference tests passed**. |
+| Preview key could sign primary debug package | Build guard regression failed | Explicit distribution keystore is rejected before signer assignment unless Preview/QA. Real Gradle primary configuration rejected the synthetic key path as intended; QA configuration **BUILD SUCCESSFUL**. |
+| Untracked source not represented by build identity | Synthetic untracked Kotlin/resource regression failed | Git dirty detection now includes untracked source; ignored outputs/secrets remain excluded. **3 build-guard tests passed**. |
+| Diagnostic accepted weak success/racing requests | Read-only review found HTTP-200-only and receive race risks | Strict returned SHA/status check, bounded streaming, one-shot acquisition before receiving. **3 local transport-guard tests passed**; Java sources compiled against Android SDK, with warnings only. These are diagnostic checks, not extra product functionality. |
+
+The retention marker applies only to newly owned images. Existing unmarked P54 PNG evidence is preserved. Partial/corrupt writes, ownership mismatch or deletion failure require reconciliation instead of risky deletion/retry. A second regression reproduced restart clearing an in-memory-only cleanup block; `cleanup_failed` is now durably recorded after remote cleanup. Cancel on this blocked restart previously raised an uninitialized-client error; it now returns sanitized `genlook_cleanup_required`, makes no HTTP request and preserves the durable block through another restart. Abnormal process termination is cleaned on the next startup, not by a guaranteed offline timed service; Windows private ACL and backup retention remain deployment responsibilities. No actual existing ledger cleanup was run. The original mutated-image test now expects the stronger cleanup state/block and still asserts no paid replay. No test was skipped or weakened.
+
+The two sandbox-stalled pre-fix test attempts produced empty logs and are not counted as results. Only their identified child processes were stopped; the single successful host execution captured the actual failing assertion. Subsequent tests passed. Earlier completed P57 full compile/Lint/Backend/Unix results above were reused, not rerun or summed with overlapping focused checks.
+
+### Formal delivery decision and exact blockers
+
+| Item | State / required action |
+| --- | --- |
+| Integrated QA APK | Existing verified/safely installed 18611 retained; SHA and 149,174,509-byte size reconfirmed. Android runtime unchanged; current Gradle script configuration checked. New server retention fix is a server deployment change, not an APK update. |
+| Formal signing | **BLOCKED**. No approved formal key owner/location/Play App Signing policy confirmed in supplied project settings and documented key locations. Known Preview archive/debug keystore are not formal signing authorization. No key/password extraction or new key creation. |
+| Package/update policy | Primary `com.jeiu.fashionproject`, Preview `.preview`, QA `.preview.qa` remain separate. QA→primary is not an in-place data-preserving update. Release has no signingConfig; primary publication guard intentionally remains. Release owner must approve signer and migration/distribution policy. |
+| Formal Release APK | **Not produced**; no Release SHA exists. The QA APK must not be labelled a signed formal Release. |
+| Operating HTTPS/API | Read-only TLS-validated GETs to the code's configured host returned **404** for both `/health` and `/api/outfit-vton/config`; no credential/image sent. This does not prove an authenticated production service. Operator must supply/deploy the reviewed endpoint, DB/auth and storage policy. No operating service was modified. |
+| Genlook activation | APK production approval remains false by default and forbidden for Preview/QA. Server requires independent deployment/privacy/prepaid/autotopup/budget approvals plus secret key and protected journal. No current process has these approval/key settings; this is not a claim that the separately preserved private key is absent. No external credits queried/consumed. |
+| QA versus production factory | Existing QA constructor review-pause/detail/reference settings are not automatically installed by the default provider factory. Production must explicitly review its factory, endpoint allowlist, documentation exposure, HTTPS/auth, budget and ACL configuration; do not treat the temporary QA tunnel as operations. |
+| Privacy | Scoped consent, authentication, request binding and cleanup are implemented/tested. Personal-photo third-party policy, remote provider logs/backups, approved operating retention/deletion and accountable operator still need confirmation. No new private-photo transfer. |
+| Team features | Guest/local records and exercised entry/reopen paths passed as above. Social OAuth/account-link bridge remains **BLOCKED**. Camera/full-body accuracy, 3D measurement edits, wardrobe CRUD on device and real operational PostgreSQL migration were not newly tested. No invented accuracy or feature PASS. |
+| AI quality/new E2E | Historical P54 genuine E2E preserved. Corrected 18611 input bytes now device-verified; new Genlook generation and product fidelity remain **NOT TESTED / existing quality FAIL** until separately approved. No credit approval inferred. |
+| PR | PR #19 remains Draft against unchanged team main. Local changes are backed up only on the approved candidate branches with `[skip ci]`; required checks/review are not bypassed and no merge is performed. |
+
+**Final disposition: integrated QA evidence available; formal production release NO-GO.** The remaining approvals belong to the release-key owner, operating-server/security/data owner, OAuth/account integration owner and client quality/credit approver. No new numbered development phase is proposed.

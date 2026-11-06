@@ -93,9 +93,13 @@ def test_review_failure_never_submits_shoes_or_replays_paid_post(tmp_path, failu
             job = provider._ledger["jobs"][identity]
             assert job["credits_reserved"] == 3
             assert job["stages"][1]["state"] == "unsubmitted"
-            assert job["status"] == ("cancelled" if failure == "cancel" else "failed")
+            assert job["status"] == ("cleanup_failed" if failure == "mutated_png" else
+                                     "cancelled" if failure == "cancel" else "failed")
             before = len(fake.posts)
-            with pytest.raises(mod.ProviderFailure, match="genlook_request_already_recorded"):
+            # Changed review bytes cannot be safely deleted as the owned result;
+            # stronger cleanup reconciliation blocks all work, including replay.
+            retry_error = "genlook_cleanup_required" if failure == "mutated_png" else "genlook_request_already_recorded"
+            with pytest.raises(mod.ProviderFailure, match=retry_error):
                 await provider.generate(identity, "a" * 64, images(), placements())
             assert len(fake.posts) == before
         finally:

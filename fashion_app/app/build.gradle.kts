@@ -29,7 +29,8 @@ fun gitValue(vararg args: String) = providers.exec {
 }.standardOutput.asText.get().trim()
 val sourceSha = gitValue("rev-parse", "HEAD")
 val sourceBranch = gitValue("branch", "--show-current").ifEmpty { "detached" }
-val sourceDirty = gitValue("status", "--porcelain", "--untracked-files=no").isNotEmpty()
+// Untracked source/resources can enter an APK; ignored build outputs/secrets still stay excluded.
+val sourceDirty = gitValue("status", "--porcelain", "--untracked-files=normal").isNotEmpty()
 val buildNumber = providers.environmentVariable("FASHION_BUILD_NUMBER").orNull ?: "local"
 require(sourceSha.matches(Regex("[a-f0-9]{40}")))
 fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -75,6 +76,9 @@ android {
         debug {
             // Only explicit signing material may be used for a distributed CI APK.
             System.getenv("ANDROID_DISTRIBUTION_KEYSTORE")?.let { path ->
+                require(previewBuild) {
+                    "Preview/QA distribution key cannot sign the primary package; a separately approved Release key and policy are required"
+                }
                 signingConfig = signingConfigs.getByName("debug").apply {
                     storeFile = file(path)
                     storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")

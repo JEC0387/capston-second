@@ -40,6 +40,7 @@ SHA = re.compile(r"[a-f0-9]{64}\Z")
 MAX_IMAGE = 8 * 1024 * 1024
 MAX_JSON = 256 * 1024
 MARKER = ".fashionai-genlook-owned"
+REVIEW_IMAGE_OWNER = ".intermediate-owner-v1.json"
 STATES = {"reserved", "uploading", "submitting", "polling", "downloaded", "completed",
           "failed", "cancelled", "uncertain", "cleanup_failed"}
 _PRIVATE_TRANSPORT = ContextVar("fashionai_genlook_private_transport", default=False)
@@ -321,6 +322,13 @@ class GenlookProvider:
                 self._ledger = {"version": self._ledger_version, "contract_sha": self.contract_sha,
                                 "namespace": uuid4().hex, "jobs": {}}
                 self._persist()
+            try:
+                self._retire_marked_review_images()
+            except Exception:
+                # Local cleanup must be reconciled before another paid request.
+                # Legacy, unmarked P54 evidence is never claimed or removed.
+                self._issue = "genlook_cleanup_required"
+                return
             if any(job["status"] not in {"completed", "failed", "cancelled"}
                    for job in self._ledger["jobs"].values()):
                 self._issue = "genlook_reconciliation_required"
@@ -549,6 +557,61 @@ class GenlookProvider:
         if identity in self._cancelled:
             raise asyncio.CancelledError()
 
+    def _retire_owned_review_image(self, directory, *, required=False):
+        """Unlink only a newly marked, ledger-bound local image; retain audit files."""
+        if directory.parent != self._root / "reviews":
+            raise ValueError("review_path_invalid")
+        _regular_local(directory)
+        marker = directory / REVIEW_IMAGE_OWNER
+        if not marker.exists() and not marker.is_symlink():
+            if required:
+                raise ValueError("review_owner_missing")
+            return  # Existing QA evidence has no marker and is out of scope.
+        _regular_local(marker)
+        if not marker.is_file() or marker.stat().st_size > 4096:
+            raise ValueError("review_owner_invalid")
+        owner = json.loads(marker.read_bytes())
+        keys = {"version", "namespace", "job_id", "input_sha256", "result_sha256",
+                "contract_sha256", "created_at", "expires_at"}
+        if not isinstance(owner, dict) or set(owner) != keys:
+            raise ValueError("review_owner_invalid")
+        identity = directory.name
+        job = self._ledger["jobs"].get(identity)
+        if (str(UUID(identity)) != identity or job is None or type(owner["version"]) is not int or owner["version"] != 1 or
+                owner["namespace"] != self._ledger["namespace"] or owner["job_id"] != identity or
+                owner["contract_sha256"] != self.contract_sha or
+                owner["input_sha256"] != job["input_sha"] or
+                owner["result_sha256"] != job["stages"][0]["result_sha"] or
+                not isinstance(owner["result_sha256"], str) or not SHA.fullmatch(owner["result_sha256"])):
+            raise ValueError("review_owner_invalid")
+        created, expires = owner["created_at"], owner["expires_at"]
+        if (type(created) not in (int, float) or type(expires) not in (int, float) or
+                not math.isfinite(created) or not math.isfinite(expires) or
+                not 0 < expires - created <= 1800):
+            raise ValueError("review_retention_invalid")
+        image = directory / "intermediate.png"
+        if not image.exists() and not image.is_symlink():
+            return
+        _regular_local(image)
+        if (not image.is_file() or image.stat().st_size > MAX_IMAGE or
+                hashlib.sha256(image.read_bytes()).hexdigest() != owner["result_sha256"]):
+            raise ValueError("review_image_changed")
+        image.unlink()
+
+    def _retire_marked_review_images(self):
+        # An abrupt process exit cannot run finally. On restart clean only these
+        # explicit owners, then retain the normal unfinished-job spend block.
+        root = self._root / "reviews"
+        if not root.exists():
+            return
+        _regular_local(root)
+        for count, directory in enumerate(root.iterdir(), start=1):
+            if count > 1000:
+                raise ValueError("review_count_exceeded")
+            _regular_local(directory)
+            if directory.is_dir():
+                self._retire_owned_review_image(directory)
+
     async def _review_pair(self, job_id, input_sha256, png):
         """Wait for a private, exact-binding operator decision; never repeat a POST.
 
@@ -558,6 +621,7 @@ class GenlookProvider:
         Files inherit the reviewed ledger ACL; caller must enforce Windows ACLs.
         """
         directory = None
+        accepted = False
         self._reviewing_job = job_id
         try:
             review_root = self._root / "reviews"
@@ -566,6 +630,16 @@ class GenlookProvider:
             directory = review_root / job_id
             directory.mkdir(mode=0o700, exist_ok=False)
             _regular_local(directory)
+            now = time.time()
+            owner = {"version": 1, "namespace": self._ledger["namespace"], "job_id": job_id,
+                     "input_sha256": input_sha256, "result_sha256": hashlib.sha256(png).hexdigest(),
+                     "contract_sha256": self.contract_sha, "created_at": now,
+                     "expires_at": now + self._review_timeout}
+            # Ownership precedes the image write; no old evidence is adopted.
+            with (directory / REVIEW_IMAGE_OWNER).open("x", encoding="utf-8") as stream:
+                os.chmod(directory / REVIEW_IMAGE_OWNER, 0o600)
+                json.dump(owner, stream, sort_keys=True, allow_nan=False)
+                stream.flush(); os.fsync(stream.fileno())
             image = directory / "intermediate.png"
             with image.open("xb") as stream:
                 os.chmod(image, 0o600)
@@ -599,12 +673,22 @@ class GenlookProvider:
                     self._check_cancel(job_id)
                     if value["decision"] == "reject":
                         raise ProviderFailure("genlook_review_rejected")
+                    accepted = True
                     return
                 await asyncio.sleep(.2)
         except (OSError, ValueError, TypeError):
             raise ProviderFailure("genlook_review_invalid") from None
         finally:
             self._reviewing_job = None
+            if directory is not None:
+                try:
+                    self._retire_owned_review_image(directory, required=True)
+                except Exception:
+                    self._issue = "genlook_cleanup_required"
+                    # Preserve rejection/cancellation diagnostics, but a nominal
+                    # approval must not proceed to shoes with failed cleanup.
+                    if accepted:
+                        raise ProviderFailure("genlook_cleanup_required") from None
 
     async def _stage(self, identity, job, stage, person, garments, remaining, prepared_references=None):
         self._check_cancel(identity)
@@ -720,7 +804,11 @@ class GenlookProvider:
                 elif job["status"] != "cleanup_failed":
                     try:
                         await self._cleanup(job)
-                        job["status"] = "cancelled" if isinstance(failure, asyncio.CancelledError) else "failed"
+                        # A successful remote DELETE does not resolve a refused
+                        # local image cleanup. Preserve that block across restart
+                        # even if its ownership marker was removed or damaged.
+                        job["status"] = ("cleanup_failed" if self._issue == "genlook_cleanup_required" else
+                                         "cancelled" if isinstance(failure, asyncio.CancelledError) else "failed")
                         self._persist()
                     except BaseException:
                         self._issue = "genlook_cleanup_required"
@@ -739,6 +827,12 @@ class GenlookProvider:
     async def cancel(self, job_id):
         self._cancelled.add(job_id)
         job = self._ledger["jobs"].get(job_id) if self._ledger else None
+        if job and job["status"] == "cleanup_failed":
+            # Startup deliberately has no HTTP clients until reconciliation.
+            # Cancellation cannot certify unresolved local/remote cleanup or
+            # replace its durable state with a terminal success-like state.
+            self._issue = "genlook_cleanup_required"
+            raise ProviderFailure("genlook_cleanup_required")
         if job and self._pending(job):
             job["status"] = "uncertain"
             self._issue = "genlook_reconciliation_required"
