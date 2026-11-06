@@ -1,6 +1,6 @@
-# Genlook provider — P50/P51 operator contract
+# Genlook provider — operator contract and final P56 disposition
 
-**Default disabled; release NO-GO.** P51 subsequently generated a real three-item PNG through two approved PC-initiated requests (balance9→7→6), with product-detail defects and no Android/S25+ E2E. See the P51 addendum below and its handoff for the latest scope. Historical P50 top-only trial (10→9) failed preservation because the unselected skirt pattern changed; P50 quality preparation made no extra calls. No credits were bought. Preserve the existing on-device/manual engines and Preview/QA isolation.
+**Default disabled; final release NO-GO.** P54 verified the real S25+ QA flow through generation, comparison, save and reopen. P56 completed the final approved PC quality comparison with `reference-details-v1` (3→0 credits); garment fidelity still failed, so the option is **not adopted as default**. P56 also reopened the existing P54 saved PNG on S25+ before and after app restart; this is not a new device-initiated generation. See `docs/P56_FINAL_ACCEPTANCE_20261106.md`. Historical P50/P51 sections below retain their original experiment scope. No credits were bought. Preserve the existing on-device/manual engines and Preview/QA isolation.
 
 ## Verified service boundary
 
@@ -10,7 +10,7 @@ The current [create endpoint](https://genlook.app/docs/tryon-api/endpoints/creat
 2. That actual intermediate + bottom → verified intermediate image.
 3. That actual intermediate + shoes → verified final PNG.
 
-The next stage never substitutes the original or a previous request's image. Each single-product stage costs 1 credit at standard resolution; all three reserve **3 credits**. The alternative top+bottom together, then shoes, also costs 2+1 credits. A pure review-only planner and multipart body builder are implemented in `genlook_request_contract.py`; the live provider and Android still require the existing sequential-3 contract. No two-call sequence is activated or disguised as three generation IDs. Sequential editing may alter the face, pose, prior garment, hands or background. No quality guarantee follows from the API schema; actual approved input/output review is required.
+The next stage never substitutes the original or a previous request's image. Each single-product stage costs 1 credit at standard resolution; all three reserve **3 credits**. The alternative top+bottom together, then shoes, also costs 2+1 credits. The planner and multipart builder in `genlook_request_contract.py` are used by the live provider. P51/P52 added the explicitly selected paired mode and Android receipt contract: two calls have two generation IDs, never three. Default mode remains sequential-3. Sequential editing may alter the face, pose, prior garment, hands or background. No quality guarantee follows from the API schema; actual approved input/output review is required.
 
 The single-stage request builder now names the nonselected garments, patterns, face, hair, hands and background requested to remain unchanged. These are descriptions in the documented product field, not a vendor preservation guarantee. No undocumented mask/pose-lock/prompt fields are sent. This changes the provider contract revision to `genlook-sequential-v2-preservation-20261106`. Old ledger fingerprints remain fail-closed; do not delete/reset them or replay the old charged trial.
 
