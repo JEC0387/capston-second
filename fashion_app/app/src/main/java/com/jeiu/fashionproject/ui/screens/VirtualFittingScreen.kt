@@ -285,6 +285,8 @@ internal class ManualFittingViewModel : ViewModel() {
     var showAi by mutableStateOf(false)
     var showLocalAi by mutableStateOf(false)
     var showOnDeviceAi by mutableStateOf(false)
+    var showServerOutfitAi by mutableStateOf(false)
+    var serverOutfitSelection by mutableStateOf<DeviceVtonSelection?>(null)
     var deviceSelection by mutableStateOf<DeviceVtonSelection?>(null)
     var aiSelection by mutableStateOf<List<TryOnGarment>>(emptyList())
     var photoDropUndo by mutableStateOf<PhotoDropUndo?>(null)
@@ -292,7 +294,7 @@ internal class ManualFittingViewModel : ViewModel() {
 
     fun beginPhotoDrop(slot: FitSlot, center: Offset): PhotoDropTicket? {
         val photo = photoDisplaySize ?: return null
-        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || bodyPhoto == null || !photo.isUsableFittingSize() || !canvasSize.isUsableFittingSize() ||
+        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || showServerOutfitAi || bodyPhoto == null || !photo.isUsableFittingSize() || !canvasSize.isUsableFittingSize() ||
             !center.x.isFinite() || !center.y.isFinite()) return null
         val request = (selectionRequests[slot] ?: 0L) + 1
         selectionRequests[slot] = request
@@ -317,8 +319,16 @@ internal class ManualFittingViewModel : ViewModel() {
         showOnDeviceAi = true
     }
 
+    /** Explicit server mode; the on-device wand and original wardrobe remain unchanged. */
+    fun openServerOutfit(selection: DeviceVtonSelection?) {
+        cancelPhotoDrops()
+        selectionRequests.keys.toList().forEach { slot -> selectionRequests[slot] = (selectionRequests[slot] ?: 0L) + 1L }
+        serverOutfitSelection = selection?.copy()
+        showServerOutfitAi = true
+    }
+
     fun applyPhotoDrop(ticket: PhotoDropTicket, garment: WornGarment): Boolean {
-        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || bodyPhoto == null || ticket.generation != photoGeneration ||
+        if (avatarMode || showAi || showLocalAi || showOnDeviceAi || showServerOutfitAi || bodyPhoto == null || ticket.generation != photoGeneration ||
             selectionRequests[ticket.slot] != ticket.request || pendingPhotoDrops[ticket.slot] != ticket ||
             slotOf(garment.item) != ticket.slot) return false
         finishPhotoDrop(ticket)
@@ -404,6 +414,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     val scope = manual.viewModelScope
     val aiModel = sharedTryOnViewModel()
     val deviceModel: OnDeviceVtonViewModel = viewModel(factory = remember { viewModelFactory { initializer { OnDeviceVtonViewModel() } } })
+    val serverOutfitModel: com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel = viewModel()
     var bodyPhoto by manual::bodyPhoto
     var photoGeneration by manual::photoGeneration
     var body by manual::body
@@ -425,9 +436,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var dragGeneration by remember { mutableLongStateOf(-1L) }
     var canvasBounds by remember { mutableStateOf(Rect.Zero) }
     var screenOrigin by remember { mutableStateOf(Offset.Zero) }
-    LaunchedEffect(avatarMode, photoGeneration, manual.showAi, manual.showLocalAi, manual.showOnDeviceAi) {
+    LaunchedEffect(avatarMode, photoGeneration, manual.showAi, manual.showLocalAi, manual.showOnDeviceAi, manual.showServerOutfitAi) {
         dragItem = null
-        if (avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi) manual.cancelPhotoDrops()
+        if (avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi || manual.showServerOutfitAi) manual.cancelPhotoDrops()
     }
     val controlsScroll = rememberScrollState()
     LaunchedEffect(inputNotice) {
@@ -622,7 +633,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             val image = try { GarmentGeometry.load(context.applicationContext, item) }
             catch (cancelled: CancellationException) { manual.finishPhotoDrop(ticket); throw cancelled }
             catch (_: Exception) { null }
-            if (manual.avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi ||
+            if (manual.avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi || manual.showServerOutfitAi ||
                 manual.photoGeneration != ticket.generation || manual.selectionRequests[slot] != ticket.request) {
                 manual.finishPhotoDrop(ticket); return@launch
             }
@@ -652,6 +663,11 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var showAi by manual::showAi
     var showLocalAi by manual::showLocalAi
     var aiSelection by manual::aiSelection
+    if (manual.showServerOutfitAi) {
+        ServerOutfitVtonScreen(manual.serverOutfitSelection,
+            onBack = { manual.showServerOutfitAi = false }, model = serverOutfitModel)
+        return
+    }
     if (manual.showOnDeviceAi) {
         manual.deviceSelection?.let { selection ->
             OnDeviceVtonScreen(selection, onBack = { manual.showOnDeviceAi = false }, model = deviceModel)
@@ -948,6 +964,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             if (manual.photoDropUndo != null) TextButton(onClick = {
                 if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
             }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
+        }
+        if (!avatarMode) TextButton(onClick = { manual.openServerOutfit(currentDeviceSelection) },
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("openServerOutfitFromFitting")) {
+            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
+            Spacer(Modifier.width(6.dp))
+            Text("서버형 마법봉 · 3종 AI · 별도 배포 승인 필요", color = Camel)
         }
         TextButton(onClick = { showLocalAi = true },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {

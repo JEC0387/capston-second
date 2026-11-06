@@ -19,6 +19,8 @@ val previewBuild = providers.gradleProperty("fashionPreview").orNull == "true"
 // Opt-in device QA has its own Android sandbox; never run storage fixtures in the user's Preview.
 val deviceQaBuild = providers.gradleProperty("fashionDeviceQa").orNull == "true"
 require(!deviceQaBuild || previewBuild) { "Device QA must retain Preview network isolation" }
+// Separate deployment approval; Preview/QA cannot enable production photo uploads.
+val outfitServerApproved = !previewBuild && providers.gradleProperty("fashionOutfitServerApproved").orNull == "true"
 val packagedVersionName = appVersionName + if (deviceQaBuild) "-qa" else if (previewBuild) "-preview" else ""
 require(appVersionName.matches(Regex("[A-Za-z0-9._-]+")))
 fun gitValue(vararg args: String) = providers.exec {
@@ -64,6 +66,7 @@ android {
         buildConfigField("boolean", "SOURCE_DIRTY", sourceDirty.toString())
         buildConfigField("boolean", "PREVIEW_BUILD", previewBuild.toString())
         buildConfigField("boolean", "DEVICE_QA_BUILD", deviceQaBuild.toString())
+        buildConfigField("boolean", "SERVER_OUTFIT_APPROVED", outfitServerApproved.toString())
 
 
     }

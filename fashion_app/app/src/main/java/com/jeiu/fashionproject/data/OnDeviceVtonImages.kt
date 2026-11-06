@@ -124,7 +124,7 @@ object OnDeviceVtonImages {
         }
     }
 
-    private fun validateSelection(jobId: String, selection: DeviceVtonSelection, model: DeviceModelSpec) {
+    internal fun validateSelection(jobId: String, selection: DeviceVtonSelection, model: DeviceModelSpec) {
         if (jobId.isBlank() || jobId.length > 128 || selection.revision < 0)
             throw DeviceVtonFailure("생성 요청 정보가 올바르지 않아요.")
         if (model.id.isBlank() || model.revision.isBlank() || model.id.length > 128 ||
