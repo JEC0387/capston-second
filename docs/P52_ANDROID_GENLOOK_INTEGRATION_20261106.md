@@ -1,19 +1,59 @@
 # P52 — Android Genlook integration and isolated QA candidate
 
-## Latest checkpoint (APK packaging pending)
+## Latest completion — local QA18608 candidate preserved, not installed
 
 Android main and unit-test compilation PASS. Focused checks: **62 PASS across14
-classes, 0 final failures/skips**, including native Robolectric Compose progress,
+classes, 0 final failures/errors/skips**, including native Robolectric Compose progress,
 paired disclosure, previous-result recovery and real local PNG save/reopen with
-synthetic data. QA18608 packaging remains pending at this checkpoint.
+synthetic data. Backend: **51 unique PASS**, not the sum of overlapping runs.
+QA18608 build, Lint, trusted signing and local candidate checks PASS; a separate
+delivery copy and verification records are now preserved.
 **Not installed; no new external generation; NO-GO.**
 
 Branch: `codex/fashionai-p52-android-genlook-20261106`.
 P51 parent: `43200198a8cfc76d2a5b07db92be75dd422d48b8`.
-P52 code checkpoint: `1b3cde1ecfdd1c1555ab71c3476f7473e9726be6` (WIP label preserved).
+P52 implementation checkpoint: `1b3cde1ecfdd1c1555ab71c3476f7473e9726be6` (WIP label preserved).
+Final tested tree and APK execution SHA: `f2ba6272d0d50db6af464f7e94e17e026ab3b5cb`.
+The intervening four UI-test files and this document changed, with no main/backend
+execution-code change. All285 Kotlin source hashes from compile07 match this tree.
+The final documentation-only commit is later than the execution SHA; no rebuild.
 No Push, remote mutation, GitHub Actions, device access, account/DB creation,
 deployment, personal-image access, new Genlook credit query or generation occurred.
 Last observed balance remains **6 credits from P51**, not a new P52 observation.
+
+## Actual delivery and verification
+
+Delivery directory (copied, not moved):
+`C:\Users\USER\Documents\ChatGPT\capston\deliveries\P52-QA-18608-20261106-213432-KST-8304f0fb`.
+
+- APK: `fashionai-1.1.86.8-qa-vc18608-f2ba6272.apk`,149027053 bytes.
+- Package: `com.jeiu.fashionproject.preview.qa`.
+- Version: `1.1.86.8-qa` / `18608`; higher than historical QA18607.
+- SHA256: `ba159604c203142c83bef320c4234e8e3547b88e928834d81bbd9714f593b856`.
+- Trusted Preview/QA certificate SHA256:
+  `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`.
+- Embedded source/branch/clean identity, package/version, signer, ZIP CRC, required
+  DEX markers and APK secret-file checks PASS. Signing used the existing encrypted
+  Preview-only key backup; the new restricted temporary key file was removed.
+- ZIP16KB alignment PASS. Every native-library byte hash matches the previously
+  LLVM-audited reference; its ELF LOAD16KB evidence is reused by exact identity.
+  **No new16KB runtime or device compatibility execution is claimed.**
+- `assembleDebug` + `lintDebug`: BUILD SUCCESSFUL in8m47s,50 tasks.
+  Lint:0 Error/Fatal,166 Warning,3 Hint; warnings are not claimed resolved.
+- `BUILD_INFO`, `LOCAL_VERIFICATION.json`, native/ZIP/Lint records,
+  `TEST_SUMMARY.json`, copy hashes, installation conditions and preservation scope
+  are included. `distributionVerified=false`: local candidate, not a CI publication
+  or approved installation. The historical version floor needs a fresh device check.
+- Previous delivery APKs18605 and18607 still match their recorded hashes.
+  Other existing deliveries were not rewritten; no renewed all-files audit is claimed.
+
+The completed build's first signing preflight was correctly blocked at601MiB RAM
+while its single-use JVM was exiting. After the JVM exited and original resource
+floors passed, `finish_qa_candidate.ps1` snapshotted and signed the completed APK
+without rerunning Gradle. The private delivery helper initially mistook the empty
+`signing-operation.log` file for a signing directory; its predicate was corrected
+to reject directories and actual keystore/JKS/DPAPI files. It then copied all
+artifacts successfully without overwriting evidence or weakening secret checks.
 
 ## Implemented changes
 
@@ -87,6 +127,9 @@ credentials or user data. Existing evidence is never overwritten.
 Final unique Android count62 uses junit03's two passed classes, junit05-core,
 junit07-ui and junit08-ui-regression. Interrupted/failed earlier attempts are not
 counted as successes or added to the final total. No full CI/full-suite rerun.
+Backend unique count51 uses backend01 and backend02 with20 overlapping cases
+replaced by their post-fix result, not counted twice. The private test summary
+records exact XML paths, SHA256, test names and source bindings.
 
 Changed production files: `backend/genlook_outfit_provider.py`,
 `backend/outfit_vton_api.py`, Android `ServerOutfitQaConnection.kt`,
@@ -111,8 +154,9 @@ At resume RAM was533MiB, no residual Java/Python builds. Later measurements fluc
 The user explicitly approved stopping the separate week2 Docker container and Docker
 Desktop (not deleting them); Ubuntu WSL with another Codex session was retained.
 Compile03 started at1482MiB available RAM and12221MiB Commit headroom. After its
-JVM exited, available RAM recovered to about1996MiB. Global/system memory settings
-and user programs were not changed. Disk before that build was5.94GiB free.
+JVM exited, available RAM recovered to about1996MiB. Apart from the explicitly
+approved Docker stop, other user applications and global/system memory settings
+were not changed. Disk before that build was5.94GiB free.
 
 ## Live evidence is P51, not an Android P52 result
 
