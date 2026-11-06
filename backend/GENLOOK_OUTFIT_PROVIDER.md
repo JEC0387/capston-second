@@ -80,7 +80,7 @@ Stopping the app's wait is **not** remote cancellation. If submission/polling is
 Each stage uses one-day upload/product settings. After all three remote jobs are terminal and the final bytes are verified, the adapter requests scoped customer and product cleanup before returning success:
 
 - `DELETE /customers/:externalUserId` →204 even when absent. It removes tagged person photos and result images and anonymizes the user link in historical counts. [Customer deletion](https://genlook.app/docs/tryon-api/endpoints/delete-customer)
-- `DELETE /products/:externalId` is idempotent and leaves historical generations. The docs do not specify its exact success status; this adapter accepts200/204 and treats anything else as unconfirmed cleanup. [Product deletion](https://genlook.app/docs/tryon-api/endpoints/list-products)
+- `DELETE /products/:externalId` leaves historical generations. The live single-top trial returned204 for the created top but404 `PRODUCT_NOT_FOUND` for a never-created bottom. Do not infer the customer endpoint's absent-resource behavior applies to products. The adapter deletes only products from accepted stages with a persisted generation ID, accepts200/204, and treats errors for those created products as unconfirmed cleanup. [Product deletion](https://genlook.app/docs/tryon-api/endpoints/list-products)
 
 Deletion is scoped to this job's generated namespace, never an existing user's unrelated records. Partial failure also cleans up when remote work is known terminal. Cleanup failure blocks success and leaves reconciliation metadata. A customer DELETE does not document cancellation of in-flight generation or guaranteed removal of outputs created afterward; uncertain jobs remain blocked rather than claiming deletion.
 

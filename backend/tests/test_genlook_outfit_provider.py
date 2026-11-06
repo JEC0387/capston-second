@@ -259,7 +259,8 @@ def test_result_url_and_actual_image_validation_block_bad_outputs(tmp_path, case
         try:
             with pytest.raises(ProviderFailure):
                 await engine.generate(str(uuid4()), "a" * 64, inputs(), placements())
-            assert len(fake.posts) == 1 and len(fake.deletes) == 4
+            assert len(fake.posts) == 1 and len(fake.deletes) == 2
+            assert fake.deletes[-1].endswith("-tops")
             assert all(host != "evil.invalid" for _, host, _ in fake.calls)
         finally:
             await engine.close()
@@ -274,7 +275,8 @@ def test_remote_failure_does_not_expose_error_text_or_execute_next_stage(tmp_pat
             with pytest.raises(ProviderFailure, match="genlook_remote_failed") as failure:
                 await engine.generate(str(uuid4()), "a" * 64, inputs(), placements())
             assert "SENSITIVE" not in str(failure.value)
-            assert len(fake.posts) == 1 and len(fake.deletes) == 4
+            assert len(fake.posts) == 1 and len(fake.deletes) == 2
+            assert fake.deletes[-1].endswith("-tops")
         finally:
             await engine.close()
     run(check())
@@ -289,6 +291,35 @@ def test_cleanup_failure_keeps_readiness_blocked_and_no_result_success(tmp_path)
                 await engine.generate(str(uuid4()), "a" * 64, inputs(), placements())
             assert (await engine.check_availability()).reason == "genlook_cleanup_required"
             assert len(fake.posts) == 3
+        finally:
+            await engine.close()
+    run(check())
+
+
+def test_partial_cleanup_does_not_delete_never_submitted_products(tmp_path):
+    async def check():
+        fake = SyntheticService(case="remote_failed")
+
+        async def real_missing_product_contract(request):
+            if request.method == "DELETE" and "/products/" in request.url.path:
+                created = {body["products"][0]["externalId"] for body, _ in fake.posts}
+                if request.url.path.rsplit("/", 1)[-1] not in created:
+                    fake.deletes.append(request.url.path)
+                    return httpx.Response(404, json={"code": "PRODUCT_NOT_FOUND"})
+            return await fake(request)
+
+        engine = mod.GenlookProvider(settings(tmp_path), transport=httpx.MockTransport(real_missing_product_contract))
+        identity = str(uuid4())
+        try:
+            with pytest.raises(ProviderFailure, match="genlook_remote_failed"):
+                await engine.generate(identity, "a" * 64, inputs(), placements())
+            job = engine._ledger["jobs"][identity]
+            assert job["status"] == "failed"
+            assert fake.deletes == ["/tryon/v1/customers/" + job["customer_id"],
+                                    "/tryon/v1/products/" + job["stages"][0]["product_id"]]
+            assert [s["state"] for s in job["stages"]] == ["failed", "unsubmitted", "unsubmitted"]
+            assert len(fake.posts) == 1
+            assert (await engine.check_availability()).reason != "genlook_cleanup_required"
         finally:
             await engine.close()
     run(check())
@@ -325,7 +356,8 @@ def test_api_cancel_before_join_has_one_cleanup_owner_and_no_next_upload(tmp_pat
         with pytest.raises(asyncio.CancelledError):
             await task
         assert len(fake.posts) == 1 and len(fake.uploads) == 1
-        assert len(fake.deletes) == 4 and len(set(fake.deletes)) == 4
+        assert len(fake.deletes) == 2 and len(set(fake.deletes)) == 2
+        assert fake.deletes[-1].endswith("-tops")
         assert engine._ledger["jobs"][identity]["status"] == "cancelled"
         await engine.close()
     run(check())

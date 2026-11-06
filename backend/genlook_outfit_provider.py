@@ -378,6 +378,11 @@ class GenlookProvider:
         try:
             await self._request("DELETE", "/customers/" + quote(job["customer_id"], safe=""), accepted=(204,))
             for stage in job["stages"]:
+                # Unsubmitted stages never created a product. Genlook returns
+                # PRODUCT_NOT_FOUND for these IDs (unlike customer deletion).
+                # Ambiguous submissions stay pending and never reach cleanup.
+                if not stage["generation_id"]:
+                    continue
                 await self._request("DELETE", "/products/" + quote(stage["product_id"], safe=""), accepted=(200, 204))
         except BaseException:
             job["status"] = "cleanup_failed"
