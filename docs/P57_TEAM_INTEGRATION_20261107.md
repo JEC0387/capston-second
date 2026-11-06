@@ -46,10 +46,30 @@ The final source includes one-use photo/destination/purpose-bound consent, Beare
 
 The approved Ubuntu isolated venv plus downloaded wheels/test files used **53,961,069 bytes (51.46 MiB)**, below 150 MB. No global Python/other WSL work/device data changed. Windows skips include optional model libraries/CUDA, three real PostgreSQL tests (service not configured), and symlink capability; no real PostgreSQL migration is claimed.
 
-Integrated QA APK / final QA consent tests / Lint / signer verification follow this source checkpoint. No new device installation or data audit has occurred. Original installed QA 18610 and Preview 18605 remain untouched.
+Final QA consent tests: **6 passed / 0 failed / 0 skipped** on executable source `11d15476580b83680f1ca22d714756424e9b20ff`. No new device installation or data audit has occurred. Original installed QA 18610 and Preview 18605 remain untouched.
 
 ## Release limits
 
 Social OAuth provider operation, operational HTTPS deployment, reviewed personal-photo processing policy, formal Release signing and new-version device acceptance are not verified. P54 historical real E2E evidence remains valid only for that tested version/environment. Product-detail fidelity defects are not relabelled PASS. No additional Genlook credits used.
 
 PR HEAD uses `[skip ci]` to prevent automatic Actions expenditure. Required PR checks are not removed or bypassed and may remain pending; this is a review candidate, not merge/release authorization.
+
+## Verified integrated QA delivery
+
+- Executable source: `11d15476580b83680f1ca22d714756424e9b20ff` (clean source identity embedded in APK).
+- APK: `fashionai-1.1.86.11-qa-vc18611-11d15476.apk`, 149,174,509 bytes.
+- SHA-256: `03a79b325363f43137f1139a9180aa6d1f51a2db2bc44bcad9f18d2154f616cc`.
+- Package: `com.jeiu.fashionproject.preview.qa`; version **18611 / 1.1.86.11-qa**.
+- Trusted certificate: `f534fd8c6029f5fef665c27d28559a3a8f1866435203885112d7463138c461b9`.
+- Local delivery: workspace `deliveries/P57-INTEGRATED-QA-18611-20261107-0446-KST/`; Nine files including the APK and verification records copied without moving/overwriting prior deliveries. Each copied file's hash matched its source.
+- Kotlin compilation, APK assembly and Lint PASS. Lint **0 Error/Fatal, 167 Warning, 3 Hint**. Initial 768 MiB D8 heap exhaustion is preserved; packaging resumed with a fresh single-worker 1280 MiB JVM, reusing completed compile/tests. No global setting changes.
+- Post-build resource guard correctly delayed signing while the Gradle daemon exited. A later read-only check found no build process and 2095 MiB available RAM. Same raw APK/source/CRC/Lint were checked and signed without rebuilding.
+- Package/certificate/version match the preserved QA 18610 APK file. This is a static update-compatibility check, not a fresh device preflight.
+- ZIP CRC, duplicate entries, embedded source identity, compiled hash/consent/team feature markers, signing-secret exclusion, exact native-library bytes versus the previous LLVM audit, and fresh 16 KiB ZIP alignment PASS. Actual 16 KiB runtime NOT TESTED.
+- Executable-checkpoint outgoing Git objects relative to team main: 1,016 unique blobs / 11,055,050 bytes checked; configured Genlook secret, private-key/token patterns and forbidden artifacts: **0 findings**. Secret values were never output.
+
+## Acceptance boundaries
+
+The integrated source and QA APK are real artifacts, not a completed production release. Team social login remains BLOCKED until the authenticated account-link bridge and provider configuration are implemented/reviewed; UUID/X-Device-Id adoption is deliberately rejected. Guest/local wardrobe use remains available. QA/Preview server clothing classification remains intentionally blocked; local processing/manual registration remains available.
+
+P57 has **no new installation, personal-data audit, Genlook call or AI credit consumption**. New APK device E2E and preservation are NOT TESTED pending version-specific approval and fresh preflight. Real PostgreSQL migration, operational HTTPS/privacy controls, formal Release signing and product-fidelity acceptance remain unverified. Production decision: **NO-GO**. Required PR checks are preserved; `[skip ci]` avoids unapproved Actions usage and does not authorize merging.
