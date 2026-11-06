@@ -107,7 +107,11 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             }
             thirdParty?.let {
                 Text("외부 처리: Genlook · 스마트폰이 아닌 제3자 서버에서 실행", modifier = Modifier.testTag("serverOutfitProvider"))
-                Text("상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
+                Text(when (it.mode) {
+                    "clothing-pair-then-shoes" -> "상의·하의 함께 → 신발, 2회 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요."
+                    "sequential-3" -> "상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요."
+                    else -> "생성 방식이 확인되지 않았어요. 서버 처리 조건을 다시 확인해주세요."
+                }, modifier = Modifier.testTag("serverOutfitGenerationMode"))
                 Text("요청당 최대 ${it.maxCreditsPerJob}크레딧을 예약해요. 실제 청구액·환불 확정이 아니며 자동 충전하지 않아요.",
                     modifier = Modifier.testTag("serverOutfitCost"))
                 Text("Genlook 이미지 보관 설정 ${it.remoteRetentionDays}일 · 앱 서버 결과 보관 시간과 별도예요. 생성 기록·동의·백업 보관 및 삭제 제한은 아래 정책을 확인해주세요.",
@@ -148,7 +152,12 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             if (visible != null) Text(if (state.previous) "이전 서버 작업 결과 · 새 생성 아님" else "현재 서버 요청 결과 · 품질 검수 필요",
                 modifier = Modifier.testTag("serverOutfitResultLabel"))
             if (visible != null) state.status?.source?.let {
-                Text("출처: Genlook Try-On API · 3회 순차 생성 · 내부 모델 버전 미공개. 파일 검증과 착장 품질 합격은 달라요.",
+                val modeLabel = when (it.mode) {
+                    "clothing-pair-then-shoes" -> "상의·하의 함께 → 신발, 2회 생성"
+                    "sequential-3" -> "3회 순차 생성"
+                    else -> "생성 방식 미확인"
+                }
+                Text("출처: Genlook Try-On API · $modeLabel · 내부 모델 버전 미공개. 파일 검증과 착장 품질 합격은 달라요.",
                     modifier = Modifier.testTag("serverOutfitResultSource"))
                 Text("이 작업 예약 상한 ${it.creditsReserved}크레딧 · 실제 청구액은 공급자 사용 내역으로 확인해주세요.")
             }

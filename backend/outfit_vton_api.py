@@ -41,22 +41,34 @@ def safe_code(value, fallback="engine_unavailable"):
     return value if isinstance(value, str) and CODE.fullmatch(value) else fallback
 
 
-def verified_provider_info(value):
+def genlook_mode_for_revision(revision):
+    # Legacy sequential receipts keep their original revision/meaning. A new
+    # two-request receipt must never be accepted as a three-request contract.
+    if isinstance(revision, str) and re.fullmatch(r"genlook-paired-v1-20261106-[a-f0-9]{16}", revision):
+        return "clothing-pair-then-shoes"
+    if isinstance(revision, str) and revision.startswith("genlook-sequential-"):
+        return "sequential-3"
+    raise ValueError("invalid_provider_revision")
+
+
+def verified_provider_info(value, model_revision=None):
     """Public contract disclosure only, not provider credentials or raw errors."""
     expected = {"name", "execution_location", "upstream_model", "mode", "max_credits_per_job",
                 "remote_cancellation_supported", "remote_retention_days", "notice"}
     if (not isinstance(value, dict) or set(value) != expected or
             value["name"] != "genlook" or value["execution_location"] != "third_party" or
-            value["upstream_model"] != "not_disclosed" or value["mode"] != "sequential-3" or
+            value["upstream_model"] != "not_disclosed" or value["mode"] not in ("sequential-3", "clothing-pair-then-shoes") or
             type(value["max_credits_per_job"]) is not int or value["max_credits_per_job"] != 3 or
             value["remote_cancellation_supported"] is not False or
             type(value["remote_retention_days"]) is not int or value["remote_retention_days"] != 1 or
             not isinstance(value["notice"], str) or not 1 <= len(value["notice"]) <= 1000):
         raise ValueError("invalid_provider_disclosure")
+    if model_revision is not None and value["mode"] != genlook_mode_for_revision(model_revision):
+        raise ValueError("provider_mode_revision_mismatch")
     return dict(value)
 
 
-def verified_provider_source(value, model_id):
+def verified_provider_source(value, model_id, model_revision=None):
     """Persist a bounded receipt; never signed URLs, raw API responses or guessed weights."""
     if not model_id.startswith("genlook/"):
         if value is not None:
@@ -66,13 +78,16 @@ def verified_provider_source(value, model_id):
                 "credits_balance_before", "credits_balance_after", "quality"}
     if (not isinstance(value, dict) or set(value) != expected or value["provider"] != "genlook" or
             value["service"] != "tryon/v1" or value["upstream_model"] != "not_disclosed" or
-            value["mode"] != "sequential-3" or value["quality"] != "NOT_EVALUATED" or
+            value["mode"] not in ("sequential-3", "clothing-pair-then-shoes") or value["quality"] != "NOT_EVALUATED" or
             type(value["credits_reserved"]) is not int or value["credits_reserved"] != 3):
         raise ValueError("invalid_provider_source")
+    if model_revision is not None and value["mode"] != genlook_mode_for_revision(model_revision):
+        raise ValueError("provider_mode_revision_mismatch")
     ids = value["generation_ids"]
-    if (not isinstance(ids, list) or len(ids) != 3 or
+    count = 2 if value["mode"] == "clothing-pair-then-shoes" else 3
+    if (not isinstance(ids, list) or len(ids) != count or
             any(not isinstance(identity, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", identity) for identity in ids) or
-            len(set(ids)) != 3 or any(value[key] is not None and
+            len(set(ids)) != count or any(value[key] is not None and
                 (type(value[key]) is not int or not 0 <= value[key] <= 10**9)
                 for key in ("credits_balance_before", "credits_balance_after"))):
         raise ValueError("invalid_provider_source")
@@ -303,10 +318,10 @@ class OutfitService:
                     if job["error"] in ("worker_stop_unconfirmed", "remote_execution_unconfirmed"):
                         self.runtime_issue = job["error"]
                     if job["status"] == "completed":
-                        verified_provider_source(job.get("source"), job["model_id"])
+                        verified_provider_source(job.get("source"), job["model_id"], job["model_revision"])
                         self._read_result(job)  # Validate before exposing a restored completion.
                     elif job.get("source") is not None:
-                        verified_provider_source(job["source"], job["model_id"])
+                        verified_provider_source(job["source"], job["model_id"], job["model_revision"])
                         self._erase_result(job)
                     else:
                         self._erase_result(job)  # Interrupted workers cannot leave an orphan PNG.
@@ -372,7 +387,7 @@ class OutfitService:
             issue = issue or "invalid_model_contract"
         if available.model_id.startswith("genlook/"):
             try:
-                verified_provider_info(available.provider_info)
+                verified_provider_info(available.provider_info, available.model_revision)
             except (ValueError, AttributeError):
                 issue = issue or "invalid_model_contract"
         return available, issue
@@ -467,7 +482,7 @@ class OutfitService:
             if (output.job_id != job["request_id"] or output.input_sha256 != job["input_sha256"] or
                     output.model_revision != available.model_revision or output.model_sha256 != available.model_sha256):
                 raise ValueError("result_identity_mismatch")
-            source = verified_provider_source(output.source, available.model_id)
+            source = verified_provider_source(output.source, available.model_id, available.model_revision)
             result = _canonical_image(output.png, "PNG", minimum=32, result=True)
             if any(result == image for image in images.values()):
                 raise ValueError("input_is_not_generated_result")
@@ -599,7 +614,7 @@ def create_router(service: OutfitService, auth_dependency=current_user):
                 "max_body_bytes": MAX_BODY, "roles": list(ROLES)}
         if available.model_id.startswith("genlook/"):
             try:
-                result["provider_info"] = verified_provider_info(available.provider_info)
+                result["provider_info"] = verified_provider_info(available.provider_info, available.model_revision)
             except (ValueError, AttributeError):
                 result.update(ready=False, reason="invalid_model_contract")
         return result

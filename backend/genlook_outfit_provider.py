@@ -1,4 +1,4 @@
-"""Opt-in Genlook three-stage adapter. No signup, top-up, POST retry or mock fallback.
+"""Opt-in Genlook adapter. No signup, top-up, POST retry or mock fallback.
 
 The external service does not document generation cancellation or idempotency.
 Intent is therefore journaled before each paid POST. Ambiguous submissions block
@@ -24,12 +24,15 @@ from uuid import UUID, uuid4
 
 from PIL import Image, ImageOps
 
-from genlook_request_contract import RequestStage, build_stage_body
+from genlook_request_contract import RequestStage, build_stage_body, review_plan
 from outfit_vton_provider import ProviderAvailability, ProviderFailure, ProviderResult, _regular_local
 
 API = "https://api.genlook.app/tryon/v1"
 MODEL = "genlook/tryon-api-v1"
 CONTRACT = "genlook-sequential-v2-preservation-20261106"
+PAIRED_CONTRACT = "genlook-paired-v1-20261106"
+SEQUENTIAL_MODE = "sequential-3"
+PAIRED_MODE = "clothing-pair-then-shoes"
 ROLES = ("tops", "bottoms", "shoes")
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -95,6 +98,7 @@ class GenlookSettings:
     unit_price_microusd: int = 0
     max_total_microusd: int = 0
     timeout_seconds: int = 240
+    mode: str = SEQUENTIAL_MODE
 
     @classmethod
     def environment(cls):
@@ -117,11 +121,14 @@ class GenlookSettings:
             unit_price_microusd=number("GENLOOK_UNIT_PRICE_MICROUSD"),
             max_total_microusd=number("GENLOOK_MAX_TOTAL_MICROUSD"),
             timeout_seconds=number("GENLOOK_TIMEOUT_SECONDS", 240),
+            mode=os.getenv("GENLOOK_MODE", SEQUENTIAL_MODE),
         )
 
     def issue(self):
         if not self.enabled:
             return "genlook_disabled"
+        if self.mode not in (SEQUENTIAL_MODE, PAIRED_MODE):
+            return "genlook_policy_unreviewed"
         if not all((self.deployment_approved, self.paid_calls_approved, self.privacy_approved,
                     self.prepaid_confirmed, self.auto_topup_disabled_confirmed)):
             return "genlook_approval_required"
@@ -183,20 +190,28 @@ class GenlookProvider:
         self._lease = None
         self._root = None
         self._ledger = None
+        self._paired = self.settings.mode == PAIRED_MODE
+        self._plan = review_plan(self.settings.mode) if self.settings.mode in (SEQUENTIAL_MODE, PAIRED_MODE) else ()
+        self._ledger_version = 2 if self._paired else 1
+        contract = PAIRED_CONTRACT if self._paired else CONTRACT
         # Credential changes must not silently rebind an existing spend ledger.
+        # The new mode field is overwritten below with the same pre-P51 value in
+        # default mode, retaining existing sequential contract digests exactly.
         identity = {name: value for name, value in vars(self.settings).items() if name not in ("api_key", "ledger_dir")}
-        identity.update(api=API, contract=CONTRACT, account_fingerprint=hashlib.sha256(self.settings.api_key.encode()).hexdigest(),
-                        mode="sequential-3", roles=ROLES, keep_for_days=1, crop=False,
+        identity.update(api=API, contract=contract, account_fingerprint=hashlib.sha256(self.settings.api_key.encode()).hexdigest(),
+                        mode=self.settings.mode, roles=ROLES, keep_for_days=1, crop=False,
                         resolution="default", remote_cancel_supported=False)
         self.contract_sha = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-        self.revision = CONTRACT + "-" + self.contract_sha[:16]
+        self.revision = contract + "-" + self.contract_sha[:16]
 
     def public_policy(self):
+        requests_notice = ("상의·하의를 함께 생성한 뒤 신발을 적용하는 2회 요청으로 최대 3크레딧을 예약합니다. "
+                           if self._paired else "3회 순차 생성합니다. ")
         return {
             "name": "genlook", "execution_location": "third_party", "upstream_model": "not_disclosed",
-            "mode": "sequential-3", "max_credits_per_job": 3, "remote_cancellation_supported": False,
+            "mode": self.settings.mode, "max_credits_per_job": 3, "remote_cancellation_supported": False,
             "remote_retention_days": 1,
-            "notice": "Genlook 외부 서버에 사진과 의류를 전송해 3회 순차 생성합니다. EU 저장·글로벌 처리 정책 검토가 필요합니다. "
+            "notice": "Genlook 외부 서버에 사진과 의류를 전송해 " + requests_notice + "EU 저장·글로벌 처리 정책 검토가 필요합니다. "
                       "사진·결과는 1일 보관 설정 및 완료 후 삭제 요청, 생성·보안 기록 2년·동의 기록 5년·백업 최대 30일 정책이 별도로 적용됩니다. "
                       "삭제 요청은 진행 중 생성 취소를 보장하지 않으며 대기 종료 후에도 과금될 수 있습니다. 모델 이름·버전은 공급자가 공개하지 않습니다.",
         }
@@ -266,7 +281,7 @@ class GenlookProvider:
                 # A deleted journal is not a reset of approved spending.
                 raise ValueError()
             else:
-                self._ledger = {"version": 1, "contract_sha": self.contract_sha,
+                self._ledger = {"version": self._ledger_version, "contract_sha": self.contract_sha,
                                 "namespace": uuid4().hex, "jobs": {}}
                 self._persist()
             if any(job["status"] not in {"completed", "failed", "cancelled"}
@@ -285,7 +300,7 @@ class GenlookProvider:
     def _validate_ledger(self):
         value = self._ledger
         if (not isinstance(value, dict) or set(value) != {"version", "contract_sha", "namespace", "jobs"} or
-                value["version"] != 1 or value["contract_sha"] != self.contract_sha or
+                value["version"] != self._ledger_version or value["contract_sha"] != self.contract_sha or
                 not re.fullmatch(r"[a-f0-9]{32}", value["namespace"]) or
                 not isinstance(value["jobs"], dict) or len(value["jobs"]) > 1000):
             raise ValueError()
@@ -296,7 +311,7 @@ class GenlookProvider:
             if (not SHA.fullmatch(job["input_sha"]) or job["status"] not in STATES or
                     job["credits_reserved"] != 3 or not SAFE_ID.fullmatch(job["customer_id"]) or
                     type(job["created_at"]) not in (int, float) or not math.isfinite(job["created_at"]) or
-                    not isinstance(job["stages"], list) or len(job["stages"]) != 3):
+                    not isinstance(job["stages"], list) or len(job["stages"]) != len(self._plan)):
                 raise ValueError()
             prefix = "fa-" + value["namespace"][:16] + "-" + UUID(identity).hex
             if job["customer_id"] != prefix:
@@ -304,10 +319,18 @@ class GenlookProvider:
             for balance in (job["balance_before"], job["balance_after"]):
                 if balance is not None and (type(balance) is not int or not 0 <= balance <= 1000000000):
                     raise ValueError()
-            for role, stage in zip(ROLES, job["stages"]):
-                if (not isinstance(stage, dict) or set(stage) != {"role", "product_id", "generation_id", "state", "result_sha"} or
-                        stage["role"] != role or stage["product_id"] != prefix + "-" + role or
-                        stage["state"] not in {"unsubmitted", "uploading", "uploaded", "submitting", "polling", "downloaded", "failed"} or
+            for plan, stage in zip(self._plan, job["stages"]):
+                expected = ({"roles", "product_ids", "generation_id", "state", "result_sha"} if self._paired
+                            else {"role", "product_id", "generation_id", "state", "result_sha"})
+                if not isinstance(stage, dict) or set(stage) != expected:
+                    raise ValueError()
+                if self._paired:
+                    if (stage["roles"] != list(plan.roles) or
+                            stage["product_ids"] != {role: prefix + "-" + role for role in plan.roles}):
+                        raise ValueError()
+                elif stage["role"] != plan.roles[0] or stage["product_id"] != prefix + "-" + plan.roles[0]:
+                    raise ValueError()
+                if (stage["state"] not in {"unsubmitted", "uploading", "uploaded", "submitting", "polling", "downloaded", "failed"} or
                         stage["generation_id"] is not None and not SAFE_ID.fullmatch(stage["generation_id"]) or
                         stage["result_sha"] is not None and not SHA.fullmatch(stage["result_sha"])):
                     raise ValueError()
@@ -375,6 +398,20 @@ class GenlookProvider:
         # operator reconciliation even though no paid generation is yet known.
         return any(stage["state"] in {"uploading", "submitting", "polling"} for stage in job["stages"])
 
+    def _stage_plan(self, stage):
+        return RequestStage(tuple(stage["roles"]) if self._paired else (stage["role"],))
+
+    def _stage_products(self, stage):
+        return stage["product_ids"] if self._paired else {stage["role"]: stage["product_id"]}
+
+    def _new_stages(self, prefix):
+        stages = []
+        for plan in self._plan:
+            fields = ({"roles": list(plan.roles), "product_ids": {role: prefix + "-" + role for role in plan.roles}}
+                      if self._paired else {"role": plan.roles[0], "product_id": prefix + "-" + plan.roles[0]})
+            stages.append(fields | {"generation_id": None, "state": "unsubmitted", "result_sha": None})
+        return stages
+
     async def _cleanup(self, job):
         try:
             await self._request("DELETE", "/customers/" + quote(job["customer_id"], safe=""), accepted=(204,))
@@ -384,7 +421,8 @@ class GenlookProvider:
                 # Ambiguous submissions stay pending and never reach cleanup.
                 if not stage["generation_id"]:
                     continue
-                await self._request("DELETE", "/products/" + quote(stage["product_id"], safe=""), accepted=(200, 204))
+                for product_id in self._stage_products(stage).values():
+                    await self._request("DELETE", "/products/" + quote(product_id, safe=""), accepted=(200, 204))
         except BaseException:
             job["status"] = "cleanup_failed"
             self._issue = "genlook_cleanup_required"
@@ -421,7 +459,7 @@ class GenlookProvider:
         if identity in self._cancelled:
             raise asyncio.CancelledError()
 
-    async def _stage(self, identity, job, stage, person, garment, remaining):
+    async def _stage(self, identity, job, stage, person, garments, remaining):
         self._check_cancel(identity)
         if await self._credits() < remaining:
             raise ProviderFailure("genlook_insufficient_credits")
@@ -435,18 +473,22 @@ class GenlookProvider:
             raise ProviderFailure("genlook_invalid_response")
         stage["state"] = "uploaded"; job["status"] = "reserved"; self._persist()
         self._check_cancel(identity)
-        body = build_stage_body(RequestStage((stage["role"],)), image_id=image_id,
+        plan = self._stage_plan(stage)
+        products = self._stage_products(stage)
+        body = build_stage_body(plan, image_id=image_id,
                                 customer_id=job["customer_id"],
-                                product_ids={stage["role"]: stage["product_id"]})
+                                product_ids=products)
+        files = {("product" if len(plan.roles) == 1 else role): (role + ".png", garments[role], "image/png")
+                 for role in plan.roles}
         # Persist intent BEFORE the paid POST. No retries, even if the response is lost.
         stage["state"] = "submitting"; job["status"] = "submitting"; self._persist()
         created = await self._request("POST", "/try-on", accepted=(201,),
             data={"data": json.dumps(body, separators=(",", ":"))},
-            files={"product": (stage["role"] + ".png", garment, "image/png")})
+            files=files)
         generation = created.get("generationId")
         prior = [item["generation_id"] for item in job["stages"] if item["generation_id"]]
         if (not isinstance(generation, str) or not SAFE_ID.fullmatch(generation) or generation in prior or
-                created.get("status") != "PENDING" or created.get("productExternalIds") != [stage["product_id"]]):
+                created.get("status") != "PENDING" or created.get("productExternalIds") != [products[role] for role in plan.roles]):
             raise ProviderFailure("genlook_invalid_response")
         stage["generation_id"] = generation; stage["state"] = "polling"; job["status"] = "polling"; self._persist()
         while True:
@@ -496,13 +538,13 @@ class GenlookProvider:
                 prefix = "fa-" + self._ledger["namespace"][:16] + "-" + UUID(job_id).hex
                 job = {"input_sha": input_sha256, "status": "reserved", "credits_reserved": 3,
                        "balance_before": balance, "balance_after": None, "customer_id": prefix,
-                       "created_at": time.time(), "stages": [
-                           {"role": role, "product_id": prefix + "-" + role, "generation_id": None,
-                            "state": "unsubmitted", "result_sha": None} for role in ROLES]}
+                       "created_at": time.time(), "stages": self._new_stages(prefix)}
                 self._ledger["jobs"][job_id] = job; self._persist()
                 current = normalized["person"]
-                for index, stage in enumerate(job["stages"]):
-                    current = await self._stage(job_id, job, stage, current, normalized[stage["role"]], 3 - index)
+                remaining = 3
+                for stage in job["stages"]:
+                    current = await self._stage(job_id, job, stage, current, normalized, remaining)
+                    remaining -= self._stage_plan(stage).expected_credits
                 self._check_cancel(job_id)
                 try:
                     job["balance_after"] = await self._credits()
@@ -512,7 +554,7 @@ class GenlookProvider:
                 job["status"] = "completed"; self._persist()
                 source = {"provider": "genlook", "service": "tryon/v1", "upstream_model": "not_disclosed",
                           "generation_ids": [stage["generation_id"] for stage in job["stages"]],
-                          "mode": "sequential-3", "credits_reserved": 3,
+                          "mode": self.settings.mode, "credits_reserved": 3,
                           "credits_balance_before": job["balance_before"], "credits_balance_after": job["balance_after"],
                           "quality": "NOT_EVALUATED"}
                 return ProviderResult(current, job_id, input_sha256, self.revision, self.contract_sha, source=source)

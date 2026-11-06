@@ -95,7 +95,7 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
             json.optString("model_id"), json.optString("model_revision"), json.optString("model_sha256"),
             json.optString("policy_version"), json.optLong("retention_seconds", 0),
             json.optInt("max_image_bytes", 0), json.optInt("max_body_bytes", 0),
-            parseProviderInfo(json.opt("provider_info"), json.optString("model_id")))
+            parseProviderInfo(json.opt("provider_info"), json.optString("model_id"), json.optString("model_revision")))
         if (ready && (value.modelId.isBlank() || value.modelId.length > 128 || value.revision.isBlank() ||
                 value.revision.length > 128 || !sha.matches(value.modelSha) ||
                 value.policy.isBlank() || value.policy.length > 128 || value.retentionSeconds !in 1..86400 ||
@@ -110,35 +110,52 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
         return (value as Number).toLong().takeIf { it in 0..max.toLong() }?.toInt()
     }
 
-    private fun parseProviderInfo(raw: Any?, modelId: String): OutfitServerProviderInfo? {
+    // Keep execution mode in the already durable revision, including restored P50 tickets.
+    // A refreshed server config must not reinterpret an older job's generation receipt.
+    private fun genlookMode(revision: String): String? = when {
+        Regex("genlook-paired-v1-20261106-[a-f0-9]{16}").matches(revision) -> "clothing-pair-then-shoes"
+        listOf("genlook-sequential-v1-", "genlook-sequential-v2-preservation-").any {
+            revision.startsWith(it) && revision.length > it.length
+        } -> "sequential-3"
+        else -> null
+    }
+
+    private fun parseProviderInfo(raw: Any?, modelId: String, revision: String): OutfitServerProviderInfo? {
         if (raw == null || raw === JSONObject.NULL) {
             if (modelId.startsWith("genlook/")) throw OutfitServerFailure("invalid_provider_disclosure")
             return null
         }
         val info = raw as? JSONObject ?: throw OutfitServerFailure("invalid_provider_disclosure")
         val notice = info.opt("notice") as? String ?: throw OutfitServerFailure("invalid_provider_disclosure")
+        val mode = genlookMode(revision) ?: throw OutfitServerFailure("invalid_provider_disclosure")
         if (modelId != "genlook/tryon-api-v1" || info.opt("name") != "genlook" ||
             info.opt("execution_location") != "third_party" || info.opt("upstream_model") != "not_disclosed" ||
-            info.opt("mode") != "sequential-3" || boundedInteger(info.opt("max_credits_per_job"), 3) != 3 ||
+            info.opt("mode") != mode || boundedInteger(info.opt("max_credits_per_job"), 3) != 3 ||
             info.opt("remote_cancellation_supported") != false || boundedInteger(info.opt("remote_retention_days"), 1) != 1 ||
             notice.isBlank() || notice.length > 1000 || notice.any { it.code < 32 })
             throw OutfitServerFailure("invalid_provider_disclosure")
-        return OutfitServerProviderInfo("genlook", "third_party", "not_disclosed", "sequential-3", 3, false, 1, notice)
+        return OutfitServerProviderInfo("genlook", "third_party", "not_disclosed", mode, 3, false, 1, notice)
     }
 
     private fun parseSource(raw: Any?): OutfitServerSource? {
         if (raw == null || raw === JSONObject.NULL) return null
         val source = raw as? JSONObject ?: throw OutfitServerFailure("invalid_result_source")
+        val mode = source.opt("mode") as? String ?: throw OutfitServerFailure("invalid_result_source")
+        val expectedCount = when (mode) {
+            "sequential-3" -> 3
+            "clothing-pair-then-shoes" -> 2
+            else -> throw OutfitServerFailure("invalid_result_source")
+        }
         val ids = source.optJSONArray("generation_ids") ?: throw OutfitServerFailure("invalid_result_source")
         val values = (0 until ids.length()).map { ids.opt(it) as? String ?: throw OutfitServerFailure("invalid_result_source") }
         fun balance(key: String): Int? = if (!source.has(key) || source.isNull(key)) null else
             boundedInteger(source.opt(key)) ?: throw OutfitServerFailure("invalid_result_source")
         if (source.opt("provider") != "genlook" || source.opt("service") != "tryon/v1" ||
-            source.opt("upstream_model") != "not_disclosed" || source.opt("mode") != "sequential-3" ||
+            source.opt("upstream_model") != "not_disclosed" ||
             source.opt("quality") != "NOT_EVALUATED" || boundedInteger(source.opt("credits_reserved"), 3) != 3 ||
-            values.size != 3 || values.toSet().size != 3 || values.any { !Regex("[A-Za-z0-9_-]{1,128}").matches(it) })
+            values.size != expectedCount || values.toSet().size != expectedCount || values.any { !Regex("[A-Za-z0-9_-]{1,128}").matches(it) })
             throw OutfitServerFailure("invalid_result_source")
-        return OutfitServerSource("genlook", "tryon/v1", "not_disclosed", values.toList(), "sequential-3", 3,
+        return OutfitServerSource("genlook", "tryon/v1", "not_disclosed", values.toList(), mode, 3,
             balance("credits_balance_before"), balance("credits_balance_after"))
     }
 
@@ -147,7 +164,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
 
     internal fun requireResultSource(ticket: OutfitServerTicket, status: OutfitServerStatus) {
         if (status.resultAvailable && isGenlook(ticket) && status.source == null ||
-            !isGenlook(ticket) && status.source != null)
+            !isGenlook(ticket) && status.source != null ||
+            status.source != null && status.source.mode != genlookMode(ticket.revision))
             throw OutfitServerFailure("invalid_result_source")
     }
 

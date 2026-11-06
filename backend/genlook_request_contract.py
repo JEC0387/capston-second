@@ -1,7 +1,7 @@
 """Pure request planning: no keys, networking, accounts or permission to spend.
 
 Official /multi-product permits clothing combinations, not clothing plus shoes.
-The live adapter remains sequential-3; pair-then-shoes is a review-only plan.
+The adapter defaults to sequential-3; paired mode requires explicit selection.
 Descriptions express requested preservation, not an API guarantee or a mask.
 """
 from dataclasses import dataclass

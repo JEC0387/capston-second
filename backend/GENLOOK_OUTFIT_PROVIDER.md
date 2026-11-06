@@ -1,10 +1,10 @@
-# Genlook three-stage provider — P50 operator contract
+# Genlook provider — P50/P51 operator contract
 
-**Default disabled; release NO-GO.** P50 completed one explicitly approved public-input top trial through this adapter's stage implementation: upload201/create201/result200, one real PNG, balance10→9. It failed preservation quality because the unselected skirt pattern changed. That private local trial was not FastAPI/Android/S25+ E2E and not a proven three-garment result. No credits were bought. The subsequent quality preparation makes no authenticated API, upload or generation calls. Preserve the existing on-device/manual engines and Preview/QA isolation.
+**Default disabled; release NO-GO.** P51 subsequently generated a real three-item PNG through two approved PC-initiated requests (balance9→7→6), with product-detail defects and no Android/S25+ E2E. See the P51 addendum below and its handoff for the latest scope. Historical P50 top-only trial (10→9) failed preservation because the unselected skirt pattern changed; P50 quality preparation made no extra calls. No credits were bought. Preserve the existing on-device/manual engines and Preview/QA isolation.
 
 ## Verified service boundary
 
-The current [create endpoint](https://genlook.app/docs/tryon-api/endpoints/create-try-on) accepts 1–4 products. However, [multi-product rules](https://genlook.app/docs/tryon-api/multi-product) permit clothing only; including shoes with other products produces `MULTI_PRODUCT_NOT_SUPPORTED`. This is not a three-product single-call implementation. The adapter performs exactly three serial single-product stages:
+The current [create endpoint](https://genlook.app/docs/tryon-api/endpoints/create-try-on) accepts 1–4 products. However, [multi-product rules](https://genlook.app/docs/tryon-api/multi-product) permit clothing only; including shoes with other products produces `MULTI_PRODUCT_NOT_SUPPORTED`. This is not a three-product single-call implementation. The default `sequential-3` performs exactly three serial single-product stages; optional P51 paired mode is described below:
 
 1. Original person + top → verified intermediate image.
 2. That actual intermediate + bottom → verified intermediate image.
@@ -95,3 +95,31 @@ Vendor image retention is distinct from P48 local result TTL. The [DPA](https://
 No account, unused free credits, spend approval, or real result is assumed. Once authorized, use approved public inputs for one bounded3-credit sequence, with no automatic re-generation. Record actual stage IDs, dates, dimensions, final PNG SHA-256, elapsed time, available balance snapshots, cleanup outcomes and vendor model disclosure status. Compare face/pose/hands/background and top/bottom/shoe product details at each stage; reject drift or missing footwear. Then verify the approved Android build's request→result→compare→save→reopen and cancellation/re-entry behavior on S25+ with data preservation.
 
 Until those live checks, operating/privacy approvals and release/signature gates pass, **NO-GO** remains. This document authorizes no service calls, payment, deployment, device installation or data transfer.
+# P51 paired-mode addendum (2026-11-06)
+
+`GENLOOK_MODE=clothing-pair-then-shoes` is an **opt-in** alternative to the unchanged
+default `sequential-3`. It sends tops and bottoms in one 2-credit request, then the
+actual returned image with shoes in one 1-credit request. Default resolution,
+`crop=false`, upload `keepForDays=1`, and maximum 3-credit reservation remain.
+The API field `keepForDays` corresponds to SDK `retentionDays`; the uploaded image
+ID controls retention. Footwear is not included in the multi-clothing request.
+
+Paired mode uses revision `genlook-paired-v1-20261106-<16hex>` and a v2 spend ledger
+with **two real generation IDs** and three product IDs. Existing sequential v1
+ledgers and contract hashes remain unchanged. Switching modes against an existing
+ledger fails closed. Do not delete/reset a ledger to create new spending capacity;
+an operator must reconcile previous spending and approve any new contract/budget.
+FastAPI and Android bind receipt mode/ID count to the captured job revision,
+including restored jobs, rather than reinterpret a job using current config.
+
+P51 made exactly two authorized real requests from a private PC trial coordinator,
+not Android or an active deployed FastAPI route. The first result was visually
+reviewed before permitting shoes; the API returned a three-item 896x1184 PNG.
+This private trial's **manual intermediate quality gate is not an automated
+quality detector in the production provider**. Production result quality remains
+`NOT_EVALUATED`; optional two-request execution does not guarantee garment fidelity.
+No deployment flags or private environment settings were enabled by this change.
+The three-credit P51 trial authorization is exhausted; it is not permission for
+another app job. See `docs/P51_GENLOOK_THREE_GARMENT_20261106.md` for actual evidence,
+quality defects, Android validation limits and remaining activation conditions.
+
