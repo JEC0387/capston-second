@@ -16,7 +16,6 @@ DB 테이블 정의 (SQLAlchemy ORM) — 서버 시작 시 Supabase 에 자동 �
   recommendation_logs 앱이 보여 준 추천 코디 기록 (👍 · 실제 착용과 비교해 추천 성능을 잰다)
   saved_outfits      저장한 코디 (룩북 — 추천 카드의 🔖)
   outfit_plans       코디 일정 (날짜마다 입기로 정한 코디 하나)
-  user_logins        구글 로그인 연결 (구글 계정 고유 번호 sub → users 한 명)
 
 동기화 원칙: 앱(폰)에 저장된 내용이 기준이고, 서버 DB 는 그 내용을 그대로 따라 저장한다.
 """
@@ -53,6 +52,41 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     clothes: Mapped[list["Clothing"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class AuthCredential(Base):
+    """One active device per account; only hashes of high-entropy secrets are stored."""
+    __tablename__ = "auth_credentials"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    recovery_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    data_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LegacyClaimTicket(Base):
+    """Operator-issued, one-use proof after out-of-band ownership verification."""
+    __tablename__ = "legacy_claim_tickets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    ticket_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[Optional[str]] = mapped_column(String(100))
+    approval_reference: Mapped[Optional[str]] = mapped_column(String(100))
+    verification_method: Mapped[Optional[str]] = mapped_column(String(50))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuthRateBucket(Base):
+    """Shared across workers; peer identifiers are hashed and expire."""
+    __tablename__ = "auth_rate_buckets"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    started_at: Mapped[int] = mapped_column(BigInteger, index=True)
+    attempts: Mapped[int] = mapped_column(Integer)
 
 
 class Clothing(Base):
@@ -295,10 +329,7 @@ class OutfitPlan(Base):
 
 
 class UserLogin(Base):
-    """
-    구글 로그인 연결 — 같은 구글 계정이면 어느 폰에서 로그인해도 같은 users 한 명(같은 옷장 · 취향)을 쓴다.
-    subject = 구글 계정 고유 번호(sub). 처음 로그인할 때 그 폰의 기록을 이 계정으로 이어 받는다.
-    """
+    """Retained team identity records. Linking requires a future verified Bearer bridge."""
     __tablename__ = "user_logins"
     __table_args__ = (UniqueConstraint("provider", "subject", name="uq_user_login_provider_subject"),)
 

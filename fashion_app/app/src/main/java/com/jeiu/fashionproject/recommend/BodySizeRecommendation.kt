@@ -9,7 +9,13 @@ data class GarmentSizeRow(
     val sizeLabel: String,
     val shoulderCm: Float?,
     val measureType: String,
-    val sourceUrl: String = ""
+    val sourceUrl: String = "",
+    val chestCm: Float? = null,
+    val waistCm: Float? = null,
+    val hipCm: Float? = null,
+    val lengthCm: Float? = null,
+    val thighCm: Float? = null,
+    val productKey: String? = null
 )
 
 data class ShoulderSizeSuggestion(
@@ -38,6 +44,19 @@ object BodySizeRecommendation {
             !body.cmPerPixel.isFinite() || body.cmPerPixel<=0f || !body.measuredBodyHeightPx.isFinite() ||
             body.measuredBodyHeightPx<200f || body.measuredAt<=0L ||
             kotlin.math.abs(body.cmPerPixel*body.measuredBodyHeightPx-body.heightCm)>body.heightCm*.0001f) return emptyList()
+        return shoulderSuggestions(shoulder,rows)
+    }
+
+    /** Reuses the same rule with an explicit source-aware shoulder; never fabricate photo data. */
+    fun suggest(profile: com.jeiu.fashionproject.data.BodyDimensionProfile, rows: List<GarmentSizeRow>): List<ShoulderSizeSuggestion> {
+        val height = profile[com.jeiu.fashionproject.data.BodyDimension.HEIGHT]?.cm ?: return emptyList()
+        val shoulder = profile[com.jeiu.fashionproject.data.BodyDimension.SHOULDER_WIDTH]?.cm ?: return emptyList()
+        if (!com.jeiu.fashionproject.ui.viewmodel.BodyMeasurementCalculator.validHeight(height) ||
+            !shoulder.isFinite() || shoulder !in 15f..75f || shoulder/height !in .10f.. .45f) return emptyList()
+        return shoulderSuggestions(shoulder,rows)
+    }
+
+    private fun shoulderSuggestions(shoulder: Float, rows: List<GarmentSizeRow>): List<ShoulderSizeSuggestion> {
         return rows.asSequence()
             .filter { it.category == "상의" || it.category == "아우터" }
             .filter { it.measureType == "단면" && it.brand.isNotBlank() && it.sizeLabel.isNotBlank() }

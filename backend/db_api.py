@@ -1,15 +1,11 @@
 """Selective DB/history integration. Existing image and recommendation endpoints stay in main.py."""
 import base64
 import binascii
-import auth_google
-import auth_social
 import hashlib
-import re
 import uuid
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, undefer
@@ -25,37 +21,10 @@ from schemas import (AddClothingRequest, ClothingItem, WardrobeResponse, Wardrob
     ProductInterestResponse, PopularInterestResponse, TasteEventSyncRequest, TasteSummary,
     ClothingPhotoIn, ClothingPhotoOut, RecommendationLogSyncRequest, RecommendationStats,
     TasteEventListResponse, DeleteMyDataResult, SavedOutfitSyncRequest, SavedOutfitResponse,
-    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats, GoogleLoginRequest, LoginResponse,
-    StartLoginRequest, StartLoginResponse, ExchangeLoginRequest, LoginProvidersResponse)
+    OutfitPlanSyncRequest, OutfitPlanResponse, OverviewStats)
+from auth_api import current_user, analytics_admin
 
 app = APIRouter()
-
-def current_user(
-    db: Session = Depends(get_db),
-    x_device_id: Optional[str] = Header(
-        None, description="앱이 생성한 기기 번호. DB API에 필수이며 로그인 인증을 대신하지는 않음"),
-) -> User:
-    """
-    로그인 기능이 생기기 전까지 사용자 구분 방법:
-    - 앱은 폰마다 만든 기기 번호를 X-Device-Id 헤더로 보낸다 → 폰마다 따로 저장 (팀원끼리 덮어쓰지 않음)
-    - 헤더가 없으면 공유 데모 계정 대신 요청을 거절한다.
-    로그인을 붙이면 이 함수만 '토큰 → 사용자' 로 바꾸면 된다.
-    """
-    if not x_device_id or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", x_device_id):
-        raise HTTPException(400, "X-Device-Id is required")
-    cond = User.device_id == x_device_id
-    user = db.scalar(select(User).where(cond))
-    if user is None:
-        user = User(device_id=x_device_id, nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
-        db.add(user)
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-            user = db.scalar(select(User).where(cond))
-            if user is None:
-                raise
-    return user
 
 
 def to_dt(ms: Optional[int]) -> Optional[datetime]:
@@ -87,7 +56,7 @@ def loaded(obj, name: str):
 def require_table(db: Session, table: str) -> None:
     """마이그레이션을 아직 적용하지 않아 표가 없으면 503 + 안내 (앱은 대기열에 두었다가 나중에 다시 보낸다)"""
     if not schema_has(db, table):
-        raise HTTPException(503, f"DB 에 {table} 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+        raise HTTPException(503, f"DB 에 {table} 표가 없어요 — 운영자가 적용 이력과 스키마를 확인해야 합니다. 로컬 기록은 유지해주세요.")
 
 
 def has_prices(db: Session) -> bool:
@@ -468,7 +437,7 @@ def get_profile(db: Session = Depends(get_db), user: User = Depends(current_user
 def update_preferred_styles(req: UpdateStylesRequest, db: Session = Depends(get_db),
                             user: User = Depends(current_user)):
     """온보딩 '시작하기' - 선호 스타일 저장"""
-    invalid = [s for s in req.styles if s not in data.STYLE_OPTIONS and s not in data.LEGACY_STYLE_OPTIONS]
+    invalid = [s for s in req.styles if s not in data.STYLE_OPTIONS + data.LEGACY_STYLE_OPTIONS]
     if invalid:
         raise HTTPException(400, f"유효하지 않은 스타일: {invalid}")
     user.preferred_styles = list(req.styles)
@@ -484,7 +453,8 @@ def _preference_payload(db: Session, user: User) -> dict:
         select(StyleRating.style, StyleRating.liked).where(StyleRating.user_id == user.id)
     ):
         rated += 1
-        style = data.LEGACY_STYLE_MAP.get(style, style)   # 예전 이름(클래식 · 빈티지)은 새 이름으로
+        # Aggregate old labels without rewriting stored ratings or profile choices.
+        style = data.LEGACY_STYLE_MAP.get(style, style)
         if style in scores:
             scores[style] += 2 if liked else -1
     ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
@@ -513,152 +483,6 @@ def rate_style_preference(req: RatePreferenceRequest, db: Session = Depends(get_
 
 
 # ──────────────────────────────────────────────
-# 구글 로그인
-# ──────────────────────────────────────────────
-
-_DEVICE_RE = re.compile(r"[A-Za-z0-9-]{1,64}")
-
-
-@app.post("/api/auth/google", response_model=LoginResponse, tags=["로그인"])
-def google_login(req: GoogleLoginRequest, db: Session = Depends(get_db),
-                 x_device_id: Optional[str] = Header(None)):
-    """
-    구글 계정으로 로그인. 같은 구글 계정이면 어느 폰에서든 같은 사용자(옷장 · 착용 · 취향)를 쓴다.
-    - 처음 로그인하는 구글 계정: 지금 폰의 기록(X-Device-Id 사용자)을 그대로 이 계정으로 이어 받는다.
-    - 이미 있는 계정: 그 계정 번호(accountKey)를 돌려준다 → 앱은 그 번호로 바꾸고 서버 기록을 받아 온다.
-    """
-    if not schema_has(db, "user_logins"):
-        raise HTTPException(503, "DB 에 로그인 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
-    try:
-        claims = auth_google.verify(req.idToken)
-    except auth_google.GoogleNotConfigured:
-        raise HTTPException(503, "서버에 GOOGLE_CLIENT_ID 가 없어요 (Railway Variables 확인)")
-    except auth_google.InvalidGoogleToken:
-        raise HTTPException(401, "구글 로그인 정보를 확인하지 못했어요")
-    except auth_google.GoogleUnavailable:
-        raise HTTPException(502, "구글 로그인 확인 서버에 연결하지 못했어요")
-
-    return _link_login(db, "google", claims, x_device_id)
-
-
-def _link_login(db: Session, provider: str, claims: dict, x_device_id: Optional[str]) -> dict:
-    """
-    로그인한 계정(provider + 고유 번호 sub) → users 한 명. 구글 · 카카오 · 페이스북 · Apple 이 같은 규칙을 쓴다.
-    처음 로그인하는 계정이면 시작한 폰의 기록(기기 번호 사용자)을 이어 받고, 이미 있는 계정이면 그 계정 번호를 돌려준다.
-    """
-    now = datetime.now(timezone.utc)
-    login = db.scalar(select(UserLogin).where(UserLogin.provider == provider, UserLogin.subject == claims["sub"]))
-    is_new = login is None
-    if login is not None:
-        user = db.get(User, login.user_id)
-        login.last_login_at = now
-        login.email = cut(claims["email"], 255) or login.email
-    else:
-        user = None
-        if x_device_id and _DEVICE_RE.fullmatch(x_device_id):
-            device_user = db.scalar(select(User).where(User.device_id == x_device_id))
-            linked = device_user is not None and db.scalar(
-                select(func.count()).select_from(UserLogin).where(UserLogin.user_id == device_user.id)) > 0
-            if device_user is not None and not linked:
-                user = device_user                    # 이 폰에서 쓰던 기록을 새 계정으로 이어 받기
-            elif device_user is None:
-                user = User(device_id=x_device_id, nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
-                db.add(user)
-        if user is None:                              # 기기 번호가 없거나 이미 다른 계정에 연결된 폰
-            user = User(device_id=str(uuid.uuid4()), nickname="나의 스타일", preferred_styles=[], sample_records_added=True)
-            db.add(user)
-        db.flush()
-        db.add(UserLogin(user_id=user.id, provider=provider, subject=claims["sub"],
-                         email=cut(claims["email"], 255), name=cut(claims["name"], 100), last_login_at=now))
-    if user is None:
-        raise HTTPException(404, "연결된 사용자를 찾지 못했어요")
-    if not user.device_id:
-        user.device_id = str(uuid.uuid4())
-    # 프로필 이름 · 이메일을 로그인 계정으로 (다른 사용자가 같은 이메일을 쓰고 있으면 이메일은 그대로)
-    if claims["email"] and user.email != claims["email"]:
-        taken = db.scalar(select(User.id).where(User.email == claims["email"], User.id != user.id))
-        if taken is None:
-            user.email = cut(claims["email"], 255)
-    if claims["name"] and user.nickname in (None, "", "나의 스타일"):
-        user.nickname = cut(claims["name"], 50)
-    db.commit()
-    return {
-        "accountKey": user.device_id,
-        "email": user.email or claims["email"],
-        "name": user.nickname,
-        "isNewAccount": is_new,
-        "switched": user.device_id != x_device_id,
-        "provider": provider,
-    }
-
-
-@app.get("/api/auth/providers", response_model=LoginProvidersResponse, tags=["로그인"])
-def login_providers():
-    """서버에 설정된 로그인 방법 — 앱 로그인 화면이 버튼을 켜고 끈다"""
-    return {"google": auth_google.is_configured(), **{p: auth_social.is_configured(p) for p in auth_social.PROVIDERS}}
-
-
-def _base_url(request: Request) -> str:
-    """Redirect URI 앞부분 — PUBLIC_BASE_URL 이 없으면 요청 주소 (Railway 프록시 뒤면 https)"""
-    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
-    return f"{proto}://{request.headers.get('host', request.url.netloc)}"
-
-
-@app.post("/api/auth/start", response_model=StartLoginResponse, tags=["로그인"])
-def start_social_login(req: StartLoginRequest, request: Request, db: Session = Depends(get_db),
-                       x_device_id: Optional[str] = Header(None)):
-    """카카오 · 페이스북 · Apple 로그인 시작 — 앱은 돌려받은 주소를 브라우저로 연다"""
-    if not schema_has(db, "user_logins"):
-        raise HTTPException(503, "DB 에 로그인 표가 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
-    device = x_device_id if x_device_id and _DEVICE_RE.fullmatch(x_device_id) else None
-    try:
-        return {"url": auth_social.start(req.provider, device, _base_url(request))}
-    except auth_social.ProviderNotConfigured:
-        raise HTTPException(503, f"서버에 {auth_social.LABELS[req.provider]} 로그인 설정이 없어요 (Railway Variables 확인)")
-
-
-def _social_callback(provider: str, request: Request, code: Optional[str], state: Optional[str],
-                     error: Optional[str], user_json: Optional[str] = None) -> HTMLResponse:
-    """각 회사 로그인 뒤 돌아오는 곳 — 사용자를 확인하고 1회용 코드를 붙여 앱으로 돌려보낸다"""
-    try:
-        device = auth_social.take_state(provider, state)
-        if error or not code:
-            raise auth_social.ProviderFailed(error or "no code")
-        user = auth_social.fetch_user(provider, code, auth_social.redirect_uri(provider, _base_url(request)), user_json)
-        query = {"code": auth_social.issue_code(provider, user, device), "provider": provider}
-    except auth_social.ProviderFailed:
-        query = {"error": "cancelled" if error else "failed", "provider": provider}
-    return HTMLResponse(auth_social.back_to_app_html(query))
-
-
-@app.get("/api/auth/{provider}/callback", response_class=HTMLResponse, tags=["로그인"])
-def social_callback(provider: str, request: Request, code: Optional[str] = None, state: Optional[str] = None,
-                    error: Optional[str] = None):
-    """카카오 · 페이스북 Redirect URI"""
-    if provider not in ("kakao", "facebook"):
-        raise HTTPException(404, "알 수 없는 로그인 방법")
-    return _social_callback(provider, request, code, state, error)
-
-
-@app.post("/api/auth/apple/callback", response_class=HTMLResponse, tags=["로그인"])
-def apple_callback(request: Request, code: Optional[str] = Form(None), state: Optional[str] = Form(None),
-                   error: Optional[str] = Form(None), user: Optional[str] = Form(None)):
-    """Apple Redirect URI (Apple 은 이름 · 이메일을 받을 때 POST 로 돌려준다)"""
-    return _social_callback("apple", request, code, state, error, user)
-
-
-@app.post("/api/auth/exchange", response_model=LoginResponse, tags=["로그인"])
-def exchange_social_login(req: ExchangeLoginRequest, db: Session = Depends(get_db),
-                          x_device_id: Optional[str] = Header(None)):
-    """앱으로 돌아온 1회용 코드 → 계정 번호 (구글 로그인과 같은 응답). 코드는 5분 안에 한 번만 쓸 수 있다"""
-    entry = auth_social.take_code(req.code)
-    if entry is None:
-        raise HTTPException(401, "로그인 시간이 지났어요. 다시 로그인해 주세요")
-    provider, sub, email, name, device = entry[:5]
-    return _link_login(db, provider, {"sub": sub, "email": email, "name": name}, device or x_device_id)
-
-
-# ──────────────────────────────────────────────
 # 성별 (마이페이지)
 # ──────────────────────────────────────────────
 
@@ -666,7 +490,7 @@ def exchange_social_login(req: ExchangeLoginRequest, db: Session = Depends(get_d
 def update_gender(req: GenderRequest, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """마이페이지 성별 설정 저장 (FEMALE / MALE, null 이면 해제) — 앱 UserPreferencesViewModel 과 같은 값"""
     if not schema_has(db, "users", "gender"):
-        raise HTTPException(503, "DB 에 성별 칸이 없어요 — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요")
+        raise HTTPException(503, "DB 에 성별 칸이 없어요 — 운영자가 적용 이력과 스키마를 확인해야 합니다. 로컬 기록은 유지해주세요.")
     user.gender = req.gender
     db.commit()
     return _profile_payload(db, user)
@@ -730,7 +554,7 @@ def get_product_interests(db: Session = Depends(get_db), user: User = Depends(cu
     return {"totalCount": len(items), "items": items}
 
 
-@app.get("/api/product-interests/popular", response_model=PopularInterestResponse, tags=["쇼핑"])
+@app.get("/api/product-interests/popular", response_model=PopularInterestResponse, tags=["쇼핑"], dependencies=[Depends(analytics_admin)])
 def popular_interests(limit: int = 10, db: Session = Depends(get_db)):
     """
     여러 사용자가 관심 상품으로 많이 담은 상품 순위 (기기 번호 불필요, 개인 정보 없이 개수만).
@@ -1050,7 +874,7 @@ def my_recommendation_stats(db: Session = Depends(get_db), user: User = Depends(
     return recommendation_stats(db, user.id)
 
 
-@app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"])
+@app.get("/api/recommendations/stats/all", response_model=RecommendationStats, tags=["추천 기록"], dependencies=[Depends(analytics_admin)])
 def all_recommendation_stats(db: Session = Depends(get_db)):
     """모든 사용자를 합친 추천 성능 (발표 · AI 성능 측정표용, 개인 정보 없이 개수와 비율만)"""
     require_table(db, "recommendation_logs")
@@ -1064,7 +888,7 @@ def all_recommendation_stats(db: Session = Depends(get_db)):
 @app.delete("/api/me", response_model=DeleteMyDataResult, tags=["프로필"])
 def delete_my_data(db: Session = Depends(get_db), user: User = Depends(current_user)):
     """
-    이 기기 번호로 서버 DB 에 저장된 내 기록을 모두 지운다 (옷장 · 사진 백업 · 착용 · 체형 · 취향 · 관심 상품 · 추천 기록 · 사용자).
+    Bearer로 인증된 사용자가 명시적으로 서버 기록을 삭제한다. 기기 번호는 인증이 아니다.
     폰 안의 데이터는 지우지 않는다. 앱은 지운 뒤 서버 백업을 끈다.
     """
     deleted: dict[str, int] = {}
@@ -1176,13 +1000,37 @@ def get_outfit_plans(db: Session = Depends(get_db), user: User = Depends(current
 
 
 # ──────────────────────────────────────────────
-# 전체 통계 (발표용 — 개인 정보 없이 숫자만)
+# 전체 통계 (발표용 — 운영자 인증 필요)
 # ──────────────────────────────────────────────
 
 def _count(db: Session, model) -> int:
     if not schema_has(db, model.__tablename__):
         return 0
     return db.scalar(select(func.count()).select_from(model)) or 0
+
+
+@app.get("/api/backup/snapshot", tags=["백업"])
+def backup_snapshot(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Credential row lock serializes this snapshot with every write/recovery.
+
+    Photos are fetched separately and must match this manifest before local install.
+    Missing schema fails the whole snapshot instead of restoring partial empty data.
+    """
+    for table in ("clothing_photos", "product_interests", "taste_events", "saved_outfits", "outfit_plans"):
+        require_table(db, table)
+    return {
+        "version": 1,
+        "wardrobe": get_wardrobe(db=db, user=user),
+        "wearLogs": get_wear_logs(db=db, user=user),
+        "profile": get_profile(db=db, user=user),
+        "interests": get_product_interests(db=db, user=user),
+        "tasteEvents": list_taste_events(db=db, user=user),
+        "stylePreference": get_style_preference(db=db, user=user),
+        "savedOutfits": get_saved_outfits(db=db, user=user),
+        "outfitPlans": get_outfit_plans(db=db, user=user),
+        "photos": {photo.client_id: photo.sha256 for photo in db.scalars(
+            select(ClothingPhoto).where(ClothingPhoto.user_id == user.id))},
+    }
 
 
 def _top(rows, n: int = 5) -> list[dict]:
@@ -1193,7 +1041,7 @@ def _top(rows, n: int = 5) -> list[dict]:
     return [{"name": k, "count": v} for k, v in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:n]]
 
 
-@app.get("/api/stats/overview", response_model=OverviewStats, tags=["상태"])
+@app.get("/api/stats/overview", response_model=OverviewStats, tags=["상태"], dependencies=[Depends(analytics_admin)])
 def overview_stats(db: Session = Depends(get_db)):
     """
     모든 사용자를 합친 DB 현황 — 발표 · 보고서용 (기기 번호 불필요, 개인 정보 없이 개수 · 순위만).

@@ -43,7 +43,6 @@ import com.jeiu.fashionproject.ui.viewmodel.WeatherViewModel
 @Composable
 fun WeatherOutfitScreen(
     onBack: () -> Unit,
-    onProductClick: () -> Unit,
     weatherViewModel: WeatherViewModel,
     gender: Gender? = null
 ) {

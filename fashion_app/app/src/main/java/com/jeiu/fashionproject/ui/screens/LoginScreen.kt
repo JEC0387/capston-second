@@ -1,6 +1,5 @@
 package com.jeiu.fashionproject.ui.screens
 
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -26,16 +25,12 @@ import androidx.compose.ui.unit.sp
 import com.jeiu.fashionproject.R
 import com.jeiu.fashionproject.data.AuthStore
 import com.jeiu.fashionproject.data.AuthStore.Provider
-import com.jeiu.fashionproject.data.BackupRestore
 import com.jeiu.fashionproject.ui.theme.*
 import kotlinx.coroutines.launch
 
 /**
- * 로그인 화면 — 앱을 처음 열거나 로그아웃하면 나온다.
- *  - Google · 카카오 · Facebook · Apple 계정으로 로그인: 계정마다 옷장 · 착용 기록 · 취향 학습이 따로 저장되고,
- *    다른 폰에서 같은 계정으로 로그인해도 이어진다.
- *  - 로그인 없이 둘러보기: 이 폰에만 저장 (나중에 마이페이지에서 로그인하면 지금 기록을 계정으로 옮긴다).
- * 카카오 · Facebook · Apple 은 브라우저에서 로그인한 뒤 앱으로 돌아와(fashionai://login) 여기서 마무리한다.
+ * Team provider chooser. Social identity is unavailable until it can be verified
+ * against the existing Bearer/restore contract. Local guest entry preserves records.
  */
 @Composable
 fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
@@ -44,18 +39,14 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     var busy by remember { mutableStateOf<Provider?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var hint by remember { mutableStateOf<String?>(null) }
-    // 서버에 설정된 로그인 방법 (모르면 null — 버튼은 켜 두고 누르면 서버가 이유를 알려 준다)
+    // Unknown provider configuration must not enable an external authentication action.
     var serverProviders by remember { mutableStateOf<Map<String, Boolean>?>(null) }
     LaunchedEffect(Unit) { serverProviders = AuthStore.serverProviders() }
 
     fun handle(r: AuthStore.Result) {
         when (r) {
-            is AuthStore.Result.Success -> {
-                Toast.makeText(context,
-                    if (r.isNewAccount) "${r.account.name.ifBlank { "회원" }}님, 환영해요! 지금 기록을 계정에 저장할게요"
-                    else "${r.account.name.ifBlank { "회원" }}님의 옷장을 불러왔어요", Toast.LENGTH_SHORT).show()
-                if (r.restart) BackupRestore.restartApp(context) else onDone()
-            }
+            // A legacy account response cannot prove server storage or restore.
+            is AuthStore.Result.Success -> error = AuthStore.UNAVAILABLE
             AuthStore.Result.Cancelled -> Unit
             AuthStore.Result.OpenedBrowser -> Unit
             is AuthStore.Result.Failed -> error = r.message
@@ -86,7 +77,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     }
 
     fun enabled(p: Provider): Boolean =
-        busy == null && (if (p == Provider.GOOGLE) AuthStore.isGoogleConfigured() else serverProviders?.get(p.key) != false)
+        busy == null && (if (p == Provider.GOOGLE) AuthStore.isGoogleConfigured() else serverProviders?.get(p.key) == true)
 
     Column(Modifier.fillMaxSize().background(Cream).verticalScroll(rememberScrollState())) {
         Box(Modifier.fillMaxWidth().height(280.dp)) {
@@ -102,10 +93,11 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
         }
 
         Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("내 옷장을 어디서든", style = MaterialTheme.typography.headlineLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+            Text("내 옷장으로 시작하기", style = MaterialTheme.typography.headlineLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
             Text(
-                "로그인하면 내 옷장 · 착용 기록 · 취향 학습이 계정에 저장돼요.\n폰을 바꾸거나 다른 폰에서 로그인해도 그대로 이어져요.",
-                style = MaterialTheme.typography.bodyMedium, color = MediumGray
+                AuthStore.UNAVAILABLE,
+                style = MaterialTheme.typography.bodyMedium, color = MediumGray,
+                modifier = Modifier.testTag("loginUnconfigured")
             )
             Spacer(Modifier.height(6.dp))
 
@@ -123,7 +115,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
                 serverProviders?.let { m -> Provider.entries.filter { it != Provider.GOOGLE && m[it.key] == false }.forEach { add(it.label) } }
             }
             if (off.isNotEmpty()) {
-                Text("${off.joinToString(" · ")} 로그인은 아직 설정되지 않았어요 (개발자 설정 필요).",
+                Text("${off.joinToString(" · ")} 로그인은 아직 사용할 수 없어요.",
                     style = MaterialTheme.typography.labelSmall, color = MediumGray)
             }
             hint?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MediumGray) }
@@ -131,12 +123,15 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
 
             if (allowGuest) {
                 TextButton(
-                    onClick = { AuthStore.continueAsGuest(context); onDone() },
+                    onClick = {
+                        if (AuthStore.continueAsGuest(context)) onDone()
+                        else error = "이용 상태를 저장하지 못했어요. 기존 기록은 유지돼요."
+                    },
                     enabled = busy == null,
                     modifier = Modifier.fillMaxWidth().testTag("guestLogin")
                 ) { Text("로그인 없이 둘러보기", color = Brown) }
                 Text(
-                    "로그인 없이 쓰면 기록이 이 폰에만 저장돼요. 나중에 마이페이지에서 로그인하면 지금 기록을 계정으로 옮겨요.",
+                    "기존 기록은 이 기기에 유지돼요. 서버 저장·복원은 별도의 인증과 확인이 필요해요.",
                     style = MaterialTheme.typography.labelSmall, color = MediumGray, textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )

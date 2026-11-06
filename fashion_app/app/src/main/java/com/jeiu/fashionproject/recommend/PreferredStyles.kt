@@ -21,9 +21,16 @@ object PreferredStyles {
     /** 코디 옷이 모두 선호 스타일에 맞을 때 더하는 점수 (취향 스타일 점수 최댓값과 같은 크기) */
     const val MAX_SCORE = 1.5
 
-    /** 저장된 값 정리 — 예전 이름은 새 이름으로 바꾸고, 목록에 없는 값과 중복은 뺀다. 고른 순서는 지킨다. */
+    /** 추천·표시용 투영 (저장된 원본을 변경하지 않음) — 예전 이름은 새 이름으로 바꾸고, 목록에 없는 값과 중복은 뺀다. 고른 순서는 지킨다. */
     fun normalize(styles: Collection<String>): List<String> =
         styles.map { LEGACY[it] ?: it }.filter { it in OPTIONS }.distinct()
+
+    /** An explicit chip toggle may remove its legacy alias, while unrelated saved labels survive. */
+    fun toggleSelection(selected: List<String>, style: String): List<String> {
+        if (style !in OPTIONS) return selected
+        return if (style in normalize(selected)) selected.filter { style !in normalize(listOf(it)) }
+        else selected + style
+    }
 
     // 색 묶음 (AddClothingViewModel 의 색 이름 기준)
     private val CALM = setOf("블랙", "화이트", "그레이", "베이지", "네이비", "브라운", "카키", "아이보리")
@@ -37,7 +44,7 @@ object PreferredStyles {
         val d = item.detailType
         val sub = item.subCategory
         val tag = StyleTagger.styleOf(item)
-        val neutral = ColorHarmony.isNeutral(item)
+        val neutral = item.colorName.isNotBlank() && ColorHarmony.isNeutral(item)
         val calm = item.colorName in CALM || neutral
         return when (style) {
             "캐주얼" -> tag == "캐주얼" ||
@@ -68,9 +75,10 @@ object PreferredStyles {
     data class Match(val score: Double, val style: String?)
 
     fun evaluate(items: List<WardrobeItem>, preferred: List<String>): Match {
-        if (preferred.isEmpty() || items.isEmpty()) return Match(0.0, null)
-        val coverage = items.count { item -> preferred.any { matches(item, it) } }.toDouble() / items.size
-        val best = preferred.map { s -> s to items.count { matches(it, s) } }.maxByOrNull { it.second }
+        val supported = normalize(preferred)
+        if (supported.isEmpty() || items.isEmpty()) return Match(0.0, null)
+        val coverage = items.count { item -> supported.any { matches(item, it) } }.toDouble() / items.size
+        val best = supported.map { s -> s to items.count { matches(it, s) } }.maxByOrNull { it.second }
         return Match(MAX_SCORE * coverage, best?.takeIf { it.second * 2 >= items.size }?.first)
     }
 

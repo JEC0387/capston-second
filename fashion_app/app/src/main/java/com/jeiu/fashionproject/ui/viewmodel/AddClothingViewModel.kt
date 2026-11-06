@@ -12,6 +12,9 @@ import com.jeiu.fashionproject.data.ClothingCategories
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,7 +52,7 @@ sealed class AddClothingUiState {
         val defaultMode: ImageMode,                // 처음 보여줄 사진 종류
         val garmentLoading: Boolean = false,
         val analyzed: Boolean = true,              // 수정 화면처럼 분석 없이 저장된 정보를 불러왔으면 false
-        val maskBasePath: String? = null           // 서버 옷 윤곽 마스크를 씌울 기준 이미지 (서버에 보낸 사진과 같은 비율, 캐시)
+        val maskBasePath: String? = null           // classifier upload geometry, not the display canvas
     ) : AddClothingUiState() {
         val selectedCandidate: ClothingCandidate? get() = candidates.getOrNull(selected)
         fun uriFor(mode: ImageMode): String? = when (mode) {
@@ -72,54 +75,73 @@ class AddClothingViewModel : ViewModel() {
         private set
 
     private var garmentJob: Job? = null
+    private var analysisJob: Job? = null
+    private var revision = 0L
 
     // ── 등록 ────────────────────────────────────────────────────────────
 
     fun tagImage(context: Context, uri: Uri) {
+        reset(context)
+        val requested = revision
         _state.value = AddClothingUiState.Tagging
-        viewModelScope.launch { analyze(context, uri) }
+        analysisJob = viewModelScope.launch { analyze(context, uri, requested) }
     }
 
     /** 누끼 → 분류 → 색 → 첫 후보 오려내기 */
-    private suspend fun analyze(context: Context, uri: Uri) {
+    private suspend fun analyze(context: Context, uri: Uri, requested: Long) {
         // ① 누끼
         val cut = runCatching { BackgroundRemover.process(context, uri) }.getOrElse {
-            _state.value = AddClothingUiState.Error("사진을 읽을 수 없어요. 다른 사진을 선택해 주세요.")
+            if (it is CancellationException) throw it
+            if (revision == requested) _state.value = AddClothingUiState.Error("사진을 읽을 수 없어요. 다른 사진을 선택해 주세요.")
             return
         }
+        var published = false
+        try {
+            // ② 옷 종류 분류 (누끼가 있으면 흰 배경 이미지로)
+            val uploadFile = File(cut.uploadPath)
+            val candidates = runCatching {
+                BackendApi.classifyClothing(context, Uri.fromFile(uploadFile))
+            }.getOrNull()
+            if (cut.uploadPath != cut.originalPath) uploadFile.delete()
+            currentCoroutineContext().ensureActive()
+            if (revision != requested) return
 
-        // ② 옷 종류 분류 (누끼가 있으면 흰 배경 이미지로)
-        val uploadFile = File(cut.uploadPath)
-        val candidates = runCatching {
-            BackendApi.classifyClothing(context, Uri.fromFile(uploadFile))
-        }.getOrNull()
-        if (cut.uploadPath != cut.originalPath) uploadFile.delete()
+            // ③ 대표 색 — 누끼가 있으면 옷 픽셀만, 없으면 원본 가운데 영역
+            val colors = mutableMapOf<ImageMode, ColorTag>()
+            colors[ImageMode.ORIGINAL] = colorOf(null, cut.originalPath)
+            cut.cutoutBitmap?.let { colors[ImageMode.CUTOUT] = colorOf(it, cut.originalPath); it.recycle() }
 
-        // ③ 대표 색 — 누끼가 있으면 옷 픽셀만, 없으면 원본 가운데 영역
-        val colors = mutableMapOf<ImageMode, ColorTag>()
-        colors[ImageMode.ORIGINAL] = colorOf(null, cut.originalPath)
-        cut.cutoutBitmap?.let { colors[ImageMode.CUTOUT] = colorOf(it, cut.originalPath); it.recycle() }
-
-        val tagged = AddClothingUiState.Tagged(
-            candidates = candidates.orEmpty(),
-            selected = 0,
-            fromServer = candidates != null,
-            originalUri = fileUri(cut.originalPath),
-            cutoutUri = cut.cutoutPath?.let(::fileUri),
-            garmentUri = null,
-            colors = colors,
-            defaultMode = if (cut.cutoutPath != null) ImageMode.CUTOUT else ImageMode.ORIGINAL,
-            maskBasePath = cut.maskBasePath
-        )
-        _state.value = tagged
-        // ④ 첫 번째 후보만 오려내기
-        if (tagged.candidates.isNotEmpty()) selectCandidate(context, 0)
+            val tagged = AddClothingUiState.Tagged(
+                candidates = candidates.orEmpty(),
+                selected = 0,
+                fromServer = candidates != null,
+                originalUri = fileUri(cut.originalPath),
+                cutoutUri = cut.cutoutPath?.let(::fileUri),
+                garmentUri = null,
+                colors = colors,
+                defaultMode = if (cut.cutoutPath != null) ImageMode.CUTOUT else ImageMode.ORIGINAL,
+                maskBasePath = cut.maskBasePath
+            )
+            currentCoroutineContext().ensureActive()
+            if (revision != requested) return
+            _state.value = tagged
+            published = true
+            // ④ 첫 번째 후보만 오려내기
+            if (tagged.candidates.isNotEmpty()) selectCandidate(context, 0)
+        } finally {
+            if (!published) {
+                listOfNotNull(cut.originalPath, cut.cutoutPath).forEach { deleteIfTemp(context, fileUri(it)) }
+                if (cut.uploadPath != cut.originalPath) File(cut.uploadPath).delete()
+                cut.cutoutBitmap?.let { if (!it.isRecycled) it.recycle() }
+            }
+        }
     }
 
     /** 후보를 바꾸면 그 옷의 윤곽으로 다시 오려낸다. */
     fun selectCandidate(context: Context, index: Int) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         val candidate = s.candidates.getOrNull(index) ?: return
+        val requested = revision
         garmentJob?.cancel()
         s.garmentUri?.let { deleteIfTemp(context, it) }
         val baseMode = if (s.cutoutUri != null) ImageMode.CUTOUT else ImageMode.ORIGINAL
@@ -128,20 +150,29 @@ class AddClothingViewModel : ViewModel() {
             defaultMode = baseMode, garmentLoading = candidate.maskPngBase64 != null
         )
         val mask = candidate.maskPngBase64 ?: return
-        // 서버에 보낸 사진과 같은 비율의 이미지(자른 누끼, 없으면 원본) 위에 마스크를 씌운다
-        val basePath = s.maskBasePath ?: pathOf(s.originalUri) ?: return
+        // 서버에 보낸 사진과 같은 비율의 이미지(누끼, 없으면 원본) 위에 마스크를 씌운다
+        val basePath = s.maskBasePath ?: pathOf(s.cutoutUri ?: s.originalUri) ?: return
 
         garmentJob = viewModelScope.launch {
             val garment = runCatching { BackgroundRemover.cutGarment(context, basePath, mask) }.getOrNull()
             // 그사이 다른 후보를 골랐으면 이 결과는 버린다
-            if (!isActive) { garment?.let { File(it.path).delete(); it.bitmap.recycle() }; return@launch }
+            if (!isActive || revision != requested) { garment?.let { File(it.path).delete(); it.bitmap.recycle() }; return@launch }
             val cur = _state.value as? AddClothingUiState.Tagged ?: return@launch
+            if (cur.selected != index || cur.candidates != s.candidates) {
+                garment?.let { File(it.path).delete(); it.bitmap.recycle() }
+                return@launch
+            }
             if (garment == null) {
                 _state.value = cur.copy(garmentLoading = false)
                 return@launch
             }
             val color = colorOf(garment.bitmap, basePath)
             garment.bitmap.recycle()
+            currentCoroutineContext().ensureActive()
+            if (revision != requested || _state.value != cur) {
+                File(garment.path).delete()
+                return@launch
+            }
             // 오려낸 옷이 원래 누끼의 85% 미만이면 사람 몸·다른 옷이 섞여 있었던 것 → "옷만"을 기본으로
             val mode = if (garment.coverage < 0.85f) ImageMode.GARMENT else baseMode
             _state.value = cur.copy(
@@ -160,6 +191,7 @@ class AddClothingViewModel : ViewModel() {
         brand: String? = null, price: Int? = null
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
+        if (s.garmentLoading) return
         val shown = s.uriFor(mode) ?: s.originalUri ?: return
         val color = colorFor(s, mode)
         WardrobeStore.add(
@@ -183,7 +215,6 @@ class AddClothingViewModel : ViewModel() {
                 price = price
             )
         )
-        deleteMaskBase(s)
         _state.value = AddClothingUiState.Idle
     }
 
@@ -192,7 +223,9 @@ class AddClothingViewModel : ViewModel() {
     /** 저장된 옷을 불러와 수정 화면을 연다. */
     fun startEdit(context: Context, item: WardrobeItem) {
         if (editingItem?.id == item.id) return   // 화면이 다시 그려져도 한 번만
+        reset(context)
         editingItem = item
+        val requested = revision
         // 보여주던 사진이 버전 칸에 없으면(버전 칸이 생기기 전에 등록한 옷) 누끼 여부에 따라 알맞은 자리에 넣는다
         var original = item.originalUri
         var cutout = item.cutoutUri
@@ -218,7 +251,7 @@ class AddClothingViewModel : ViewModel() {
                 colorOfUri(context, tagged.uriFor(mode)!!, cut = mode != ImageMode.ORIGINAL)?.let { mode to it }
             }
             val cur = _state.value as? AddClothingUiState.Tagged ?: return@launch
-            if (cur.analyzed) return@launch
+            if (cur.analyzed || revision != requested || editingItem != item) return@launch
             _state.value = cur.copy(colors = cur.colors + extra)
         }
     }
@@ -231,6 +264,11 @@ class AddClothingViewModel : ViewModel() {
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         val item = editingItem ?: return
+        if (s.garmentLoading) return
+        if (WardrobeStore.items.value.find { it.id == item.id } != item) {
+            _state.value = AddClothingUiState.Error("다른 곳에서 옷 정보가 변경되었어요. 기존 기록을 유지했으니 수정 화면을 다시 열어 주세요.")
+            return
+        }
         val shown = s.uriFor(mode) ?: s.originalUri ?: s.cutoutUri ?: s.garmentUri ?: return
         val color = colorFor(s, mode)
         WardrobeStore.update(
@@ -262,41 +300,36 @@ class AddClothingViewModel : ViewModel() {
 
     /** 저장하지 않고 다시 시작 — 만들어 둔 사진 파일을 지운다. */
     fun reset(context: Context) {
+        revision++
+        analysisJob?.cancel()
         garmentJob?.cancel()
         discardFiles(context)
+        editingItem = null
         _state.value = AddClothingUiState.Idle
     }
 
     private var appContext: Context? = null
 
-    /**
-     * 화면이 사라질 때 임시 파일 정리를 위해 앱 Context를 기억해 둔다.
-     * 처음 열 때 ML Kit 누끼 모델을 미리 내려받아 두어, 사진을 고르자마자 배경이 지워지게 한다.
-     */
-    fun attach(context: Context) {
-        if (appContext == null) viewModelScope.launch { BackgroundRemover.prepare(context.applicationContext) }
-        appContext = context.applicationContext
-    }
+    /** 화면이 사라질 때 임시 파일 정리를 위해 앱 Context를 기억해 둔다. */
+    fun attach(context: Context) { appContext = context.applicationContext }
 
     override fun onCleared() {
+        revision++
+        analysisJob?.cancel()
+        garmentJob?.cancel()
         appContext?.let { discardFiles(it) }
+        super.onCleared()
     }
 
     private fun discardFiles(context: Context) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         listOfNotNull(s.originalUri, s.cutoutUri, s.garmentUri).forEach { deleteIfTemp(context, it) }
-        deleteMaskBase(s)
-    }
-
-    /** 캐시에 둔 마스크 기준 이미지는 저장 · 취소 뒤 지운다 (원본 사본과 같은 파일이면 그대로) */
-    private fun deleteMaskBase(s: AddClothingUiState.Tagged) {
-        val base = s.maskBasePath ?: return
-        if (base != pathOf(s.originalUri)) File(base).delete()
     }
 
     /** 이번 등록/수정 중에 만든 파일만 지운다 (수정 중인 옷에 저장된 사진은 지키기) */
     private fun deleteIfTemp(context: Context, uri: String) {
         if (editingItem?.photoUris()?.contains(uri) == true) return
+        if (WardrobeStore.items.value.any { uri in it.photoUris() }) return
         WardrobeStore.deletePhoto(context, uri)
     }
 

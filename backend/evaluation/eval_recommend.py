@@ -2,7 +2,7 @@
 코디 추천 성과 표 만들기 — 서버의 /api/recommendations/stats 결과를 발표용 표로 출력한다.
 
     python evaluation/eval_recommend.py                       # 모든 사용자 합계
-    python evaluation/eval_recommend.py --device <백업 코드>   # 한 사람 것만
+    FASHION_AUTH_TOKEN=<개인 접속 토큰> python evaluation/eval_recommend.py --mine
     python evaluation/eval_recommend.py --server http://192.168.0.10:8000 --csv rec_stats.csv
 
 서버(uvicorn)가 켜져 있고 DB(Supabase)에 연결돼 있어야 한다. 표준 라이브러리만 쓴다.
@@ -10,18 +10,32 @@
 import argparse
 import csv
 import json
+import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 LABELS = {"home": "홈", "today": "오늘", "forecast": "5일 예보", "situation": "상황별"}
 
 
-def fetch(server: str, device: "str | None") -> dict:
-    path = "/api/recommendations/stats" if device else "/api/recommendations/stats/all"
-    req = urllib.request.Request(server.rstrip("/") + path, headers={"X-Device-Id": device} if device else {})
+def fetch(server: str, mine: bool) -> dict:
+    path = "/api/recommendations/stats" if mine else "/api/recommendations/stats/all"
+    headers = {}
+    variable = "FASHION_AUTH_TOKEN" if mine else "FASHION_ANALYTICS_ADMIN_TOKEN"
+    token = os.environ.get(variable, "")
+    host = urllib.parse.urlparse(server).hostname
+    if not token or not (server.startswith("https://") or host in ("localhost", "127.0.0.1")):
+        sys.exit(f"통계에는 {variable}과 HTTPS 서버 주소가 필요합니다")
+    headers["Authorization"] = "Bearer " + token
+    # Never forward a credential through an HTTP redirect.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+    opener = urllib.request.build_opener(NoRedirect)
+    req = urllib.request.Request(server.rstrip("/") + path, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=10) as res:
+        with opener.open(req, timeout=10) as res:
             return json.loads(res.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         sys.exit(f"서버 오류 {e.code}: {e.read().decode('utf-8', 'replace')[:200]} (DB 연결 · 003 마이그레이션 확인)")
@@ -45,11 +59,11 @@ def rows(stats: dict) -> list[list[str]]:
 def main():
     ap = argparse.ArgumentParser(description="코디 추천 성과 표")
     ap.add_argument("--server", default="http://localhost:8000")
-    ap.add_argument("--device", help="한 사람 것만 볼 때 그 폰의 백업 코드(기기 번호)")
+    ap.add_argument("--mine", action="store_true", help="FASHION_AUTH_TOKEN으로 인증한 내 통계")
     ap.add_argument("--csv", help="표를 CSV 로도 저장")
     args = ap.parse_args()
 
-    stats = fetch(args.server, args.device)
+    stats = fetch(args.server, args.mine)
     header = ["화면", "추천 코디", "👍", "평가 중 👍", "그대로 입음", "일부 입음"]
     table = rows(stats)
     print(f"기간: {stats['since'] or '-'} ~ {stats['until'] or '-'} · 사용자 {stats['users']}명\n")

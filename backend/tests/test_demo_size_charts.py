@@ -46,7 +46,7 @@ class DemoSizeChartTest(unittest.TestCase):
             self.assertEqual(4, session.query(SizeChart).count())
         response = self.client.get('/api/body-measurements',
                                    headers={'X-Device-Id': 'demo-device'})
-        self.assertEqual(0, response.json()['totalCount'])
+        self.assertEqual(401, response.status_code)  # old device ID cannot open private records
 
 
 if __name__ == '__main__':

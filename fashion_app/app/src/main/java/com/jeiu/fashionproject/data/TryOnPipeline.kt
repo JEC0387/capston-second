@@ -24,7 +24,7 @@ import java.net.URL
 import kotlin.coroutines.resume
 
 /**
- * AI 가상피팅 전체 과정 — 무신사 · 구글 가상피팅처럼 5단계로 자연스럽게 입힌다.
+ * 팀의 이전 전처리 연구 코드 보존. 직접 실행은 차단하며 아래 단계의 품질을 보증하지 않는다.
  *
  *  ① Pose Estimation (폰, ML Kit 포즈 33점) — 전신 사진에서 어깨 · 골반 · 발목 · 얼굴 위치를 찾는다.
  *     사람이 없으면 유료 요청을 보내지 않고, 사람이 작게 나온 사진은 전신이 2:3 세로로 꽉 차게 자른다 (TryOnFraming).
@@ -34,6 +34,7 @@ import kotlin.coroutines.resume
  *  ④ Diffusion       (FASHN tryon-v1.6, quality 모드) — 주름 · 그림자 · 질감을 그려 실제로 입은 사진을 만든다.
  *  ⑤ Image Blending  (폰) — 결과에 원본 얼굴을 부드럽게 다시 합쳐, 얼굴이 바뀌어 보이는 이질감을 없앤다.
  */
+@Deprecated("Use the authenticated, consent-bound TryOnViewModel or ServerOutfitVtonViewModel")
 object TryOnPipeline {
 
     data class Person(
@@ -50,26 +51,11 @@ object TryOnPipeline {
     suspend fun run(
         context: Context, personUri: Uri, plan: TryOnPlan, seed: Int, progress: (String) -> Unit
     ): Outcome {
-        progress("① 자세 분석 중 — 어깨 · 골반 · 발목 위치를 찾고 있어요")
-        val person = preparePerson(context, personUri)
-        try {
-            progress("② 옷 사진 정리 중 — 그림자를 지우고 옷만 크게")
-            val garments = plan.garments.associate { it.id to garmentImage(context, it) }
-            val result = TryOnBatch.run(plan, person.dataUri, generate = { current, g ->
-                TryOnRepository.tryOn(
-                    current, garments.getValue(g.id), TryOnPlan.categoryFor(g.category)!!,
-                    photoType = if (g.flatLay) "flat-lay" else "auto", seed = seed
-                )
-            }, progress = { i, n -> progress("③④ AI가 옷을 체형 · 자세에 맞춰 입히는 중… ($i/$n)") })
-            progress("⑤ 얼굴 · 배경을 원본과 자연스럽게 합치는 중")
-            val blended = runCatching { blendFace(context, result, person) }.getOrNull()
-            val note = if (!person.fullBody) "발끝까지 나온 정면 전신 사진이면 더 자연스러워요." else null
-            return Outcome(blended ?: result, blended != null, note)
-        } finally {
-            person.file.delete()
-        }
+        // The legacy entry has no consent, durable request ID or usage reservation.
+        // Screens use AiTryOnScreen/TryOnViewModel and ServerOutfitVtonViewModel instead.
+        // Fail before opening the photograph; never reintroduce a direct paid API call.
+        throw TryOnFailure("인증·전송 동의·요청 보호가 있는 AI 피팅 화면에서 시작해주세요.")
     }
-
     // ── ① 사람 사진 ─────────────────────────────────────────────────────────
 
     private suspend fun preparePerson(context: Context, uri: Uri): Person = withContext(Dispatchers.Default) {

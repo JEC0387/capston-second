@@ -71,7 +71,12 @@ object WardrobeStore {
                     if (!o.has("id")) needsSave = true
                     fromJson(o)
                 }
-            }.getOrDefault(emptyList())
+            }.getOrElse {
+                // Unreadable saved data is not an empty wardrobe. Preserve the original
+                // preferences and photos instead of seeding/persisting or cleaning files.
+                loaded = false
+                return
+            }
         } ?: emptyList()
 
         // 샘플 옷은 첫 실행 때 한 번만 넣는다. (사용자가 지운 샘플이 다시 생기지 않도록)
@@ -92,6 +97,16 @@ object WardrobeStore {
                 latest.copy(addedAt = item.addedAt, favoritedAt = item.favoritedAt, keptAt = item.keptAt)
             }
         }
+        // Old installs persisted drawable URIs with the original applicationId. Preview uses
+        // a different package, so repair only known sample drawable paths on disk.
+        // User-added photos and manual edits remain unchanged.
+        items = items.map { item ->
+            val bundled = latestSamples[item.id] ?: return@map item
+            val repaired = SampleWardrobe.rebaseBundledUris(item, bundled, context.packageName)
+            if (repaired != item) needsSave = true
+            repaired
+        }
+
         // 사진 버전 칸이 생기기 전에 들어간 샘플은, 사진이 그대로면 원본·옷만 버전을 채워 준다.
         items = items.map { item ->
             val latest = latestSamples[item.id]
@@ -136,6 +151,19 @@ object WardrobeStore {
         }
     }
 
+    /**
+     * Explicit demo action only: restore absent bundled samples when the wardrobe is empty.
+     * No startup re-seeding: users who deleted samples must remain in control.
+     */
+    fun addDemoSamplesIfEmpty(context: Context): Boolean {
+        load(context) // Never overwrite saved wardrobe data before its first read.
+        if (!loaded || _items.value.isNotEmpty()) return false
+        val restored = SampleWardrobe.items()
+        _items.value = restored
+        persist(context)
+        return true
+    }
+
     fun add(context: Context, item: WardrobeItem) {
         _items.value = _items.value + item
         persist(context)
@@ -160,6 +188,23 @@ object WardrobeStore {
         _items.value = _items.value.map { if (it.id == item.id) item else it }
         persist(context)
         old?.photoUris()?.minus(item.photoUris())?.forEach { deletePhoto(context, it) }
+    }
+
+    /** A confirmed local photo derivative must never overwrite a concurrent edit/delete.
+     * Call on the main dispatcher; preserve the original reference and all non-photo fields.
+     * Old photos are not removed by the tidy action.
+     */
+    fun updatePhotoIfUnchanged(context: Context, expected: WardrobeItem, replacement: WardrobeItem): Boolean {
+        if (_items.value.find { it.id == expected.id } != expected || replacement.id != expected.id) return false
+        if (replacement.originalUri != (expected.originalUri ?: expected.imageUri)) return false
+        val photoOnly = expected.copy(imageUri = replacement.imageUri, originalUri = replacement.originalUri,
+            cutoutUri = replacement.cutoutUri, garmentUri = replacement.garmentUri, isCutout = replacement.isCutout)
+        if (photoOnly != replacement) return false
+        val updated = _items.value.map { if (it.id == expected.id) photoOnly else it }
+        if (!context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, encode(updated)).commit()) return false
+        _items.value = updated
+        DbSync.pushWardrobe(updated)
+        return true
     }
 
     /** [계속 보관] — 지금부터 90일 동안 "안 입은 옷" 알림에서 뺀다. */

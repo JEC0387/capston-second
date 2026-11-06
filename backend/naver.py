@@ -10,6 +10,7 @@ import json
 import os
 import re
 import time
+from datetime import date, timedelta
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,6 +23,7 @@ IMAGE_SEARCH_URL = "https://naverapihub.apigw.ntruss.com/search/v1/image"
 # 홈 화면은 코디 카드마다 같은 검색어로 사진을 찾으므로, 같은 검색어는 1시간 동안 다시 묻지 않는다 (호출 한도 절약)
 CACHE_SECONDS = 3600
 _cache: dict = {}
+_insight_cache: tuple[float, dict] | None = None
 
 _TAG = re.compile(r"<[^>]*>")
 
@@ -74,3 +76,41 @@ def search_images(query: str, display: int = 30) -> list[dict]:
         _cache.clear()
     _cache[key] = (now, items)
     return items
+
+
+def shopping_insight() -> dict:
+    """Fixed clothing category trend query; credentials never leave this server."""
+    global _insight_cache
+    if not is_configured():
+        raise NaverNotConfigured()
+    now = time.monotonic()
+    if _insight_cache and now - _insight_cache[0] < CACHE_SECONDS:
+        return _insight_cache[1]
+    end = date.today()
+    request_body = {
+        "startDate": (end - timedelta(days=365)).isoformat(),
+        "endDate": end.isoformat(),
+        "timeUnit": "month",
+        "category": [{"name": "패션의류", "param": ["50000000"]}],
+    }
+    req = urllib.request.Request(
+        "https://naverapihub.apigw.ntruss.com/shopping/v1/categories",
+        data=json.dumps(request_body).encode("utf-8"),
+        headers={
+            "X-NCP-APIGW-API-KEY-ID": NAVER_API_KEY_ID,
+            "X-NCP-APIGW-API-KEY": NAVER_API_KEY,
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read(512 * 1024 + 1)
+        if len(raw) > 512 * 1024:
+            raise ValueError("response_size")
+        body = json.loads(raw)
+        if not isinstance(body.get("results"), list):
+            raise ValueError("response_format")
+    except (urllib.error.URLError, TimeoutError, ValueError, TypeError) as e:
+        raise NaverUnavailable(type(e).__name__) from None
+    _insight_cache = (now, body)
+    return body

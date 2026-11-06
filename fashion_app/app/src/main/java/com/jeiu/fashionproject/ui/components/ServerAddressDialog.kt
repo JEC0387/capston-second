@@ -2,6 +2,8 @@ package com.jeiu.fashionproject.ui.components
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,13 +33,15 @@ fun ServerAddressDialog(onDismiss: () -> Unit) {
         onDismissRequest = { if (!checking) onDismiss() },
         title = { Text("서버 주소", fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("현재: ${ServerSettings.current}\n기본: ${ServerSettings.defaultUrl}", style = MaterialTheme.typography.bodySmall)
+                if (!ServerSettings.isDefault) Text("저장한 서버 주소를 사용 중이에요. 이전 PC 주소라면 기본값으로 변경할 수 있어요. 기존 인증은 발급 서버에 묶여 있어 재인증이 필요할 수 있으며 데이터·대기열은 지우지 않아요.", color = Brown)
                 Text("기본 주소(인터넷 서버)를 그대로 쓰면 돼요.\n내 PC 서버를 쓰려면 에뮬레이터는 10.0.2.2, 실제 폰은 PC 의 와이파이 IP 를 넣어 주세요 " +
                     "(PC 에서 ipconfig → IPv4 주소, 예: 192.168.0.10).",
                     style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 OutlinedTextField(
                     value = input, onValueChange = { input = it.take(100); result = null }, singleLine = true,
-                    label = { Text("PC 주소 (포트를 안 쓰면 8000)") },
+                    label = { Text("서버 HTTPS 주소 또는 개발 PC 주소") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     isError = input.isNotBlank() && normalized == null,
                     supportingText = { Text(normalized ?: "주소 형식이 맞지 않아요 (예: 192.168.0.10 또는 192.168.0.10:8000)") },

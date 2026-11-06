@@ -77,8 +77,9 @@ class BackupAndRecommendationLogTest {
 
     @Test
     fun normalize_code() {
-        assertEquals("3f2a9c1e-1111-2222-3333-444455556666",
-            BackupRestore.normalize(" 3F2A9C1E-1111-2222-3333-444455556666 \n"))
+        val recovery = "AbCdefghijklmnopqrstuvwxyz0123456789_-AbCdef"
+        assertEquals(recovery, BackupRestore.normalize(" $recovery \n"))
+        assertNull(BackupRestore.normalize("3F2A9C1E-1111-2222-3333-444455556666"))
         assertNull(BackupRestore.normalize("short"))
         assertNull(BackupRestore.normalize("bad/code/with/slash"))
     }
@@ -105,7 +106,7 @@ class BackupAndRecommendationLogTest {
         assertEquals(listOf("sample_01", "user-1"), list.map { it.item.id })
         val sample = list[0]
         assertFalse(sample.hasPhoto)                                       // 샘플은 사진을 받지 않음
-        assertTrue(sample.item.imageUri.startsWith("android.resource://com.jeiu.fashionproject/"))
+        assertTrue(sample.item.imageUri.startsWith("android.resource://${BuildConfig.APPLICATION_ID}/"))
         val user = list[1]
         assertTrue(user.hasPhoto)
         assertEquals(0xFF1F2A44L, user.item.colorValue)
@@ -147,5 +148,29 @@ class BackupAndRecommendationLogTest {
             """{"scores":[{"style":"미니멀","score":4},{"style":"캐주얼","score":-1}],"ratedCount":3,"topStyle":"미니멀"}""")
         assertEquals(mapOf("미니멀" to 4, "캐주얼" to -1), scores)
         assertEquals(3, rated)
+    }
+
+    @Test
+    fun photoManifestRejectsMissingOrChangedPhotoBeforeLocalInstall() {
+        val bytes = "photo snapshot".toByteArray()
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+        assertTrue(BackupRestore.verifyPhoto(bytes, hash))
+        assertFalse(BackupRestore.verifyPhoto("changed".toByteArray(), hash))
+        assertFalse(BackupRestore.verifyPhoto(bytes, ""))
+    }
+
+    @Test
+    fun snapshotRejectsUnsupportedOrIncompleteResponse() {
+        val document = org.json.JSONObject("""{
+            "version":1,"wardrobe":{"items":[]},"wearLogs":{"logs":[]},"profile":{"gender":"FEMALE"},
+            "interests":{"items":[]},"tasteEvents":{"events":[]},"stylePreference":{"scores":[]},
+            "savedOutfits":{"outfits":[]},"outfitPlans":{"plans":[]},"photos":{}
+        }""")
+        assertFalse(BackupRestore.parseSnapshot(document).isEmpty)
+        document.put("version", 2)
+        assertTrue(runCatching { BackupRestore.parseSnapshot(document) }.isFailure)
+        document.put("version", 1).remove("wearLogs")
+        assertTrue(runCatching { BackupRestore.parseSnapshot(document) }.isFailure)
     }
 }

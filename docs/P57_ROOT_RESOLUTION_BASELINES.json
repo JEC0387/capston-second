@@ -1,0 +1,322 @@
+[
+  {
+    "file": ".github/workflows/android-debug-apk.yml",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": ".gitignore",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "README.md",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "docs/AI_TRYON_STATUS.md",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "docs/APK_DOWNLOAD.md",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "docs/README.md",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/build.gradle.kts",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/src/main/AndroidManifest.xml",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/FashionApp.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/MainActivity.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/BackendApi.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/BackupRestore.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/DbSync.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/NaverImageSearchRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/ProfileStore.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/SampleWardrobe.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/ServerSettings.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/ShoppingInsightRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/SizeCharts.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/TastePreferenceStore.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/TryOnPlan.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/TryOnRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/UnsplashRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/WardrobeStore.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/data/WeatherRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/navigation/AppNavigation.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/navigation/Screen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/notify/WeatherAlertWorker.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/recommend/BodyProfileAnalyzer.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/recommend/BodyProfileRepository.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/recommend/BodySizeRecommendation.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/recommend/ForecastAlerts.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/BackupRestoreDialog.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/BodySizeRecommendationCard.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/ClothingThumb.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/ServerAddressDialog.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/components/ServerStatusBadge.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/AddClothingScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/AiTryOnScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/BodyAnalysisScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/HomeScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/MissingItemScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/MusinsaClosetScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/ProductDetailScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/StyleAnalysisScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/StyleSuggestionScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/VirtualFittingScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/screens/WardrobeScreen.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/AddClothingViewModel.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/BackgroundRemover.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/BodyMeasurementCalculator.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/FittingPoseDetector.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/SilhouetteMeasurer.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/java/com/jeiu/fashionproject/ui/viewmodel/WeatherViewModel.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve verified photo/body/3D/VTON and product-ID paths; team additions separately reconciled"
+  },
+  {
+    "file": "fashion_app/app/src/main/res/xml/backup_rules.xml",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/main/res/xml/data_extraction_rules.xml",
+    "baseline": "personal9ac1b229",
+    "reason": "Existing tested privacy/auth/data-preservation boundary"
+  },
+  {
+    "file": "fashion_app/app/src/test/java/com/jeiu/fashionproject/BackupAndRecommendationLogTest.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/src/test/java/com/jeiu/fashionproject/BodyPhotoEntryUiTest.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/src/test/java/com/jeiu/fashionproject/PresentationFittingUiTest.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/src/test/java/com/jeiu/fashionproject/ServerSettingsTest.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/app/src/test/java/com/jeiu/fashionproject/SilhouetteMeasurerTest.kt",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/gradle/libs.versions.toml",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/gradle/test-runtime.init.gradle.kts",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  },
+  {
+    "file": "fashion_app/gradlew.bat",
+    "baseline": "personal9ac1b229",
+    "reason": "Preserve existing regression/release/CI safeguards; team history remains a merge parent"
+  }
+]

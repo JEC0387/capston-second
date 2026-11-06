@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "teamBase": "411d008ebf542ec04c4966936303a686b4f784e5",
+  "personalBase": "9ac1b229f8f1169175526b7fd42fe1d60ad2343f",
+  "preserved": {
+    "005_user_logins.sql": "28e40d700777b79949c511b18af0ae14d1eedb000668ad1c2646de09361c090b",
+    "legacy_personal/005_auth_credentials.sql": "185de551b87529d6ade8560b2750b0b9a17770b04c699f4faaf5ff7150fc1a96",
+    "legacy_personal/006_auth_hardening.sql": "892ab7cbbc6834cfaba537fd45ed4b722b793ecc5e82a40b762e52176d6dc59e"
+  },
+  "followups": {
+    "006_auth_credentials.sql": "legacy_personal/005_auth_credentials.sql",
+    "007_auth_hardening.sql": "legacy_personal/006_auth_hardening.sql"
+  },
+  "appliedHistoryInferred": false,
+  "personalLineage": [
+    {
+      "file": "001_body_record_client_id.sql",
+      "sha256": "8c06a13f4d28b1d674543fec158bbbb48c208a3a53603ae9b8e9669de5ad6696"
+    },
+    {
+      "file": "002_user_data_tables.sql",
+      "sha256": "72f991129c985737e18e7a4cc45942ddc2da11c4daefc5747ca7bfc8a21f9076"
+    },
+    {
+      "file": "003_backup_and_recommendation_logs.sql",
+      "sha256": "39e811861fea4dd708f2203a282521f096b02cb88def05f369a74ecd63f566df"
+    },
+    {
+      "file": "004_outfit_book_and_prices.sql",
+      "sha256": "58d57eeea06f6f563c37fb397876efe87640116d5bfeb613dd41b8cc0731b2b5"
+    },
+    {
+      "file": "005_auth_credentials.sql",
+      "sha256": "185de551b87529d6ade8560b2750b0b9a17770b04c699f4faaf5ff7150fc1a96"
+    },
+    {
+      "file": "006_auth_hardening.sql",
+      "sha256": "892ab7cbbc6834cfaba537fd45ed4b722b793ecc5e82a40b762e52176d6dc59e"
+    },
+    {
+      "file": "007_user_logins.sql",
+      "sha256": "28e40d700777b79949c511b18af0ae14d1eedb000668ad1c2646de09361c090b"
+    }
+  ],
+  "personalFollowups": {
+    "legacy_personal/007_user_logins.sql": "005_user_logins.sql"
+  }
+}

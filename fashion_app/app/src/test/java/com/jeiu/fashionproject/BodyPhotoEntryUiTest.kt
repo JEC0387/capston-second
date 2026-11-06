@@ -59,8 +59,16 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithText("키 (cm)").performTextInput("170")
     }
     @After fun cleanup() { compose.runOnIdle { model.reset();model.viewModelScope.cancel() } }
-    @Test fun largeGallerySurfaceRequiresConsent() {
-        compose.onNodeWithTag("bodyGalleryPicker").performClick()
+    @Test fun defaultAvatarIsOptionalAndLeavesTheExistingPhotoEntryAvailable() {
+        compose.onNodeWithTag("bodyManualExpand").performScrollTo().performClick()
+        compose.onNodeWithText("3D 기본 모델").performScrollTo().performClick()
+        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
+        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithTag("bodyGalleryButton").performScrollTo().performClick()
+        compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()
+    }
+    @Test fun galleryActionRequiresConsent() {
+        compose.onNodeWithTag("bodyGalleryButton").performScrollTo().performClick()
         compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()
         compose.onAllNodes(isToggleable()).filter(isOff()).assertCountEquals(1)
     }
@@ -68,6 +76,18 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithTag("bodyGalleryButton").performScrollTo().performClick()
         compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()
         compose.onAllNodes(isToggleable()).filter(isOff()).assertCountEquals(1)
+    }
+    @Test fun tipsAndManualMeasurementsStartCollapsedAndCanBeOpened() {
+        compose.onNodeWithTag("bodyTipsDetails").assertDoesNotExist()
+        compose.onNodeWithTag("manualBodyCard").assertDoesNotExist()
+        compose.onNodeWithTag("bodyTipsToggle").performScrollTo().performClick()
+        compose.onNodeWithTag("bodyTipsDetails").assertExists()
+        compose.onNodeWithTag("bodyTipsToggle").performClick()
+        compose.onNodeWithTag("bodyTipsDetails").assertDoesNotExist()
+        compose.onNodeWithTag("bodyManualExpand").performScrollTo().performClick()
+        compose.onNodeWithTag("manualBodyCard").assertExists()
+        compose.onNodeWithTag("bodyManualExpand").performClick()
+        compose.onNodeWithTag("manualBodyCard").assertDoesNotExist()
     }
     @Test fun cameraWithoutHeightIsEnabledAndResumesAfterHeightAndConsent() {
         compose.runOnIdle { model.updateHeightInput("") }
@@ -140,6 +160,15 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithTag("bodyHeightInput").performScrollTo().assertIsDisplayed().performImeAction()
         compose.onNodeWithTag("bodyCameraButton").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("bodyGalleryButton").performScrollTo().assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test fun smallViewportOpensDefault3dWithoutHeightOrPhotos() {
+        compose.runOnIdle { viewportHeight = 320.dp; model.updateHeightInput("") }
+        compose.onNodeWithTag("bodyManualExpand").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("3D 기본 모델").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
+        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithTag("bodyCameraButton").performScrollTo().assertIsDisplayed()
     }
 
 }

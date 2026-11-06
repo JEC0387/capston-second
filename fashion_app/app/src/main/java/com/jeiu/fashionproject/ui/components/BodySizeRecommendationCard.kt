@@ -18,6 +18,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.SizeCharts
+import com.jeiu.fashionproject.data.BodyDimensions
+import com.jeiu.fashionproject.data.BodyDimension
+import com.jeiu.fashionproject.data.ManualBodyStore
+import com.jeiu.fashionproject.recommend.BodySizeRecommendation
+import androidx.compose.runtime.collectAsState
 import com.jeiu.fashionproject.recommend.GarmentSizeRow
 import com.jeiu.fashionproject.recommend.SizeRecommendationState
 import com.jeiu.fashionproject.ui.theme.CharcoalBlack
@@ -34,7 +39,17 @@ fun BodySizeRecommendationCard(measurements: BodyMeasurements) {
         rows = SizeCharts.load()
         loaded = true
     }
-    val display = if (loaded) SizeRecommendationState.from(measurements, rows) else null
+    val manual by ManualBodyStore.current.collectAsState()
+    val profile = BodyDimensions.resolve(manual,measurements)
+    val shoulder = profile[BodyDimension.SHOULDER_WIDTH]
+    val suggestions = rows?.let { BodySizeRecommendation.suggest(profile,it) }.orEmpty()
+    val display = if (!loaded) null else when {
+        shoulder == null -> SizeRecommendationState.MissingBody
+        rows == null -> SizeRecommendationState.Unavailable
+        rows!!.isEmpty() -> SizeRecommendationState.NoCharts
+        suggestions.isEmpty() -> SizeRecommendationState.NoMatch
+        else -> SizeRecommendationState.Ready(suggestions)
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -53,7 +68,7 @@ fun BodySizeRecommendationCard(measurements: BodyMeasurements) {
                     Text("${suggestion.brand} · ${suggestion.category}", color = CharcoalBlack)
                     Text("추천 사이즈: ${suggestion.sizeLabel} (어깨 기준)",
                         color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
-                    Text("사진 기반 추정 어깨 너비: ${oneDecimal(measurements.shoulderWidthCm)} cm",
+                    Text("${shoulder?.origin?.label.orEmpty()} 어깨 너비: ${oneDecimal(shoulder?.cm ?: measurements.shoulderWidthCm)} cm",
                         color = CharcoalBlack, style = MaterialTheme.typography.bodySmall)
                     Text("${suggestion.sizeLabel} 의류 어깨 단면: ${oneDecimal(suggestion.garmentShoulderCm)} cm",
                         color = CharcoalBlack, style = MaterialTheme.typography.bodySmall)
@@ -63,7 +78,7 @@ fun BodySizeRecommendationCard(measurements: BodyMeasurements) {
                         color = CharcoalBlack, style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Text("정면 사진과 입력 키로 얻은 추정값이에요. 어깨 단면이 추정 어깨 너비보다 2 cm 이상 큰 사이즈 중 가장 작은 것을 고르는 시범 기준이에요. 가슴·허리·엉덩이 둘레와 전체 착용 핏은 판단할 수 없어요. 상품별 패턴과 소재에 따라 실제 핏이 달라지므로 구매 전 해당 상품의 실측표를 확인해 주세요.",
+            Text("직접 입력한 어깨 너비가 있으면 우선 사용하고, 없으면 사진 추정값을 참고해요. 어깨 단면이 추정 어깨 너비보다 2 cm 이상 큰 사이즈 중 가장 작은 것을 고르는 시범 기준이에요. 가슴·허리·엉덩이 둘레와 전체 착용 핏은 판단할 수 없어요. 상품별 패턴과 소재에 따라 실제 핏이 달라지므로 구매 전 해당 상품의 실측표를 확인해 주세요.",
                 color = MediumGray, style = MaterialTheme.typography.bodySmall)
         }
     }

@@ -4,8 +4,7 @@ import java.net.URI
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 
-/** @param flatLay 배경을 지운 옷 사진(누끼)이면 true — FASHN에 flat-lay 사진으로 알려 목 라벨 · 그림자 등을 무시하게 한다 */
-data class TryOnGarment(val id: String, val name: String, val category: String, val image: String, val flatLay: Boolean = false)
+data class TryOnGarment(val id: String, val name: String, val category: String, val image: String)
 
 data class TryOnPlan(val garments: List<TryOnGarment>, val unsupported: List<TryOnGarment>, val issue: String?) {
     val requestCount: Int get() = garments.size

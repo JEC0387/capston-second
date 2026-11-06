@@ -1,0 +1,5 @@
+# These immutable identities are recorded from their canonical Git blob bytes.
+005_user_logins.sql text eol=lf
+006_auth_credentials.sql text eol=lf
+007_auth_hardening.sql text eol=lf
+legacy_personal/*.sql text eol=lf

@@ -96,13 +96,13 @@ def optional_db():
 
 def database_status():
     if engine is None:
-        return {'ready': False, 'status': 'not_configured'}
+        return {'ready': False, 'status': 'not_configured', 'syncReady': False, 'authReady': False, 'authProtocol': 2}
     try:
         with engine.connect() as conn:
             # Include the integration schema, not merely TCP connectivity.
             conn.execute(text('SELECT client_id FROM body_measurements LIMIT 0'))
     except SQLAlchemyError:
-        return {'ready': False, 'status': 'unavailable'}
+        return {'ready': False, 'status': 'unavailable', 'syncReady': False, 'authReady': False, 'authProtocol': 2}
     # 002 · 003 · 004 마이그레이션이 빠졌는지도 알려 준다.
     # 빠져 있어도 ready 는 True — 기존 기능은 그대로 동작하고, 새 항목만 저장되지 않는다.
     missing, hints = [], []
@@ -114,7 +114,9 @@ def database_status():
             missing.append(label)
             if migration not in hints:
                 hints.append(migration)
-    result = {'ready': True, 'status': 'available'}
+    auth_tables = {'auth_credentials', 'legacy_claim_tickets', 'auth_rate_buckets', 'legacy_claim_approval'}
+    result = {'ready': True, 'status': 'available', 'syncReady': not missing,
+              'authReady': not auth_tables.intersection(missing), 'authProtocol': 2}
     if missing:
         result['missing'] = missing
         result['hint'] = 'Apply ' + ', '.join(f'backend/migrations/{m}' for m in hints)
@@ -125,7 +127,12 @@ _M002 = '002_user_data_tables.sql'
 _M003 = '003_backup_and_recommendation_logs.sql'
 _M004 = '004_outfit_book_and_prices.sql'
 _M005 = '005_user_logins.sql'
+_M006 = '006_auth_credentials.sql'
 _SCHEMA_CHECKS = [
+    ('auth_rate_buckets', 'SELECT key, started_at, attempts FROM auth_rate_buckets LIMIT 0', '007_auth_hardening.sql'),
+    ('legacy_claim_approval', 'SELECT approved_by, approval_reference, verification_method, issued_at FROM legacy_claim_tickets LIMIT 0', '007_auth_hardening.sql'),
+    ('auth_credentials', 'SELECT token_hash, recovery_hash, user_id, data_enabled FROM auth_credentials LIMIT 0', _M006),
+    ('legacy_claim_tickets', 'SELECT ticket_hash, user_id, expires_at, consumed_at FROM legacy_claim_tickets LIMIT 0', _M006),
     ('users.gender', 'SELECT gender FROM users LIMIT 0', _M002),
     ('products.product_key', 'SELECT product_key FROM products LIMIT 0', _M002),
     ('product_interests', 'SELECT product_key FROM product_interests LIMIT 0', _M002),
@@ -135,7 +142,6 @@ _SCHEMA_CHECKS = [
     ('clothes.price', 'SELECT price, brand FROM clothes LIMIT 0', _M004),
     ('saved_outfits', 'SELECT client_key FROM saved_outfits LIMIT 0', _M004),
     ('outfit_plans', 'SELECT date FROM outfit_plans LIMIT 0', _M004),
-    ('user_logins', 'SELECT subject FROM user_logins LIMIT 0', _M005),
 ]
 
 

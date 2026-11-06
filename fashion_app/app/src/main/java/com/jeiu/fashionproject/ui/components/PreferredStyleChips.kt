@@ -26,7 +26,7 @@ fun PreferredStyleChips(selected: List<String>, perRow: Int = 4, onToggle: (Stri
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 rowItems.forEach { style ->
                     FilterChip(
-                        selected = style in selected,
+                        selected = style in PreferredStyles.normalize(selected),
                         onClick = { onToggle(style) },
                         label = { Text(style) },
                         colors = FilterChipDefaults.filterChipColors(

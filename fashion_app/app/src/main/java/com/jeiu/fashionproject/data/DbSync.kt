@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.data
 
 import android.content.Context
+import com.jeiu.fashionproject.BuildConfig
 import android.content.SharedPreferences
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisResult
 import kotlinx.coroutines.*
@@ -32,10 +33,11 @@ object DbSync {
     val pendingCount: StateFlow<Int> = _pendingCount
 
     /** 서버 백업이 켜져 있는지 (기본 켜짐) */
-    val isEnabled: Boolean get() = !::prefs.isInitialized || prefs.getBoolean(KEY_ENABLED, true)
+    val isEnabled: Boolean get() = !BuildConfig.PREVIEW_BUILD && (!::prefs.isInitialized || prefs.getBoolean(KEY_ENABLED, true))
 
-    /** 이 폰의 백업 코드 (= 기기 번호). 다른 폰에서 이 코드를 넣으면 기록을 가져올 수 있다. */
-    val backupCode: String? get() = if (::prefs.isInitialized) prefs.getString("device_id", null) else null
+    /** New high-entropy recovery code. The old device ID remains local for verified migration only. */
+    val backupCode: String? get() = DataAuth.recoveryCode
+    val legacyBackupCode: String? get() = if (::prefs.isInitialized) prefs.getString("device_id", null) else null
 
     private const val KEY_ENABLED = "sync_enabled"
     private const val KEY_PHOTO_SIGS = "photo_sigs"
@@ -44,10 +46,6 @@ object DbSync {
         if (::prefs.isInitialized) return
         context = appContext.applicationContext
         prefs = context.getSharedPreferences("db_sync", Context.MODE_PRIVATE)
-        val id = prefs.getString("device_id", null) ?: UUID.randomUUID().toString().also {
-            prefs.edit().putString("device_id", it).apply()
-        }
-        BackendApi.deviceId = if (isEnabled) id else null
         synchronized(queueLock) {
             runCatching {
                 val entries = JSONObject(prefs.getString("pending", "{}") ?: "{}")
@@ -73,11 +71,8 @@ object DbSync {
         _pendingCount.value = pending.size
     }
 
-    /** 로그아웃 중 — 더 이상 대기열에 넣지 않는다 (지난 계정 기록이 새 기기 번호로 올라가지 않도록) */
-    @Volatile private var frozen = false
-
     private fun enqueue(key: String, path: String, body: String) {
-        if (!::prefs.isInitialized || !isEnabled || frozen) return
+        if (!::prefs.isInitialized || !isEnabled || DataAuth.isRestorePending) return
         synchronized(queueLock) { pending[key] = path to body; persistLocked() }
         retry()
     }
@@ -89,8 +84,11 @@ object DbSync {
         val batch = synchronized(queueLock) { pending.toMap() }
         if (batch.isEmpty()) return@withLock
         val health = BackendApi.getJson("/api/health/database") ?: return@withLock
-        if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withLock
+        if (!runCatching { JSONObject(health).let { it.optBoolean("syncReady") && it.optInt("authProtocol") == 2 } }.getOrDefault(false)) return@withLock
+        if (!DataAuth.ensureReady() || !DataAuth.canSync) return@withLock
+        val account = DataAuth.accessToken
         for ((key, request) in batch) {
+            if (!DataAuth.canSync || DataAuth.accessToken != account) return@withLock
             if (key.startsWith("body:") && !PrivacyConsent.canSaveRecords(context)) {
                 clearPendingBodyRecords(); continue
             }
@@ -135,7 +133,7 @@ object DbSync {
     private fun signature(file: java.io.File, uri: String) = "$uri|${file.length()}|${file.lastModified()}"
 
     private fun queuePhotos(items: List<WardrobeItem>) {
-        if (!::prefs.isInitialized || !isEnabled) return
+        if (!::prefs.isInitialized || !isEnabled || DataAuth.isRestorePending) return
         val owned = items.filter { it.isOwned }
         val ids = owned.map { it.id }.toSet()
         synchronized(queueLock) {
@@ -233,7 +231,7 @@ object DbSync {
         if (!BackendApi.delete("/api/me", readTimeoutMs = 20_000)) return@withLock false
         synchronized(queueLock) { pending.clear(); persistLocked() }
         prefs.edit().putBoolean(KEY_ENABLED, false).remove(KEY_PHOTO_SIGS).apply()
-        BackendApi.deviceId = null
+        DataAuth.clearAfterServerDelete()
         true
     }
 
@@ -241,7 +239,7 @@ object DbSync {
     fun enable(appContext: Context) {
         if (!::prefs.isInitialized) init(appContext)
         prefs.edit().putBoolean(KEY_ENABLED, true).apply()
-        BackendApi.deviceId = backupCode
+        ServerConnection.retry()
         WardrobeStore.load(appContext); WearLogStore.load(appContext)
         TastePreferenceStore.load(appContext); ProductInterestStore.load(appContext); RecommendationLog.load(appContext)
         SavedOutfitStore.load(appContext); OutfitPlanStore.load(appContext)
@@ -256,39 +254,17 @@ object DbSync {
         pushOutfitPlans(OutfitPlanStore.plans.value)
     }
 
-    /**
-     * 백업 코드로 복원할 때 — 이 폰이 그 코드(기기 번호)를 쓰도록 바꾸고, 보내지 않은 대기열은 버린다.
-     * @param photos 복원하면서 받은 사진 파일 (옷 id → 파일, 다시 올리지 않도록)
-     */
-    /** 로그아웃 전에 보내지 못한 기록을 최대한 서버로 보낸다. 다 보냈으면 true */
-    suspend fun flushNow(): Boolean {
-        if (!::prefs.isInitialized) return true
-        flush()
-        return synchronized(queueLock) { pending.isEmpty() }
-    }
+    /** Serialize account changes/restore against an entire upload batch. */
+    suspend fun <T> exclusiveAccountChange(block: suspend () -> T): T = networkLock.withLock { block() }
 
-    /**
-     * 로그아웃 — 대기열을 비우고 기기 번호를 지운다. 앱을 다시 시작하면 새 기기 번호(새 게스트)로 시작한다.
-     * (계정 기록은 서버에 남아 있어 다시 로그인하면 받아 온다)
-     */
-    suspend fun resetForSignOut() = networkLock.withLock {
-        frozen = true
-        if (!::prefs.isInitialized) return@withLock
-        synchronized(queueLock) { pending.clear(); persistLocked() }
-        BackendApi.deviceId = null
-        prefs.edit().clear().commit()
-        Unit
+    /** Included in the same restore journal; the original queue remains in the safety copy. */
+    fun stageForRestore(staging: Context, photos: Map<String, java.io.File>, uris: Map<String, String>) {
+        val sigs = JSONObject()
+        photos.forEach { (id, file) -> uris[id]?.let { sigs.put(id, signature(file, it)) } }
+        check(staging.getSharedPreferences("db_sync", Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ENABLED, true).putString("pending", "{}")
+            .putString(KEY_PHOTO_SIGS, sigs.toString()).commit())
     }
-
-    suspend fun adoptForRestore(code: String, photos: Map<String, java.io.File>, uris: Map<String, String>) =
-        networkLock.withLock {
-            synchronized(queueLock) { pending.clear(); persistLocked() }
-            val sigs = JSONObject()
-            photos.forEach { (id, file) -> uris[id]?.let { sigs.put(id, signature(file, it)) } }
-            prefs.edit().putString("device_id", code).putBoolean(KEY_ENABLED, true)
-                .putString(KEY_PHOTO_SIGS, sigs.toString()).commit()
-            BackendApi.deviceId = code
-        }
 
     /** 관심 상품(쇼핑 · 상품 상세 · 옷장 '관심 옷' 하트) 목록을 누른 순서대로 서버 DB(product_interests)에 맞춘다 */
     fun pushProductInterests(ids: List<String>) {

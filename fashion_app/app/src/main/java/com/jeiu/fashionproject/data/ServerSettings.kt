@@ -37,13 +37,17 @@ object ServerSettings {
     fun save(context: Context, url: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, url).apply()
         BackendApi.BASE_URL = url
+        DataAuth.onServerChanged()
         DbSync.retry()   // 새 주소로 밀린 기록을 바로 보내 본다
+        ServerConnection.retry()
     }
 
     fun reset(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
         BackendApi.BASE_URL = defaultUrl
+        DataAuth.onServerChanged()
         DbSync.retry()
+        ServerConnection.retry()
     }
 
     /**
@@ -69,12 +73,14 @@ object ServerSettings {
     }
 
     /** 연결 확인 결과 */
-    data class Check(val reachable: Boolean, val dbReady: Boolean = false, val dbStatus: String? = null, val missing: List<String> = emptyList()) {
+    data class Check(val reachable: Boolean, val dbReady: Boolean = false, val dbStatus: String? = null,
+                     val missing: List<String> = emptyList(), val syncReady: Boolean = false, val authProtocol: Int = 0) {
         val message: String get() = when {
-            !reachable -> "서버에 연결되지 않아요. 같은 와이파이인지, 서버를 --host 0.0.0.0 으로 켰는지, PC 방화벽이 8000번을 막지 않는지 확인해 주세요."
-            dbReady && missing.isEmpty() -> "연결됐어요. 서버와 DB 모두 준비됐어요."
-            dbReady -> "연결됐어요. DB 에 빠진 표가 있어요(${missing.joinToString()}) — 서버 PC 에서 python apply_migrations.py 를 실행해 주세요."
-            dbStatus == "not_configured" -> "서버는 연결됐지만 DB 설정(backend/.env 의 DATABASE_URL)이 없어요. AI 기능만 쓸 수 있어요."
+            !reachable -> "현재 주소의 서버가 응답하지 않아요. 인터넷 연결과 저장된 서버 주소를 확인해주세요. 기본 Railway 주소와 다른지 아래에서 확인할 수 있어요."
+            missing.isNotEmpty() -> "서버는 응답하지만 DB 구조 업데이트가 필요해요. 운영자에게 SQL 마이그레이션 상태를 확인해주세요. 폰의 기록과 전송 대기열은 유지돼요."
+            dbReady && (!syncReady || authProtocol != 2) -> "서버와 DB는 응답하지만 새 인증·동기화 준비가 안 됐어요. 운영자에게 서버 버전과 SQL 005/006 적용 상태를 확인해주세요."
+            dbReady -> "서버·DB·인증 API가 준비됐어요. 사용자 인증과 실제 전송 결과는 별도로 확인해요."
+            dbStatus == "not_configured" -> "서버는 응답하지만 운영 DB가 설정되지 않았어요. 데이터는 폰에 유지되며 AI 서비스 준비 여부는 별도 확인이 필요해요."
             else -> "서버는 연결됐지만 DB 에 연결되지 않아요. 인터넷 · Supabase 주소를 확인해 주세요."
         }
     }
@@ -87,7 +93,8 @@ object ServerSettings {
         val health = get("$url/api/health/database")?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: return@withContext Check(reachable = true, dbStatus = "unknown")
         val missing = health.optJSONArray("missing")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty()
-        Check(true, health.optBoolean("ready"), health.optString("status"), missing)
+        Check(true, health.optBoolean("ready"), health.optString("status"), missing,
+            health.optBoolean("syncReady"), health.optInt("authProtocol"))
     }
 
     private fun get(url: String): String? = runCatching {

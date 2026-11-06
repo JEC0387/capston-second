@@ -1,12 +1,22 @@
 package com.jeiu.fashionproject.ui.viewmodel
 
+/** Normalized to the EXIF-corrected analysis bitmap, never the raw camera orientation. */
+data class BodyGuideLine(val label:String,val left:Float,val right:Float,val y:Float)
+data class BodyMeasurementGuides(val imageWidth:Int,val imageHeight:Int,val lines:List<BodyGuideLine>) {
+    fun valid()=imageWidth>0 && imageHeight>0 && lines.size==3 && lines.all {
+        it.left.isFinite() && it.right.isFinite() && it.y.isFinite() &&
+            it.left in 0f..1f && it.right in 0f..1f && it.left<it.right && it.y in 0f..1f
+    }
+}
+
 /** Widths and lengths are all in the SAME orientation-corrected analysis bitmap coordinates. */
 data class BodyWidths(
     val shoulder: Float, val waist: Float, val hip: Float,
     val bodyHeightPx: Float? = null,
     val legLengthPx: Float? = null,
     val torsoLengthPx: Float? = null,
-    val fullBodyReliable: Boolean = false
+    val fullBodyReliable: Boolean = false,
+    val guides: BodyMeasurementGuides? = null
 )
 
 /** Value object inside BodyAnalysisResult; widths are frontal estimates, never circumferences. */
@@ -19,7 +29,8 @@ data class BodyMeasurements(
     val torsoLengthCm: Float?,
     val cmPerPixel: Float,
     val measuredBodyHeightPx: Float,
-    val measuredAt: Long // UTC Unix epoch milliseconds, independent of device display timezone.
+    val measuredAt: Long, // UTC Unix epoch milliseconds, independent of device display timezone.
+    val guides: BodyMeasurementGuides? = null // Session-only UI metadata; not sent to server/storage.
 )
 
 object BodyMeasurementCalculator {
@@ -47,6 +58,8 @@ object BodyMeasurementCalculator {
             !width(m.waistWidthCm,12f..80f,.09f.. .45f) || !width(m.hipWidthCm,15f..85f,.12f.. .45f))return false
         if(m.legLengthCm!=null && (!m.legLengthCm.isFinite() || m.legLengthCm/m.heightCm !in .25f.. .65f))return false
         if(m.torsoLengthCm!=null && (!m.torsoLengthCm.isFinite() || m.torsoLengthCm/m.heightCm !in .15f.. .40f))return false
+        if(m.legLengthCm!=null && m.torsoLengthCm!=null && m.legLengthCm+m.torsoLengthCm>m.heightCm*.95f)return false
+        if(m.guides!=null && !m.guides.valid())return false
         return true
     }
 
@@ -77,6 +90,8 @@ object BodyMeasurementCalculator {
         val torso = length(pixels.torsoLengthPx, 0.15f..0.40f)
         // An explicitly invalid optional value invalidates the result too.
         if ((pixels.legLengthPx != null && leg == null) || (pixels.torsoLengthPx != null && torso == null)) return null
-        return BodyMeasurements(heightCm, shoulder, waist, hip, leg, torso, scale, heightPx, measuredAt)
+        if(leg!=null && torso!=null && leg+torso>heightCm*.95f)return null
+        if(pixels.guides!=null && !pixels.guides.valid())return null
+        return BodyMeasurements(heightCm, shoulder, waist, hip, leg, torso, scale, heightPx, measuredAt,pixels.guides)
     }
 }

@@ -14,48 +14,57 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.DbSync
-import org.json.JSONObject
-import com.jeiu.fashionproject.data.BackendApi
+import com.jeiu.fashionproject.data.DataAuth
+import com.jeiu.fashionproject.data.ServerConnection
+import com.jeiu.fashionproject.data.ConnectionState
 import com.jeiu.fashionproject.ui.theme.*
-import kotlinx.coroutines.delay
 
 private val Online = Color(0xFF4CAF50)
 
 /**
  * 서버 연결 상태 표시 — "● 서버 연결됨 · DB 저장 중" / "● 오프라인 · 폰에만 저장".
- * 화면이 보이는 동안 15초마다 서버(GET /)를 확인한다. 누르면 바로 다시 확인.
+ * 앱 시작 시 연결을 확인하고 네트워크 복구/주기 재시도로 상태를 갱신한다.
  * 시연 중에 DB에 저장되고 있는지 한눈에 보기 위한 표시.
  */
 @Composable
 fun ServerStatusBadge(modifier: Modifier = Modifier) {
-    // null = 확인 중
     val pending by DbSync.pendingCount.collectAsState()
-    var online by remember { mutableStateOf<Boolean?>(null) }
-    var checkKey by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(checkKey) {
-        while (true) {
-            online = BackendApi.getJson("/api/health/database")?.let { runCatching { JSONObject(it).optBoolean("ready", false) }.getOrDefault(false) } ?: false
-            if (online == true) DbSync.retry()
-            delay(15_000)
-        }
+    val authState by DataAuth.state.collectAsState()
+    val connection by ServerConnection.state.collectAsState()
+    val state = when {
+        !DbSync.isEnabled -> ConnectionState.BACKUP_DISABLED
+        authState == "restore_pending" -> ConnectionState.RESTORE_PENDING
+        authState == "server_mismatch" -> ConnectionState.SERVER_CHANGED
+        authState == "secure_storage_unavailable" -> ConnectionState.STORAGE_UNAVAILABLE
+        authState == "legacy_decision_required" -> ConnectionState.LEGACY_REQUIRED
+        authState == "reauth_required" -> ConnectionState.AUTH_REQUIRED
+        else -> connection
     }
-
-    val (dot, label) = when (online) {
-        null -> MediumGray to "서버 확인 중…"
-        true -> Online to "DB 연결 가능 · 동기화 대기 ${pending}건"
-        false -> MediumGray to "DB 연결 안 됨 · 로컬 사용 가능 · 대기 ${pending}건"
+    val online = state == ConnectionState.READY
+    val dot = if (online) Online else MediumGray
+    val label = when (state) {
+        ConnectionState.CHECKING -> "서버 연결 확인 중 · 폰에 저장"
+        ConnectionState.READY -> "서버·DB·인증 준비 · 전송 대기 ${pending}건"
+        ConnectionState.BACKUP_DISABLED -> if (com.jeiu.fashionproject.BuildConfig.PREVIEW_BUILD) "Preview · 개인 서버 동기화 차단" else "서버 백업 꺼짐 · 폰에 저장"
+        ConnectionState.OFFLINE -> "오프라인 · 폰에 저장 · 재연결 대기"
+        ConnectionState.DATABASE_UNAVAILABLE -> "서버 응답 · DB 준비 안 됨 · 폰에 저장"
+        ConnectionState.UPDATE_REQUIRED -> "인증·DB 업데이트 필요 · 전송 대기 보존"
+        ConnectionState.LEGACY_REQUIRED -> "기존 기록 이전 확인 필요 · 폰에 저장"
+        ConnectionState.RESTORE_PENDING -> "복원 이어하기 필요 · 전송 중지"
+        ConnectionState.STORAGE_UNAVAILABLE -> "보안 저장소 확인 필요 · 전송 중지"
+        ConnectionState.SERVER_CHANGED -> "서버 변경 · 백업 인증 필요"
+        ConnectionState.AUTH_REQUIRED -> "백업 인증 대기 · 폰에 저장"
     }
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(if (online == true) Online.copy(alpha = 0.10f) else CreamDark)
-            .clickable { online = null; checkKey++ }
+            .background(if (online) Online.copy(alpha = 0.10f) else CreamDark)
+            .clickable { ServerConnection.retry(); DbSync.retry() }
             .padding(horizontal = 8.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = if (online == true) Color(0xFF2E7D32) else MediumGray)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = if (online) Color(0xFF2E7D32) else MediumGray)
     }
 }

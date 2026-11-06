@@ -32,9 +32,9 @@ class ServerSettingsTest {
 
     @Test
     fun checkMessages() {
-        assertTrue(ServerSettings.Check(reachable = false).message.contains("0.0.0.0"))
-        assertTrue(ServerSettings.Check(true, true, "available", listOf("saved_outfits")).message.contains("apply_migrations"))
-        assertTrue(ServerSettings.Check(true, false, "not_configured").message.contains("DATABASE_URL"))
-        assertFalse(ServerSettings.Check(true, true, "available").message.contains("apply_migrations"))
+        assertTrue(ServerSettings.Check(reachable = false).message.contains("저장된 서버 주소"))
+        assertTrue(ServerSettings.Check(true, true, "available", listOf("saved_outfits")).message.contains("마이그레이션"))
+        assertTrue(ServerSettings.Check(true, false, "not_configured").message.contains("운영 DB"))
+        assertTrue(ServerSettings.Check(true, true, "available").message.contains("SQL 005/006"))
     }
 }

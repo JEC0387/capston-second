@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """저장한 코디 · 코디 일정 · 옷 가격/브랜드 · 전체 통계 API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -11,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db
+from tests.support_auth import AuthHeaders
 from db_models import OutfitPlan, SavedOutfit
 
 
@@ -31,6 +33,7 @@ class OutfitBookApiTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
+        self.auth = AuthHeaders(self.client)
 
     def tearDown(self):
         self.client.close()
@@ -38,10 +41,10 @@ class OutfitBookApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def post(self, path, payload, device='device-a'):
-        return self.client.post(path, json=payload, headers={'X-Device-Id': device})
+        return self.client.post(path, json=payload, headers=self.auth(device))
 
     def get(self, path, device='device-a'):
-        return self.client.get(path, headers={'X-Device-Id': device})
+        return self.client.get(path, headers=self.auth(device))
 
     def count(self, model):
         with self.factory() as db:
@@ -104,7 +107,7 @@ class OutfitBookApiTest(unittest.TestCase):
         self.post('/api/saved-outfits/sync', {'outfits': [{'itemIds': ['a']}]})
         self.post('/api/outfit-plans/sync', {'plans': [{'date': '2026-10-20', 'itemIds': ['a']}]})
         self.post('/api/saved-outfits/sync', {'outfits': [{'itemIds': ['a']}]}, device='device-b')
-        d = self.client.delete('/api/me', headers={'X-Device-Id': 'device-a'}).json()['deleted']
+        d = self.client.delete('/api/me', headers=self.auth('device-a')).json()['deleted']
         self.assertEqual((1, 1), (d['saved_outfits'], d['outfit_plans']))
         self.assertEqual(1, self.count(SavedOutfit))
         self.assertEqual(0, self.count(OutfitPlan))
@@ -122,7 +125,7 @@ class OutfitBookApiTest(unittest.TestCase):
                                                        {'date': '2026-01-04', 'itemIds': ['c']}]})
         self.post('/api/wear-logs/sync', {'logs': [{'date': '2026-01-02', 'itemIds': ['a', 'b', 'c'], 'memo': ''},
                                                    {'date': '2026-01-03', 'itemIds': ['b'], 'memo': ''}]})
-        s = self.client.get('/api/stats/overview').json()
+        s = operator_get(self.client, '/api/stats/overview').json()
         self.assertEqual((2, 4, 3), (s['users'], s['clothes'], s['outfitPlans']))
         self.assertEqual({'name': '블랙', 'count': 3}, s['topColors'][0])
         self.assertEqual({'name': '상의', 'count': 2}, s['topCategories'][0])     # 하의도 2 → 이름 순

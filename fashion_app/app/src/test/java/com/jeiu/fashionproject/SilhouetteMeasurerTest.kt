@@ -67,6 +67,39 @@ class SilhouetteMeasurerTest {
         val a = mask(); for (y in 30..140) for (x in 5..30) a[y * 200 + x] = 1f
         assertNull(cm(measure(a)))
     }
+    @Test fun connectedExtraUpperForegroundCannotChangeHeightCalibration() {
+        val a = mask()
+        // A large extra region connects to the main arm through one row. It is no longer
+        // a second global component, but its upper region is separate from the head.
+        for (y in 30..140) for (x in 5..30) a[y * 200 + x] = .99f
+        for (x in 30..45) a[115 * 200 + x] = .99f
+        val result = SilhouetteMeasurer.inspect(a, 200, 400, 1000, 2000, pose())
+        assertEquals(SilhouetteIssue.EXTRA_FOREGROUND, result.issue)
+        assertNull(result.widths)
+        assertNull(cm(result.widths))
+        assertNull(BodyTypeClassifier.classify(result.widths).type)
+    }
+    @Test fun smallConnectedUpperNoiseDoesNotRejectNormalArmAndTorsoGeometry() {
+        val a = mask()
+        // Tiny extra foreground remains below the existing five-percent allowance.
+        for (y in 90..115) a[y * 200 + 35] = .99f
+        for (x in 35..45) a[115 * 200 + x] = .99f
+        val measured = measure(a)!!
+        assertEquals(1600f, measured.bodyHeightPx!!, .01f)
+        assertEquals(350f, measured.shoulder, .01f)
+        assertEquals(270f, measured.waist, .01f)
+        assertEquals(350f, measured.hip, .01f)
+    }
+    @Test fun connectedUpperClothingContourIsNotTreatedAsAnotherPerson() {
+        val a = mask()
+        // A wider collar is still connected to the head above the shoulder line.
+        for (y in 85 until 100) for (x in 70 until 130) a[y * 200 + x] = .99f
+        val measured = measure(a)!!
+        assertEquals(1600f, measured.bodyHeightPx!!, .01f)
+        assertEquals(350f, measured.shoulder, .01f)
+        assertEquals(270f, measured.waist, .01f)
+        assertEquals(350f, measured.hip, .01f)
+    }
     @Test fun missingAndLowConfidenceFeetRejectCm() {
         assertNull(cm(measure(points = pose() - Joint.LEFT_FOOT)))
         val low = pose() + (Joint.LEFT_FOOT to pose().getValue(Joint.LEFT_FOOT).copy(confidence = 0.4f))
@@ -95,6 +128,25 @@ class SilhouetteMeasurerTest {
         assertNull(cm(measure(points = side)))
         val arm = pose() + (Joint.LEFT_WRIST to GuidePoint(410f, 1025f, 0.99f))
         assertNull(cm(measure(points = arm)))
+    }
+    @Test fun softForegroundEdgesDoNotBecomeConfidentBodyWidths() {
+        val a=mask()
+        for(y in 150 until 180) {
+            for(x in 73 until 81)a[y*200+x]=.70f
+            for(x in 119 until 127)a[y*200+x]=.70f
+        }
+        val result=SilhouetteMeasurer.inspect(a,200,400,1000,2000,pose())
+        assertNull(result.widths)
+        assertEquals(SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY,result.issue)
+    }
+    @Test fun measurementGuidesUseTheSameBitmapAndRemainResolutionIndependent() {
+        val full=measure()!!.guides!!
+        val small=SilhouetteMeasurer.measure(mask(),200,400,500,1000,pose(2.5f))!!.guides!!
+        assertTrue(full.valid());assertEquals(full.lines,small.lines)
+        assertEquals(1000,full.imageWidth);assertEquals(2000,full.imageHeight)
+        val shoulder=full.lines.first()
+        assertEquals(.325f,shoulder.left,.001f);assertEquals(.675f,shoulder.right,.001f)
+        assertNotNull(cm(measure())!!.guides)
     }
 }
 

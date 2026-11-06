@@ -85,10 +85,7 @@ class WeatherViewModel(application: Application) : AndroidViewModel(application)
                 return@launch
             }
 
-            // 2) 서버 미연결 시 OpenWeatherMap 직접 호출 (기존 방식)
-            runCatching { WeatherRepository.fetch(lat, lon) }
-                .onSuccess { _state.value = WeatherUiState.Success(it); loaded = true }
-                .onFailure { _state.value = WeatherUiState.Error("날씨를 불러오지 못했어요. 인터넷 연결을 확인해 주세요.") }
+            _state.value = WeatherUiState.Error("날씨를 불러오지 못했어요. 서버 연결을 확인해 주세요.")
         }
     }
 

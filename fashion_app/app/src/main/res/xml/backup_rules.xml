@@ -5,8 +5,27 @@
        → 새 폰에 복원되면 두 폰이 같은 기기 번호를 써서 서버 옷장을 서로 덮어쓰고,
          체형 숫자가 구글 백업에 남으므로 백업하지 않는다.
    - privacy_consent.xml : 체형 사진 이용 동의는 기기마다 새로 받는다.
+   - manual_body_measurements.xml : 직접 입력한 민감한 신체 치수는 자동 백업·기기 이전에서 제외한다.
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="db_sync.xml" />
+    <exclude domain="sharedpref" path="data_auth.xml" />
+    <exclude domain="sharedpref" path="restore_stage_wardrobe_store.xml" />
+    <exclude domain="sharedpref" path="restore_stage_sample_wear_history.xml" />
+    <exclude domain="sharedpref" path="restore_stage_wear_log_store.xml" />
+    <exclude domain="sharedpref" path="restore_stage_profile_store.xml" />
+    <exclude domain="sharedpref" path="restore_stage_user_prefs.xml" />
+    <exclude domain="sharedpref" path="restore_stage_product_interests.xml" />
+    <exclude domain="sharedpref" path="restore_stage_taste_preference.xml" />
+    <exclude domain="sharedpref" path="restore_stage_style_preference.xml" />
+    <exclude domain="sharedpref" path="restore_stage_saved_outfits.xml" />
+    <exclude domain="sharedpref" path="restore_stage_outfit_plans.xml" />
+    <exclude domain="sharedpref" path="restore_stage_recommendation_log.xml" />
+    <exclude domain="sharedpref" path="restore_stage_db_sync.xml" />
+
     <exclude domain="sharedpref" path="privacy_consent.xml" />
+    <exclude domain="sharedpref" path="manual_body_measurements.xml" />
+    <exclude domain="sharedpref" path="avatar_visual_profile_v1.xml" />
+    <exclude domain="sharedpref" path="avatar_fitting_overlay_v1.xml" />
+    <exclude domain="sharedpref" path="size_feedback.xml" />
 </full-backup-content>
