@@ -33,6 +33,51 @@ def test_crops_are_exact_original_pixels_without_resampling_or_reconstruction():
     assert inputs["tops"] == stream.getvalue()
 
 
+def test_reference_binding_survives_api_metadata_removal_without_changing_pixels():
+    from outfit_vton_api import _canonical_image
+
+    image = Image.new("RGB", (160, 200), (73, 117, 201))
+    stream = io.BytesIO()
+    image.save(stream, "PNG", icc_profile=b"synthetic-profile-metadata")
+    inputs = {role: stream.getvalue() for role in mod.ROLES}
+    references = pack(inputs)
+    through_api = {role: mod.verified_png(_canonical_image(raw))
+                   for role, raw in inputs.items()}
+    crops = references.prepare(through_api)
+    for role in mod.ROLES:
+        assert mod.verified_png(inputs[role]) == through_api[role]
+        with Image.open(io.BytesIO(through_api[role])) as actual:
+            assert actual.size == (160, 200)
+            assert actual.tobytes() == image.tobytes()
+            assert "icc_profile" not in actual.info
+        with Image.open(io.BytesIO(crops[role][0])) as actual:
+            assert actual.size == (32, 40)
+            assert actual.getpixel((10, 20)) == (73, 117, 201)
+
+
+def test_reviewed_mobile_derivative_keeps_full_resolution_detail_pixels():
+    source = Image.new("RGB", (160, 200))
+    source.putdata([(x, y, (x + y) % 256) for y in range(200) for x in range(160)])
+    out = io.BytesIO(); source.save(out, "PNG"); original = out.getvalue()
+    out = io.BytesIO(); source.resize((80, 100)).save(out, "PNG"); derivative = out.getvalue()
+    refs = {r: ProductReference(hashlib.sha256(derivative).hexdigest(), "Test", "Reviewed test",
+                               ((40, 60, 120, 160),), hashlib.sha256(original).hexdigest())
+            for r in mod.ROLES}
+    references = ProductReferences(refs, detail_sources={r: original for r in mod.ROLES})
+    result = references.prepare({r: derivative for r in mod.ROLES})
+    for role in mod.ROLES:
+        with Image.open(io.BytesIO(result[role][0])) as crop:
+            assert crop.size == (80, 100)
+            assert crop.getpixel((10, 20)) == (50, 80, 130)
+        assert references.manifest()["products"][role]["detail_source_sha256"] == hashlib.sha256(original).hexdigest()
+    with pytest.raises(ValueError, match="reference_input_mismatch"):
+        references.prepare({r: original for r in mod.ROLES})
+    with pytest.raises(ValueError, match="detail_source_hash_mismatch"):
+        ProductReferences(refs, detail_sources={r: derivative for r in mod.ROLES})
+    with pytest.raises(ValueError, match="detail_source_roles_mismatch"):
+        ProductReferences(refs)
+
+
 @pytest.mark.parametrize("fault", ["different_garment", "out_of_bounds"])
 def test_wrong_input_or_box_blocks_before_any_http_or_reservation(tmp_path, fault):
     async def check():

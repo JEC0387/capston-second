@@ -21,11 +21,14 @@ class ProductReference:
     title: str
     description: str
     boxes: tuple[tuple[int, int, int, int], ...]
+    detail_source_sha256: str = ""
 
     def __post_init__(self):
         if (not isinstance(self.normalized_sha256, str) or
                 not re.fullmatch(r"[a-f0-9]{64}", self.normalized_sha256)):
             raise ValueError("invalid_reference_hash")
+        if self.detail_source_sha256 and not re.fullmatch(r"[a-f0-9]{64}", self.detail_source_sha256):
+            raise ValueError("invalid_detail_source_hash")
         for text, limit in ((self.title, 120), (self.description, 600)):
             if not isinstance(text, str) or not 1 <= len(text.strip()) <= limit or any(ord(c) < 32 for c in text):
                 raise ValueError("invalid_reference_description")
@@ -38,15 +41,27 @@ class ProductReference:
 
 
 class ProductReferences:
-    def __init__(self, references):
+    def __init__(self, references, *, detail_sources=None):
         if (not isinstance(references, dict) or set(references) != set(ROLES) or
                 any(not isinstance(value, ProductReference) for value in references.values())):
             raise ValueError("invalid_reference_roles")
         self._references = MappingProxyType(dict(references))
+        sources = {} if detail_sources is None else dict(detail_sources)
+        expected = {role for role, spec in references.items() if spec.detail_source_sha256}
+        if set(sources) != expected:
+            raise ValueError("detail_source_roles_mismatch")
+        for role, raw in sources.items():
+            if (not isinstance(raw, bytes) or not 0 < len(raw) <= 8 * 1024 * 1024 or
+                    hashlib.sha256(raw).hexdigest() != references[role].detail_source_sha256):
+                raise ValueError("detail_source_hash_mismatch")
+        self._detail_sources = MappingProxyType(sources)
 
     def manifest(self):
-        return {"version": "source-pixel-details-v1",
-                "products": {role: asdict(self._references[role]) for role in ROLES}}
+        products = {role: asdict(self._references[role]) for role in ROLES}
+        for spec in products.values():
+            if not spec["detail_source_sha256"]:
+                del spec["detail_source_sha256"]  # Preserve existing pack identities.
+        return {"version": "source-pixel-details-v1", "products": products}
 
     def prepare(self, normalized):
         """All roles validated before balance lookup, upload or paid POST."""
@@ -56,7 +71,14 @@ class ProductReferences:
             raw = normalized[role]
             if hashlib.sha256(raw).hexdigest() != spec.normalized_sha256:
                 raise ValueError("reference_input_mismatch")
+            # A reviewed mobile derivative can be bound to separately hashed
+            # original detail pixels. The operator must verify that relation;
+            # never accept a near-match, resize on trust, or swap user inputs.
+            raw = self._detail_sources.get(role, raw)
             with Image.open(io.BytesIO(raw)) as image:
+                if (getattr(image, "n_frames", 1) != 1 or
+                        image.width * image.height > 20_000_000):
+                    raise ValueError("invalid_detail_source_dimensions")
                 image.load()
                 if image.format != "PNG" or image.mode != "RGB":
                     raise ValueError("reference_requires_normalized_png")

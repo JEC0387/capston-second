@@ -166,8 +166,13 @@ def verified_png(raw: bytes, content_type: str | None = None) -> bytes:
         with Image.open(io.BytesIO(raw)) as image:
             image.load()
             normalized = ImageOps.exif_transpose(image).convert("RGB")
+            # Match the API boundary's metadata-free PNG. Pillow convert()
+            # retains ICC/EXIF info, otherwise identical source pixels can have
+            # different hashes when a reviewed reference passes through the API.
+            clean = Image.new("RGB", normalized.size)
+            clean.paste(normalized)
             out = io.BytesIO()
-            normalized.save(out, format="PNG")
+            clean.save(out, format="PNG")
             value = out.getvalue()
         if len(value) > MAX_IMAGE:
             raise ValueError()
