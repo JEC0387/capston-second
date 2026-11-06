@@ -379,6 +379,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
 interface OutfitTicketStore {
     fun read(): OutfitServerTicket?
     fun write(ticket: OutfitServerTicket)
+    /** Preserve the exact journal; only the explicit, reviewed QA recovery action may call this. */
+    fun archiveReviewed(ticket: OutfitServerTicket) { throw OutfitServerFailure("journal_unavailable") }
 }
 
 class PrivateOutfitTicketStore(context: Context) : OutfitTicketStore {
@@ -407,5 +409,17 @@ class PrivateOutfitTicketStore(context: Context) : OutfitTicketStore {
         val stream = file.startWrite()
         try { stream.write(bytes); file.finishWrite(stream) }
         catch (failure: Exception) { file.failWrite(stream); throw OutfitServerFailure("journal_unavailable") }
+    }
+
+    override fun archiveReviewed(ticket: OutfitServerTicket) {
+        // readFully resolves AtomicFile recovery before moving; never recreate a corrupt journal.
+        if (read() != ticket) throw OutfitServerFailure("journal_unavailable")
+        val bytes = file.readFully()
+        val history = File(file.baseFile.parentFile, "outfit-vton-reviewed-history")
+        if (!history.isDirectory && !history.mkdir()) throw OutfitServerFailure("journal_unavailable")
+        val destination = File(history, "${ticket.id}-${deviceSha256(bytes)}.json")
+        // Same-filesystem rename preserves all bytes and does not overwrite older evidence.
+        if (destination.exists() || !file.baseFile.renameTo(destination))
+            throw OutfitServerFailure("journal_unavailable")
     }
 }

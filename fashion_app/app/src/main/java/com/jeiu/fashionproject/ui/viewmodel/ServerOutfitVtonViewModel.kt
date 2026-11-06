@@ -36,7 +36,8 @@ class ServerOutfitVtonViewModel(
     private val preparer: suspend (Context, String, DeviceVtonSelection, DeviceModelSpec) -> DevicePreparedJob = OnDeviceVtonImages::prepare,
     private val clock: () -> Long = System::currentTimeMillis,
     private val pollMillis: Long = 1500,
-    private val localWaitMillis: Long = 120_000
+    private val localWaitMillis: Long = 120_000,
+    private val qaRecoveryAvailable: () -> Boolean = { ServerOutfitQaConnection.supported }
 ) : ViewModel() {
     var state by mutableStateOf(ServerOutfitUiState())
         private set
@@ -87,6 +88,31 @@ class ServerOutfitVtonViewModel(
         val status = state.status ?: return false
         return status.status in ServerOutfitVtonRepository.terminal && status.error !in uncertainExecutionErrors &&
             unresolvedRequestId != ticket.id
+    }
+
+    /** QA tunnel recovery only. Expiry is NOT evidence of remote completion or refund. */
+    fun canArchiveReviewedQaJob(): Boolean {
+        if (!qaRecoveryAvailable() || locked || operation != null || state.busy) return false
+        val ticket = state.ticket ?: return false
+        if (clock() < ticket.expiresAt || unresolvedRequestId != null) return false
+        if (state.status?.status?.let { it !in ServerOutfitVtonRepository.terminal } == true ||
+            state.status?.error in uncertainExecutionErrors) return false
+        val current = runCatching { gateway.session() }.getOrNull() ?: return false
+        return current.base != ticket.base && state.config?.ready == true && state.configBinding == current.accountKey
+    }
+
+    fun archiveReviewedQaJob(reviewedTerminationAndBilling: Boolean) {
+        if (!reviewedTerminationAndBilling || !canArchiveReviewedQaJob()) return
+        val ticket = state.ticket ?: return
+        try {
+            store!!.archiveReviewed(ticket)
+            original = null
+            lastProviderProgress = null
+            // Fresh config and consent are required. This action sends no network request.
+            state = ServerOutfitUiState(error = "확인한 이전 QA 작업 기록을 기기 안에 보관했어요. 새 연결의 준비 상태와 전송 동의를 다시 확인해주세요. 서버 취소·환불·삭제를 실행한 것은 아니에요.")
+        } catch (_: Exception) {
+            state = state.copy(error = "이전 작업 기록을 보관하지 못해 새 요청을 계속 차단해요. 기존 기록은 유지해요.")
+        }
     }
 
     /** An explicit QA connection change never fetches or uploads; retain the old job journal. */

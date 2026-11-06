@@ -41,6 +41,8 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     var reopened by remember { mutableStateOf<ByteArray?>(null) }
     var comparison by remember { mutableStateOf(false) }
     var showOriginal by remember { mutableStateOf(false) }
+    var reviewPrevious by remember { mutableStateOf(false) }
+    var reviewedPrevious by remember { mutableStateOf(false) }
     val visible = state.result?.takeIf { model.canDisplay() }
     val compareBytes = remember(comparison, visible) {
         if (!comparison) null else runCatching { visible?.let { it.original to it.png } }.getOrNull()
@@ -133,6 +135,13 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                     else "선택한 인물·의류 3종을 표시된 정책의 서버로 전송하는 데 동의해요.",
                     Modifier.weight(1f).padding(top = 10.dp).testTag("serverOutfitConsentText"))
             }
+            if (model.canArchiveReviewedQaJob()) {
+                Text("이전 QA 연결의 작업 기록 때문에 새 생성이 차단되어 있어요. 보관 기간 만료는 생성 종료·과금 확인을 뜻하지 않아요.")
+                TextButton(onClick = { reviewedPrevious = false; reviewPrevious = true },
+                    enabled = !saving && pendingSave == null, modifier = Modifier.testTag("serverOutfitReviewPrevious")) {
+                    Text("이전 QA 작업 종료·과금 확인")
+                }
+            }
             Button(onClick = { comparison = false; reopened = null; model.start(context, selection, approved) },
                 enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null && model.startAllowedByPreviousJob(),
                 modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("선택한 3종으로 서버 AI 생성") }
@@ -206,6 +215,19 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             message?.let { Text(it, modifier = Modifier.testTag("serverOutfitMessage")) }
         }
     }
+    if (reviewPrevious) AlertDialog(onDismissRequest = { reviewPrevious = false },
+        title = { Text("이전 QA 작업 기록 보관") },
+        text = { Column {
+            Text("서버 기록으로 이전 작업이 끝났고 추가 과금이 진행되지 않음을 별도로 확인한 경우에만 진행하세요. 확인할 수 없다면 취소하세요. 기록은 삭제하지 않고 기기 안에 보관하며, 원격 취소·환불·삭제나 자동 재생성은 하지 않아요.")
+            Row {
+                Checkbox(reviewedPrevious, { reviewedPrevious = it }, modifier = Modifier.testTag("serverOutfitPreviousReviewed"))
+                Text("이전 작업 종료와 과금 상태를 별도로 확인했어요.", Modifier.weight(1f))
+            }
+        } },
+        dismissButton = { TextButton(onClick = { reviewPrevious = false }) { Text("취소") } },
+        confirmButton = { TextButton(enabled = reviewedPrevious && model.canArchiveReviewedQaJob(),
+            onClick = { model.archiveReviewedQaJob(reviewedPrevious); approved = false; reviewPrevious = false },
+            modifier = Modifier.testTag("serverOutfitArchivePrevious")) { Text("확인한 QA 기록 보관") } })
     if (comparison && visible != null) AlertDialog(onDismissRequest = { comparison = false },
         title = { Text(if (state.previous) "이전 서버 작업 결과" else "현재 서버 요청 결과") },
         text = { Column {
