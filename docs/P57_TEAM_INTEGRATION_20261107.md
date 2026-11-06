@@ -1,11 +1,13 @@
 # P57 team integration candidate
 
+**Latest device acceptance, 2026-11-07 KST:** separately approved QA 18610 → 18611 deletion-free update PASS; 42 accessible internal files identical before/after installation, before UI launch. Guest/home/wardrobe, photo-tidy cancellation, body-method selection, 3D entry/back, size-comparison entry, fitting and the existing P54 PNG reopen/restart/reopen passed within the read-only scope. No new Genlook generation. Runtime-file review and remaining limitations are recorded below. Production remains **NO-GO**.
+
 ## Source boundaries
 
 - Team base: `JEC0387/capston-second` main `411d008ebf542ec04c4966936303a686b4f784e5`, fetched 2026-11-07.
 - Personal parent: `9ac1b229f8f1169175526b7fd42fe1d60ad2343f` (P56 final delivery).
 - Candidate: `codex/fashionai-final-integration-20261107`. Separate worktree; both unrelated histories retained by a merge commit. Original worktree and branches preserved.
-- No team main update, final merge, device install, user-data change, external generation or Actions execution is authorized by this candidate report.
+- No team main update, final merge, external generation or Actions execution is authorized by this report. Device installation was initially pending and was subsequently explicitly approved for QA 18611 only; see the device acceptance addendum.
 
 ## Integrated behavior
 
@@ -46,7 +48,7 @@ The final source includes one-use photo/destination/purpose-bound consent, Beare
 
 The approved Ubuntu isolated venv plus downloaded wheels/test files used **53,961,069 bytes (51.46 MiB)**, below 150 MB. No global Python/other WSL work/device data changed. Windows skips include optional model libraries/CUDA, three real PostgreSQL tests (service not configured), and symlink capability; no real PostgreSQL migration is claimed.
 
-Final QA consent tests: **6 passed / 0 failed / 0 skipped** on executable source `11d15476580b83680f1ca22d714756424e9b20ff`. No new device installation or data audit has occurred. Original installed QA 18610 and Preview 18605 remain untouched.
+Final QA consent tests: **6 passed / 0 failed / 0 skipped** on executable source `11d15476580b83680f1ca22d714756424e9b20ff`. At candidate creation, device acceptance was pending; the later separately approved installation and audit are recorded below. Preview 18605 remains untouched.
 
 ## Release limits
 
@@ -72,4 +74,41 @@ PR HEAD uses `[skip ci]` to prevent automatic Actions expenditure. Required PR c
 
 The integrated source and QA APK are real artifacts, not a completed production release. Team social login remains BLOCKED until the authenticated account-link bridge and provider configuration are implemented/reviewed; UUID/X-Device-Id adoption is deliberately rejected. Guest/local wardrobe use remains available. QA/Preview server clothing classification remains intentionally blocked; local processing/manual registration remains available.
 
-P57 has **no new installation, personal-data audit, Genlook call or AI credit consumption**. New APK device E2E and preservation are NOT TESTED pending version-specific approval and fresh preflight. Real PostgreSQL migration, operational HTTPS/privacy controls, formal Release signing and product-fidelity acceptance remain unverified. Production decision: **NO-GO**. Required PR checks are preserved; `[skip ci]` avoids unapproved Actions usage and does not authorize merging.
+At initial candidate creation, installation and device acceptance were NOT TESTED. The later approved update and limited checks below supersede that installation status; new-generation E2E remains NOT TESTED. Real PostgreSQL migration, operational HTTPS/privacy controls, formal Release signing and product-fidelity acceptance remain unverified. Production decision: **NO-GO**. Required PR checks are preserved; `[skip ci]` avoids unapproved Actions usage and does not authorize merging.
+
+## Approved QA 18611 device acceptance — 2026-11-07 KST
+
+The user separately approved a deletion-free QA 18611 update and read-oriented checks with no additional Genlook calls. One operator performed all device operations. Initial ADB absence was resolved by the user; no unlock/debugging bypass occurred.
+
+- Fresh preflight: S25+ authorized/unlocked, QA 18610, Preview 18605; PC free space about 2.59 GiB, device data partition over 260 GiB free. Exact target serial was selected in memory and not logged.
+- Candidate SHA, package, version and trusted certificate were rechecked. The installed QA base APK was copied and independently checked: QA 18610, same certificate, SHA `d3ad317fe72f8c02524a45e0d664ccf4bdf5000170037842423b4d239712853a`.
+- QA alone was stopped to stabilize the backup. `shared_prefs`, `files`, `no_backup`, and `databases` were backed up using Windows CurrentUser DPAPI. Archive decryption round-trip and every file hash matched; plaintext was not written to disk. This is a safety snapshot, not a tested portable restore, and excludes Android Keystore.
+- `adb install -r` succeeded for the already verified QA 18611 APK. No uninstall, clear, downgrade, new key or rebuild. Before launching the app: **42 same / 0 changed / 0 missing / 0 new**. Preview remained 18605.
+
+| Actual device action | Result | Boundary |
+| --- | --- | --- |
+| Start / record-preserving guest / home / wardrobe | PASS | No login or wardrobe mutation |
+| Photo tidy confirmation then cancel | PASS | No tidy execution or photo rewrite |
+| Photo/avatar choice, 3D entry/back, size comparison | PASS for navigation | No camera, gallery, analysis, measurement editing or save |
+| Existing manual/AI fitting screen | PASS for entry/labels | No new input, placement change or generation |
+| Existing P54 PNG open | PASS | Exact known approved file only; displayed as saved image, not new generation |
+| QA force-stop/relaunch → guest → wardrobe → fitting → same PNG reopen | PASS | Rendering crop identical between opens; no file replacement |
+| New Genlook / corrected input-contract device E2E | NOT TESTED | No generation authorization in this acceptance scope; no credits used |
+| Social OAuth, wardrobe CRUD, real measurement accuracy, product fidelity | NOT TESTED / existing BLOCKED | Read-oriented acceptance does not imply these passed |
+
+The known P54 saved PNG remained **896×1184 / 619,142 bytes**, SHA-256 `2e55f86c8b9d08395cea184380209b52578a6d688d329d9d14846f6de6b2d90d`. Both actual device reopens decoded the same bytes. Cropped screenshots of only this approved nonpersonal result confirmed visible rendering, with identical screenshot SHA `fd7955bcf8365df56b80d6f25269db6b9cba14a644a9ef3888526f4562c1a612`.
+
+### Post-use preservation and explicit uncertainty
+
+The stable read-only post-use comparison against the fresh installation baseline was **37 same / 5 changed / 0 missing / 0 new**. The entire wardrobe store was byte-identical, all **14 records** (including existing approved fixtures) were structurally identical, and all **14 unique internal image references** existed. This does not audit arbitrary external media, SAF providers, Keystore or server data.
+
+The changed files were:
+
+- `weather_alert.xml`: four existing date-temperature fields and cached `lat`/`lon` changed; two fields unchanged; no removed/new fields and no invalid structure. Actual coordinate values are not recorded. `WeatherViewModel` refresh calls `WeatherAlertScheduler.saveLocation` and forecast persistence; this is a weather-cache change, not an unchanged-settings claim.
+- `files/profileInstalled`: expected 24-byte schema, nonnegative timestamp/size.
+- WorkManager WAL/SHM: valid frame checksums and headers; reconstructed in-memory SQLite quick-check passed. The device database was not opened for writing; scheduled-work semantics were not exhaustively audited.
+- `android.app.ActivityThread.IDS.xml`: one existing integer `IDSCount` changed, same schema, no added/removed fields. No app-source reference was found. The exact framework/vendor writer and reason are **unverified**; it is not labelled a fully explained normal change or silently restored.
+
+No crash was observed during the exercised flows; the current QA process crash buffer had zero fatal-exception markers. This is not an exhaustive OS crash audit. No personal image, original data value, token, device identifier or private evidence is included in Git. Private backup/hashes/UI evidence remain in the ignored `fashion_app/build/p57-device-private/` directory.
+
+Team review: [Draft PR #19](https://github.com/JEC0387/capston-second/pull/19). APK/source identity remains `11d15476580b83680f1ca22d714756424e9b20ff`; this addendum changes documentation only. Original APKs and prior evidence remain preserved. **The approved update/read-oriented acceptance passes; full functionality/production release remains NO-GO.**
