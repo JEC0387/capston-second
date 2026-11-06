@@ -1,5 +1,17 @@
 # P53 — actual QA18608 update; live generation BLOCKED
 
+## Latest continuation — HTTPS/authentication now verified on S25+
+
+The earlier missing-infrastructure findings below are historical. A new isolated
+local PostgreSQL and authenticated TLS FastAPI were actually provisioned, followed
+by an explicitly approved temporary Cloudflare relay. S25+ QA18608 rejected a bad
+QA token and parsed the real server's Genlook paired-generation config with a valid
+QA token. Genlook remained disabled; no photos or generation requests were sent.
+The tunnel was stopped and its old endpoint returned HTTP530. All36 audited QA
+files remained identical to the pre-connection inspection baseline. See
+[local QA setup and actual connection evidence](P53_LOCAL_HTTPS_QA_20261106.md).
+Live generation and intermediate visual-review gating remain separate unfinished work.
+
 ## Actual result (2026-11-06 KST)
 
 | Acceptance | Result | Evidence/scope |
