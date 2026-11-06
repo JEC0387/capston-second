@@ -1,5 +1,20 @@
 # P50 — Genlook 순차 생성 어댑터 인수인계
 
+## 후속 상태 — 사용자 API 키 입력 준비
+
+사용자가 기존 계정·API 키 발급을 완료했다고 알렸고, 키 입력 및 잔액 확인 후 **비개인 시험 입력 최대 1세트·3크레딧** 실험을 승인했다. 아래 초기 기록의 승인 대기는 이 후속 요청으로 변경됐다. 신규 가입·구매·자동 충전·개인 사진·기기 설치·Push는 여전히 수행하지 않는다.
+
+- 현재 작업 트리의 `backend/.env`는 없었으며, Git 추적 파일이 아니고 `.gitignore`의 `**/.env` 규칙에 해당함을 먼저 확인했다. 기존 환경 파일을 덮어쓰지 않았다.
+- 정확한 입력 파일: `C:\Users\USER\Documents\ChatGPT\capston\p16-device-20261104\backend\.env`. **키는 사용자가 편집기에 직접 입력**한다. 채팅으로 요청하거나 출력하지 않는다.
+- 새 파일의 NTFS 상속 권한을 끄고 현재 Windows 사용자·SYSTEM·Administrators만 허용했다. 키 값은 작성하지 않았다. 승인 플래그는 false, 크레딧 상한만 3으로 준비했다. 기존 운영 환경·DB는 변경하지 않았다.
+- `outfit_vton_app.py`에서 다른 프로젝트 import 이전에 정확한 sibling `.env`를 명시적으로 로딩한다. `override=False`, `interpolate=False`; 기존 프로세스 설정 우선. 기존 `database.py`의 간접 로딩에 의존하지 않는다. 키만 있어도 서비스가 활성화되는 것은 아니다.
+- 신규 `test_outfit_vton_environment.py`: **5 PASS, 0.36초**, 실제 키 파일 대신 임시 합성 파일과 가짜 앱/provider 경계를 사용. 경로 고정·호출 순서·기존 환경 보존·치환 금지·키만 있을 때 비활성·파일 무수정·무출력을 확인했다. 실제 API/DB/네트워크는 사용하지 않았다.
+- `experiments/P50-20261106/env01`은 PowerShell XML 인자 전달 오류로 검사 시작 전 종료4; `env02`는 수정된 명령으로 검사 5개 통과·종료0. 두 기록 모두 보존했다. 기존 99개 및 Android 검사는 불필요하게 반복하지 않았다.
+- 사용자에게 키 저장 완료와 자동 충전 비활성 상태 확인을 요청했다. 입력 완료 통지 전에는 실제 호출하지 않는다. 시험 자료 사용권, 계정 잔액과 비용 정책, 사설 1회 ledger를 확인한 뒤 실제 생성한다. 키 준비가 Android 서버 활성화·운영 배포·S25+ 설치 승인은 아니다.
+- 기존 P45/P46 공개 입력 manifest도 읽기 전용 검토했다. `experiments/P45-20261106/public-inputs-20261106-060727`의 인물/상의/신발은 Qwen 연구 데모 예제이고 Genlook 재전송 사용권은 현재 기록에서 확인되지 않는다. 하의만 Met Open Access/CC0 기록이 있다. 전체 4장을 새 제3자 서비스에 전송할 수 있다고 자동 간주하지 않는다. 기존 PNG/입력은 수정·전송하지 않았다.
+
+후속 변경 파일은 `backend/outfit_vton_app.py`, `backend/tests/test_outfit_vton_environment.py`, `backend/GENLOOK_OUTFIT_PROVIDER.md`, 이 문서다. 실제 `.env`는 Git 제외 상태를 유지한다. 초기 `FINAL_VERIFICATION.json`은 초기 커밋 기록으로 보존하며 덮어쓰지 않는다.
+
 ## 결과와 승인 경계
 
 - **구현 및 부분 로컬 합성 검증 단계. 정식 출시 NO-GO.** 실제 Genlook 생성, 착장 품질, S25+ 호출·저장·재열기는 검증하지 않았다. Android UI 검사 1개도 테스트 JVM 메모리 부족으로 수정 후 합격 여부가 미확인이다.

@@ -28,6 +28,7 @@ Reuse the existing P48 API deployment, Bearer authentication, consent/policy ver
 - `OUTFIT_VTON_PROVIDER=genlook` selects the new provider. The existing P48 API flags and policy still need approval; selecting a provider is insufficient to make the service ready.
 - `genlook.env.example` is documentation and contains no key. It is not automatically loaded. All flags default false, budgets zero, and review/secret/path fields empty.
 - Entry point remains `outfit_vton_app:app`. Follow [P48 HTTPS, authentication and storage setup](OUTFIT_VTON_SERVER.md); do not expose an unapproved public listener.
+- The entry point explicitly loads its sibling `backend/.env` before importing account/provider settings, with `override=False` and `interpolate=False`. It does not search the current working directory, change existing process values, expand secret text, or automatically enable generation. `python-dotenv` is already an existing dependency. The user's private `.env` is ignored by Git; never copy its contents into a report or an APK. Existing process settings take precedence, so inspect only safe readiness flags before execution rather than assuming the file's disabled values override them.
 
 | Setting | Required meaning before enablement |
 |---|---|
