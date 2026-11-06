@@ -24,11 +24,12 @@ from uuid import UUID, uuid4
 
 from PIL import Image, ImageOps
 
+from genlook_request_contract import RequestStage, build_stage_body
 from outfit_vton_provider import ProviderAvailability, ProviderFailure, ProviderResult, _regular_local
 
 API = "https://api.genlook.app/tryon/v1"
 MODEL = "genlook/tryon-api-v1"
-CONTRACT = "genlook-sequential-v1-20261106"
+CONTRACT = "genlook-sequential-v2-preservation-20261106"
 ROLES = ("tops", "bottoms", "shoes")
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 SHA = re.compile(r"[a-f0-9]{64}\Z")
@@ -434,12 +435,9 @@ class GenlookProvider:
             raise ProviderFailure("genlook_invalid_response")
         stage["state"] = "uploaded"; job["status"] = "reserved"; self._persist()
         self._check_cancel(identity)
-        titles = {"tops": "Upper-body clothing", "bottoms": "Lower-body clothing", "shoes": "Footwear pair"}
-        body = {"products": [{"externalId": stage["product_id"], "title": titles[stage["role"]],
-                    "description": "Use the supplied product image and preserve the person's other clothing and identity.",
-                    "validForDays": 1, "images": [{"source": {"fileKey": "product"}}]}],
-                "person": {"image": {"source": {"id": image_id}}}, "externalUserId": job["customer_id"],
-                "output": {"resolution": "default", "aiLabel": True, "keepForDays": 1}}
+        body = build_stage_body(RequestStage((stage["role"],)), image_id=image_id,
+                                customer_id=job["customer_id"],
+                                product_ids={stage["role"]: stage["product_id"]})
         # Persist intent BEFORE the paid POST. No retries, even if the response is lost.
         stage["state"] = "submitting"; job["status"] = "submitting"; self._persist()
         created = await self._request("POST", "/try-on", accepted=(201,),

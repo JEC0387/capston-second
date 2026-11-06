@@ -225,6 +225,33 @@ def test_budget_is_durable_and_not_refunded_by_restart(tmp_path):
     run(check())
 
 
+def test_request_contract_upgrade_preserves_old_spend_ledger_and_blocks_replay(tmp_path, monkeypatch):
+    async def check():
+        fake = SyntheticService()
+        configured = settings(tmp_path, max_total_credits=3, max_total_microusd=120000)
+        new_contract = mod.CONTRACT
+        with monkeypatch.context() as old:
+            old.setattr(mod, "CONTRACT", "genlook-sequential-v1-20261106")
+            prior = mod.GenlookProvider(configured, transport=httpx.MockTransport(fake))
+            await prior.generate(str(uuid4()), "a" * 64, inputs(), placements())
+            await prior.close()
+        assert mod.CONTRACT == new_contract
+        ledger = tmp_path / "owned-ledger" / "ledger.json"
+        before = ledger.read_bytes()
+        calls_before = list(fake.calls)
+        upgraded = mod.GenlookProvider(configured, transport=httpx.MockTransport(fake))
+        try:
+            assert (await upgraded.check_availability()).reason == "genlook_journal_unavailable"
+            with pytest.raises(ProviderFailure, match="genlook_journal_unavailable"):
+                await upgraded.generate(str(uuid4()), "b" * 64, inputs(), placements())
+            assert ledger.read_bytes() == before
+            assert fake.calls == calls_before
+            assert len(fake.posts) == 3
+        finally:
+            await upgraded.close()
+    run(check())
+
+
 @pytest.mark.parametrize("case,paid", [("post_lost", 1), ("upload_lost", 0), ("mismatched_id", 1)])
 def test_ambiguous_remote_work_is_never_reposted_or_declared_cancelled(tmp_path, case, paid):
     async def check():
