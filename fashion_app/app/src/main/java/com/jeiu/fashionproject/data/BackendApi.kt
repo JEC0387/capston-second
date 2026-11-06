@@ -42,7 +42,8 @@ object BackendApi {
     private fun privatePath(path: String): Boolean = listOf(
         "/api/wardrobe", "/api/wear-logs", "/api/body-measurements", "/api/profile",
         "/api/style-preference", "/api/product-interests", "/api/taste-events",
-        "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup"
+        "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup",
+        "/api/clothing/classify", "/api/object-detection"
     ).any { path == it || path.startsWith("$it/") || path.startsWith("$it?") }
 
     private fun HttpURLConnection.addPrivateAuthorization(path: String): String? {
@@ -161,9 +162,10 @@ object BackendApi {
     suspend fun isServerUp(): Boolean = getJson("/") != null
 
     /** YOLOv8 객체 탐지: 이미지를 multipart로 업로드하고 탐지 결과를 받는다. */
-    suspend fun detectObjects(context: Context, uri: Uri, confThreshold: Float = 0.25f): DetectionResult =
+    suspend fun detectObjects(context: Context, uri: Uri, confThreshold: Float = 0.25f,
+                              consent: ClothingPhotoConsent? = null): DetectionResult =
         withContext(Dispatchers.IO) {
-            val json = JSONObject(postPhoto(context, "/api/object-detection", uri, confThreshold))
+            val json = JSONObject(postPhoto(context, "/api/object-detection", uri, confThreshold, consent = consent))
             val detections = buildList {
                 val arr = json.getJSONArray("detections")
                 for (i in 0 until arr.length()) {
@@ -193,10 +195,11 @@ object BackendApi {
         }
 
     /** 옷 종류 분류 (DeepFashion2 + COCO 가방류): 크게 잡힌 순서의 후보 목록을 받는다. */
-    suspend fun classifyClothing(context: Context, uri: Uri, confThreshold: Float = 0.3f): List<ClothingCandidate> =
+    suspend fun classifyClothing(context: Context, uri: Uri, confThreshold: Float = 0.3f,
+                                consent: ClothingPhotoConsent? = null): List<ClothingCandidate> =
         withContext(Dispatchers.IO) {
             // 첫 호출 때 서버가 모델을 불러오느라 오래 걸릴 수 있어 읽기 제한을 넉넉히 둔다
-            val json = JSONObject(postPhoto(context, "/api/clothing/classify", uri, confThreshold, readTimeoutMs = 60_000))
+            val json = JSONObject(postPhoto(context, "/api/clothing/classify", uri, confThreshold, readTimeoutMs = 60_000, consent = consent))
             val arr = json.getJSONArray("candidates")
             List(arr.length()) { i ->
                 val c = arr.getJSONObject(i)
@@ -215,19 +218,30 @@ object BackendApi {
         path: String,
         uri: Uri,
         confThreshold: Float,
-        readTimeoutMs: Int = 30_000
+        readTimeoutMs: Int = 30_000,
+        consent: ClothingPhotoConsent? = null
     ): String {
+        // Fail before opening an image stream or sending a request. A gallery choice is not upload consent.
+        check(consent != null && consent.matches(uri, BASE_URL)) { "이 사진과 서버에 대한 전송 동의가 필요합니다" }
+        val purpose = if (path == "/api/clothing/classify") ClothingPhotoConsent.CLASSIFY else ClothingPhotoConsent.DETECT
+        check(consent.purpose == purpose) { "이 분석 목적에 대한 전송 동의가 필요합니다" }
+        check(!BuildConfig.PREVIEW_BUILD) { "평가용 앱에서는 옷 사진 분류 서버 전송을 지원하지 않습니다" }
+        val destination = URL("${consent.server}$path")
+        check(destination.protocol == "https" && DataAuth.authorizationFor(destination) != null) { "보안 서버 인증이 필요합니다" }
+        check(consent.claimOnce()) { "이미 사용한 전송 동의입니다. 다시 요청하려면 확인이 필요합니다" }
         val boundary = "----FashionBoundary${System.currentTimeMillis()}"
-        val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+        val conn = (destination.openConnection() as HttpURLConnection).apply {
             instanceFollowRedirects = false
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 5_000
             readTimeout = readTimeoutMs
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setRequestProperty("X-Photo-Processing-Consent", purpose)
         }
         val sentToken = conn.addPrivateAuthorization(path)
         if (privatePath(path) && sentToken == null) { conn.disconnect(); error("보안 백업 인증이 필요합니다") }
+        if (!consent.matches(uri, BASE_URL)) { conn.disconnect(); error("서버가 변경되어 전송 동의를 다시 확인해야 합니다") }
 
         val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalStateException("이미지를 읽을 수 없습니다")

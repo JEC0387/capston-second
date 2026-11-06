@@ -26,12 +26,27 @@ The server now advertises bounded `max_input_side=2048`; the Android server-only
 
 `P57ServerImageContractTest` creates synthetic markers at the original dimensions through the actual Android decoder, orientation transform and request encoder. `backend/verify_android_outfit_wire.py` checks the emitted bytes through FastAPI parsing and strict product references. It also changes a product pixel and requires rejection. These are offline integration evidence, not new AI generation or S25+ evidence.
 
-## Validation checkpoint (in progress)
+## Local validation before integrated APK
 
-- Backend focused authentication/data/migration: **119 passed + 8 subtests** (Windows local, DB disabled).
-- Full Windows Backend: **599 passed / 35 environment failures / 37 skipped + 10 subtests**. All 35 failures are unchanged legacy Unix-only FASHN journal tests (`fcntl` unavailable); Linux verification pending. Do not sum repeated runs.
-- Android compile, focused UI/data contracts, integrated APK and hash wire evidence pending at this source checkpoint. Initial integration compiler errors are preserved in separate local logs.
-- Original installed QA 18610 / Preview 18605 untouched. No new device data preservation audit claimed.
+| Run | Actual result | Scope / limitation |
+| --- | --- | --- |
+| Backend focused 03 | 119 passed + 8 subtests | Authentication, preservation, migration contracts; local only |
+| Backend all 02 (Windows) | 599 passed, 35 environment failures, 37 skipped + 10 subtests | 35 failures require Unix fcntl/fsync |
+| Ubuntu legacy tryon run01 | 39 passed, no failures/skips | Resolves all 35 Unix-only Windows failures; four overlap, do not sum |
+| Backend consent 01 | 30 passed + 8 subtests | Authenticated HTTPS, purpose consent, input guards, sanitized errors |
+| Android focused 01 (QA) | 232 executed: 230 passed, 2 failed | Recovery test wrongly included in QA; new PNG metadata expectation wrong |
+| Android production 02 | 15 executed: 13 passed, 2 failed | Rotation/reopen and closet/consent UI passed; two localhost-only test certificates rejected numeric loopback |
+| Android recovery 03 | 2 passed, no failures/skips | Correct loopback SAN, real TLS probe/request arrival, lost-response recovery and consent upload; no TLS checks disabled |
+| Android-to-FastAPI wire | PASS | Actual Android decoder/JSON bytes, independent RGBA/dimensions, strict references and altered-pixel rejection; synthetic only |
+| Release tools | 17 passed | Package/signature, native alignment tooling, retention and CI policy |
+
+The test-only EXIF correction now independently checks PNG chunks/CRC, absence of eXIf, exact rotated pixels and full-pixel equality after reopening. DataAuth runtime code is unchanged. The failed runs remain preserved; no repeated-run totals are presented as unique tests.
+
+The final source includes one-use photo/destination/purpose-bound consent, Bearer authentication and HTTPS before reading/uploading an image. Photo selection is local only. QA/Preview intentionally block production classification uploads. The classifier's successful synthetic HTTP contract is not evidence of actual model accuracy.
+
+The approved Ubuntu isolated venv plus downloaded wheels/test files used **53,961,069 bytes (51.46 MiB)**, below 150 MB. No global Python/other WSL work/device data changed. Windows skips include optional model libraries/CUDA, three real PostgreSQL tests (service not configured), and symlink capability; no real PostgreSQL migration is claimed.
+
+Integrated QA APK / final QA consent tests / Lint / signer verification follow this source checkpoint. No new device installation or data audit has occurred. Original installed QA 18610 and Preview 18605 remain untouched.
 
 ## Release limits
 

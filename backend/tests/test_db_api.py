@@ -20,7 +20,7 @@ class OfflineStartupTest(unittest.TestCase):
             self.assertEqual(200, c.get('/api/home').status_code)
             self.assertFalse(c.get('/api/health/database').json()['ready'])
             self.assertEqual(503, c.get('/api/body-measurements').status_code)
-            self.assertEqual(422, c.post('/api/clothing/classify').status_code)
+            self.assertEqual(503, c.post('/api/clothing/classify').status_code)  # Auth DB unavailable; authorized form guards are tested separately.
 
     def test_no_duplicate_routes(self):
         seen=set()

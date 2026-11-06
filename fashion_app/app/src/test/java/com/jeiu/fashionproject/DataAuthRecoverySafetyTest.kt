@@ -18,12 +18,16 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class DataAuthRecoverySafetyTest {
     @Test fun lostRecoveryResponseRetainsIntendedAccountAndServerAcrossRetry() = runBlocking {
-        val certificate = HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        // MockWebServer may advertise the numeric loopback on Windows. Keep hostname
+        // verification enabled and issue the fixture certificate for every loopback form.
+        val certificate = HeldCertificate.Builder().addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("127.0.0.1").addSubjectAlternativeName("::1").build()
         val server = MockWebServer()
         server.useHttps(HandshakeCertificates.Builder().heldCertificate(certificate).build().sslSocketFactory(), false)
         server.start()
@@ -40,12 +44,24 @@ class DataAuthRecoverySafetyTest {
             HttpsURLConnection.setDefaultSSLSocketFactory(HandshakeCertificates.Builder()
                 .addTrustedCertificate(certificate.certificate).build().sslSocketFactory())
             BackendApi.BASE_URL = destination
+            // A transport failure is not evidence of a lost recovery response. Establish
+            // the local test TLS channel first, without any account payload or credentials.
+            server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            val probe = server.url("/__tls_probe").toUrl().openConnection() as HttpsURLConnection
+            try {
+                probe.connectTimeout = 5_000; probe.readTimeout = 5_000
+                assertEquals("Local HTTPS fixture must be reachable before testing recovery", 200, probe.responseCode)
+                probe.inputStream.close()
+            } finally { probe.disconnect() }
+            assertEquals("/__tls_probe", server.takeRequest(3, TimeUnit.SECONDS)?.path)
             assertTrue(vault.write(JSONObject().put("token", oldToken).put("origin", destination)
                 .put("recovery", "D".repeat(43)).put("enabled", true)))
             DataAuth.initialize(context, vault)
             assertTrue(DataAuth.canSync)
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
             assertFalse(DataAuth.recover(requestedCode))
+            assertEquals("Recovery must reach the fixture before its response is dropped",
+                "/api/auth/recover", server.takeRequest(3, TimeUnit.SECONDS)?.path)
             assertTrue(DataAuth.isRestorePending)
             assertFalse(DataAuth.canSync)
             val durable = vault.read()
@@ -59,7 +75,10 @@ class DataAuthRecoverySafetyTest {
             BackendApi.BASE_URL = destination
             server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
                 .setBody(JSONObject().put("accessToken", newToken).put("dataEnabled", true).toString()))
-            assertTrue(DataAuth.resumePendingAuthentication())
+            val resumed = DataAuth.resumePendingAuthentication()
+            assertEquals("Resuming the journal must reach the original server",
+                "/api/auth/recover", server.takeRequest(3, TimeUnit.SECONDS)?.path)
+            assertTrue("Successful recovery reply must persist the replacement token; state=${DataAuth.state.value}", resumed)
             assertEquals(newToken, DataAuth.accessToken)
             assertFalse(vault.read().has("requested_recovery"))
             assertTrue(DataAuth.isRestorePending)

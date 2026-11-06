@@ -11,6 +11,7 @@ from PIL import Image
 import main
 import naver
 import unsplash
+from tests.test_auth_api import client_and_db, register, bearer
 
 
 def test_legacy_body_analysis_rejects_upload_without_saving(tmp_path, monkeypatch):
@@ -38,13 +39,22 @@ def test_object_detection_result_is_inline_and_never_publicly_saved(tmp_path, mo
     monkeypatch.setattr(main.detection, "detect_objects", fake_detection)
     photo = io.BytesIO()
     Image.new("RGB", (64, 64), "white").save(photo, "JPEG")
-    client = TestClient(main.app)
-    result = client.post("/api/object-detection", files={"photo": ("item.jpg", photo.getvalue(), "image/jpeg")})
-    assert result.status_code == 200, result.text
-    url = result.json()["resultImageUrl"]
-    assert url.startswith("data:image/jpeg;base64,")
-    assert base64.b64decode(url.split(",", 1)[1]).startswith(b"\xff\xd8")
-    assert not (tmp_path / "uploads").exists()
+    client, _, engine = client_and_db(monkeypatch)
+    try:
+        headers = bearer(register(client)["accessToken"])
+        headers["X-Photo-Processing-Consent"] = "object-detection-v1"
+        result = client.post("https://testserver/api/object-detection", headers=headers,
+                             files={"photo": ("item.jpg", photo.getvalue(), "image/jpeg")})
+        assert result.status_code == 200, result.text
+        assert result.headers["cache-control"] == "no-store"
+        url = result.json()["resultImageUrl"]
+        assert url.startswith("data:image/jpeg;base64,")
+        assert base64.b64decode(url.split(",", 1)[1]).startswith(b"\xff\xd8")
+        assert not (tmp_path / "uploads").exists()
+    finally:
+        client.close()
+        main.app.dependency_overrides.clear()
+        engine.dispose()
 
 
 def test_shopping_insight_proxy_uses_server_credentials_only(monkeypatch):

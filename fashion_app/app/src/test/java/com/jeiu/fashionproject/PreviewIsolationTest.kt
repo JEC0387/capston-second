@@ -13,7 +13,8 @@ class PreviewIsolationTest {
             assertEquals("com.jeiu.fashionproject", BuildConfig.APPLICATION_ID)
             return@runBlocking
         }
-        assertEquals("com.jeiu.fashionproject.preview", BuildConfig.APPLICATION_ID)
+        assertEquals(if (BuildConfig.DEVICE_QA_BUILD) "com.jeiu.fashionproject.preview.qa"
+            else "com.jeiu.fashionproject.preview", BuildConfig.APPLICATION_ID)
         assertFalse(DbSync.isEnabled)
         val server = MockWebServer()
         val previous = BackendApi.BASE_URL

@@ -73,6 +73,27 @@ class P57ServerImageContractTest {
     }
     private fun appendMetadata(original: ByteArray, type: String, data: ByteArray): ByteArray =
         original.copyOfRange(0, 33) + chunk(type, data) + original.copyOfRange(33, original.size)
+    /** Independent container inspection: metadata removal cannot be inferred from decoder defaults. */
+    private fun pngChunkTypes(bytes: ByteArray): List<String> {
+        assertArrayEquals(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), bytes.copyOfRange(0, 8))
+        val types = mutableListOf<String>()
+        var offset = 8
+        while (offset < bytes.size) {
+            assertTrue("Complete PNG chunk header", bytes.size - offset >= 12)
+            val length = ByteBuffer.wrap(bytes, offset, 4).int
+            assertTrue("Bounded PNG chunk", length >= 0 && length <= bytes.size - offset - 12)
+            val type = String(bytes, offset + 4, 4, Charsets.US_ASCII)
+            val crc = CRC32().apply { update(bytes, offset + 4, length + 4) }.value
+            val stored = ByteBuffer.wrap(bytes, offset + length + 8, 4).int.toLong() and 0xffffffffL
+            assertEquals("PNG $type CRC", stored, crc)
+            types += type
+            offset += length + 12
+        }
+        assertEquals("IHDR", types.first())
+        assertEquals("IEND", types.last())
+        assertEquals(bytes.size, offset)
+        return types
+    }
     private fun srgbProfile(original: ByteArray): ByteArray {
         val compressed = ByteArrayOutputStream().use { out ->
             DeflaterOutputStream(out).use { it.write(ICC_Profile.getInstance(java.awt.color.ColorSpace.CS_sRGB).data) }
@@ -200,8 +221,21 @@ class P57ServerImageContractTest {
                 assertEquals(marker(y, height - 1 - x, width, height), bitmap.getPixel(x, y))
             }
         } finally { bitmap.recycle() }
-        assertEquals(ExifInterface.ORIENTATION_NORMAL,
-            ExifInterface(ByteArrayInputStream(prepared.bytes)).getAttributeInt(ExifInterface.TAG_ORIENTATION, 1))
+        assertTrue("Input contains the rotation metadata", "eXIf" in pngChunkTypes(original))
+        assertFalse("Canonical PNG removes EXIF rather than writing a normal-orientation tag",
+            "eXIf" in pngChunkTypes(prepared.bytes))
+        assertEquals(ExifInterface.ORIENTATION_UNDEFINED,
+            ExifInterface(ByteArrayInputStream(prepared.bytes)).getAttributeInt(
+                ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED))
+
+        // Reopen the saved canonical image through the same production pipeline. The already
+        // rotated pixels must not rotate a second time or lose resolution during re-entry.
+        val reopenedDirectory = File(app.cacheDir, "p57-reopen-${UUID.randomUUID()}").apply { check(mkdirs()) }
+        dimensions.keys.forEach { File(reopenedDirectory, "$it-original.png").writeBytes(prepared.bytes) }
+        val reopened = OnDeviceVtonImages.prepare(app, id, selection(reopenedDirectory), config().imageSpec()).person
+        assertEquals(704, reopened.width); assertEquals(1200, reopened.height)
+        assertArrayEquals("Reopening must preserve every already oriented pixel", rgba(prepared.bytes), rgba(reopened.bytes))
+        assertFalse("Reopening must not reintroduce EXIF", "eXIf" in pngChunkTypes(reopened.bytes))
     }
 
     @Test fun serverConfigDeclaresBoundedPreparationSizeWithoutChangingOnDeviceDefault() {

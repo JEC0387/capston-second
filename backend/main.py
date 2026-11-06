@@ -36,12 +36,12 @@ import io
 from contextlib import asynccontextmanager
 from database import initialize_database, database_status, optional_db
 from db_api import app as db_router, catalog_rows
-from auth_api import router as auth_router
+from auth_api import router as auth_router, current_user
 from auth_provider_gate import router as provider_router
 from tryon_proxy import create_router as tryon_router, close_service as close_tryon
 
 import cv2
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
@@ -58,6 +58,25 @@ from schemas import (
 )
 
 MAX_ANALYSIS_UPLOAD = 10 * 1024 * 1024
+PHOTO_PROCESSING_CONSENT_HEADER = "X-Photo-Processing-Consent"
+
+
+def _require_photo_consent(request: Request, expected: str):
+    # Read the verified ASGI scheme, never a client-supplied forwarded header.
+    if request.url.scheme != "https":
+        raise HTTPException(403, "https_required")
+    if request.headers.get(PHOTO_PROCESSING_CONSENT_HEADER) != expected:
+        raise HTTPException(403, "photo_processing_consent_required")
+
+
+def clothing_photo_consent(request: Request, user=Depends(current_user)):
+    _require_photo_consent(request, "clothing-classification-v1")
+    return user
+
+
+def object_photo_consent(request: Request, user=Depends(current_user)):
+    _require_photo_consent(request, "object-detection-v1")
+    return user
 
 
 async def read_analysis_photo(photo: UploadFile) -> Image.Image:
@@ -159,6 +178,7 @@ async def analyze_body():
 async def detect_objects(
     photo: UploadFile = File(...),
     conf_threshold: float = Form(0.25),
+    _user=Depends(object_photo_consent),
 ):
     """
     이미지 업로드 → YOLOv8 객체 탐지 결과 반환.
@@ -199,6 +219,7 @@ async def detect_objects(
 async def classify_clothing(
     photo: UploadFile = File(...),
     conf_threshold: float = Form(0.3),
+    _user=Depends(clothing_photo_consent),
 ):
     """
     옷 사진 업로드 → 옷 종류 후보 목록 (크게 잡힌 순서).
@@ -217,8 +238,8 @@ async def classify_clothing(
 
     try:
         return fashion_detection.classify_clothing(image, conf_threshold=conf_threshold)
-    except FileNotFoundError as e:
-        raise HTTPException(503, str(e))
+    except FileNotFoundError:
+        raise HTTPException(503, "clothing_classifier_unavailable") from None
 
 
 @app.get("/api/style-suggestions", response_model=StyleSuggestionResponse, tags=["AI 분석"])
@@ -424,6 +445,7 @@ async def private_response_cache_policy(request, call_next):
                "/api/taste-events", "/api/recommendations", "/api/saved-outfits",
                "/api/outfit-plans", "/api/me", "/api/backup")
     private += ("/api/stats",)
+    private += ("/api/clothing/classify", "/api/object-detection")
     if any(request.url.path == p or request.url.path.startswith(p + "/") for p in private):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"

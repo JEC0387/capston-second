@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.jeiu.fashionproject.data.BackendApi
 import com.jeiu.fashionproject.data.ClothingCandidate
 import com.jeiu.fashionproject.data.ClothingCategories
+import com.jeiu.fashionproject.data.ClothingPhotoConsent
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +53,10 @@ sealed class AddClothingUiState {
         val defaultMode: ImageMode,                // 처음 보여줄 사진 종류
         val garmentLoading: Boolean = false,
         val analyzed: Boolean = true,              // 수정 화면처럼 분석 없이 저장된 정보를 불러왔으면 false
-        val maskBasePath: String? = null           // classifier upload geometry, not the display canvas
+        val maskBasePath: String? = null,          // classifier upload geometry, not the display canvas
+        val classificationUri: String? = null,
+        val classifying: Boolean = false,
+        val classificationMessage: String? = null
     ) : AddClothingUiState() {
         val selectedCandidate: ClothingCandidate? get() = candidates.getOrNull(selected)
         fun uriFor(mode: ImageMode): String? = when (mode) {
@@ -76,6 +80,7 @@ class AddClothingViewModel : ViewModel() {
 
     private var garmentJob: Job? = null
     private var analysisJob: Job? = null
+    private var classificationJob: Job? = null
     private var revision = 0L
 
     // ── 등록 ────────────────────────────────────────────────────────────
@@ -97,12 +102,7 @@ class AddClothingViewModel : ViewModel() {
         }
         var published = false
         try {
-            // ② 옷 종류 분류 (누끼가 있으면 흰 배경 이미지로)
-            val uploadFile = File(cut.uploadPath)
-            val candidates = runCatching {
-                BackendApi.classifyClothing(context, Uri.fromFile(uploadFile))
-            }.getOrNull()
-            if (cut.uploadPath != cut.originalPath) uploadFile.delete()
+            // Photo selection runs locally. Upload requires a separate image/server-bound confirmation.
             currentCoroutineContext().ensureActive()
             if (revision != requested) return
 
@@ -112,15 +112,16 @@ class AddClothingViewModel : ViewModel() {
             cut.cutoutBitmap?.let { colors[ImageMode.CUTOUT] = colorOf(it, cut.originalPath); it.recycle() }
 
             val tagged = AddClothingUiState.Tagged(
-                candidates = candidates.orEmpty(),
+                candidates = emptyList(),
                 selected = 0,
-                fromServer = candidates != null,
+                fromServer = false,
                 originalUri = fileUri(cut.originalPath),
                 cutoutUri = cut.cutoutPath?.let(::fileUri),
                 garmentUri = null,
                 colors = colors,
                 defaultMode = if (cut.cutoutPath != null) ImageMode.CUTOUT else ImageMode.ORIGINAL,
-                maskBasePath = cut.maskBasePath
+                maskBasePath = cut.maskBasePath,
+                classificationUri = fileUri(cut.uploadPath)
             )
             currentCoroutineContext().ensureActive()
             if (revision != requested) return
@@ -133,6 +134,38 @@ class AddClothingViewModel : ViewModel() {
                 listOfNotNull(cut.originalPath, cut.cutoutPath).forEach { deleteIfTemp(context, fileUri(it)) }
                 if (cut.uploadPath != cut.originalPath) File(cut.uploadPath).delete()
                 cut.cutoutBitmap?.let { if (!it.isRecycled) it.recycle() }
+            }
+        }
+    }
+
+    fun classifyWithConsent(context: Context, consent: ClothingPhotoConsent) {
+        val before = _state.value as? AddClothingUiState.Tagged ?: return
+        val uri = before.classificationUri?.let(Uri::parse) ?: return
+        if (before.classifying || classificationJob?.isActive == true) return
+        if (!consent.matches(uri, BackendApi.BASE_URL) || consent.purpose != ClothingPhotoConsent.CLASSIFY) {
+            _state.value = before.copy(classificationMessage = "사진이나 서버가 변경되어 전송 동의를 다시 확인해야 해요.")
+            return
+        }
+        val requested = revision
+        _state.value = before.copy(classifying = true, classificationMessage = null)
+        classificationJob = viewModelScope.launch {
+            try {
+                val candidates = BackendApi.classifyClothing(context, uri, consent = consent)
+                currentCoroutineContext().ensureActive()
+                val current = _state.value as? AddClothingUiState.Tagged ?: return@launch
+                if (revision != requested || current.originalUri != before.originalUri) return@launch
+                if (!consent.matches(uri, BackendApi.BASE_URL)) {
+                    _state.value = current.copy(classifying = false, classificationMessage = "서버가 변경되어 분류 결과를 적용하지 않았어요.")
+                    return@launch
+                }
+                _state.value = current.copy(candidates = candidates, selected = 0, fromServer = true,
+                    classifying = false, classificationMessage = null)
+                if (candidates.isNotEmpty()) selectCandidate(context, 0)
+            } catch (cancelled: CancellationException) { throw cancelled
+            } catch (_: Exception) {
+                val current = _state.value as? AddClothingUiState.Tagged
+                if (revision == requested && current != null) _state.value = current.copy(classifying = false,
+                    classificationMessage = "서버 분류를 실행하지 못했어요. 동의·보안 연결·인증을 확인하거나 직접 분류해 주세요. 사진과 입력은 유지돼요.")
             }
         }
     }
@@ -191,7 +224,7 @@ class AddClothingViewModel : ViewModel() {
         brand: String? = null, price: Int? = null
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
-        if (s.garmentLoading) return
+        if (s.garmentLoading || s.classifying) return
         val shown = s.uriFor(mode) ?: s.originalUri ?: return
         val color = colorFor(s, mode)
         WardrobeStore.add(
@@ -215,6 +248,7 @@ class AddClothingViewModel : ViewModel() {
                 price = price
             )
         )
+        deleteClassificationTemp(context, s)
         _state.value = AddClothingUiState.Idle
     }
 
@@ -264,7 +298,7 @@ class AddClothingViewModel : ViewModel() {
     ) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         val item = editingItem ?: return
-        if (s.garmentLoading) return
+        if (s.garmentLoading || s.classifying) return
         if (WardrobeStore.items.value.find { it.id == item.id } != item) {
             _state.value = AddClothingUiState.Error("다른 곳에서 옷 정보가 변경되었어요. 기존 기록을 유지했으니 수정 화면을 다시 열어 주세요.")
             return
@@ -293,6 +327,7 @@ class AddClothingViewModel : ViewModel() {
             )
         )
         editingItem = null
+        deleteClassificationTemp(context, s)
         _state.value = AddClothingUiState.Idle
     }
 
@@ -302,6 +337,7 @@ class AddClothingViewModel : ViewModel() {
     fun reset(context: Context) {
         revision++
         analysisJob?.cancel()
+        classificationJob?.cancel()
         garmentJob?.cancel()
         discardFiles(context)
         editingItem = null
@@ -316,6 +352,7 @@ class AddClothingViewModel : ViewModel() {
     override fun onCleared() {
         revision++
         analysisJob?.cancel()
+        classificationJob?.cancel()
         garmentJob?.cancel()
         appContext?.let { discardFiles(it) }
         super.onCleared()
@@ -324,6 +361,14 @@ class AddClothingViewModel : ViewModel() {
     private fun discardFiles(context: Context) {
         val s = _state.value as? AddClothingUiState.Tagged ?: return
         listOfNotNull(s.originalUri, s.cutoutUri, s.garmentUri).forEach { deleteIfTemp(context, it) }
+        deleteClassificationTemp(context, s)
+    }
+
+    private fun deleteClassificationTemp(context: Context, s: AddClothingUiState.Tagged) {
+        val uri = s.classificationUri?.let(Uri::parse) ?: return
+        if (uri.scheme != "file") return
+        val file = uri.path?.let(::File) ?: return
+        if (file.parentFile?.canonicalFile == context.cacheDir.canonicalFile && file.name.startsWith("upload_")) file.delete()
     }
 
     /** 이번 등록/수정 중에 만든 파일만 지운다 (수정 중인 옷에 저장된 사진은 지키기) */
