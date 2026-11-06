@@ -179,8 +179,12 @@ def verified_png(raw: bytes, content_type: str | None = None) -> bytes:
 class GenlookProvider:
     """One serial owner of a private durable spend ledger; HTTP injection is test-only."""
     def __init__(self, settings: GenlookSettings | None = None, *, transport=None, review_timeout_seconds=0,
-                 detail_policy=BASELINE_DETAIL_POLICY):
+                 detail_policy=BASELINE_DETAIL_POLICY, product_references=None):
         details = detail_policy_manifest(detail_policy)
+        from genlook_product_references import ProductReferences
+        if product_references is not None and (not isinstance(product_references, ProductReferences) or details):
+            raise ValueError("invalid_or_conflicting_product_references")
+        self._product_references = product_references
         self._detail_policy = detail_policy
         self.settings = settings or GenlookSettings.environment()
         self._transport = transport
@@ -215,6 +219,8 @@ class GenlookProvider:
             # Opt-in cannot silently mutate/reuse a P54 ledger or its approval.
             # Default identity remains byte-for-byte compatible with P54.
             identity["detail_policy"] = details
+        if product_references is not None:
+            identity["product_references"] = product_references.manifest()
         self.contract_sha = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.revision = contract + "-" + self.contract_sha[:16]
 
@@ -595,7 +601,7 @@ class GenlookProvider:
         finally:
             self._reviewing_job = None
 
-    async def _stage(self, identity, job, stage, person, garments, remaining):
+    async def _stage(self, identity, job, stage, person, garments, remaining, prepared_references=None):
         self._check_cancel(identity)
         if await self._credits() < remaining:
             raise ProviderFailure("genlook_insufficient_credits")
@@ -616,6 +622,8 @@ class GenlookProvider:
                                 product_ids=products, detail_policy=self._detail_policy)
         files = {("product" if len(plan.roles) == 1 else role): (role + ".png", garments[role], "image/png")
                  for role in plan.roles}
+        if self._product_references is not None:
+            self._product_references.attach(body, files, plan.roles, prepared_references)
         # Persist intent BEFORE the paid POST. No retries, even if the response is lost.
         stage["state"] = "submitting"; job["status"] = "submitting"; self._persist()
         created = await self._request("POST", "/try-on", accepted=(201,),
@@ -656,6 +664,8 @@ class GenlookProvider:
                     set(images) != {"person", *ROLES} or set(placements) != set(ROLES)):
                 raise ValueError()
             normalized = {role: verified_png(value) for role, value in images.items()}
+            prepared_references = (self._product_references.prepare(normalized)
+                                   if self._product_references is not None else None)
         except Exception:
             raise ProviderFailure("invalid_provider_input") from None
         if job_id in self._ledger["jobs"]:
@@ -679,7 +689,7 @@ class GenlookProvider:
                 current = normalized["person"]
                 remaining = 3
                 for stage_index, stage in enumerate(job["stages"]):
-                    current = await self._stage(job_id, job, stage, current, normalized, remaining)
+                    current = await self._stage(job_id, job, stage, current, normalized, remaining, prepared_references)
                     remaining -= self._stage_plan(stage).expected_credits
                     if self._review_timeout and stage_index == 0:
                         await self._review_pair(job_id, input_sha256, current)
