@@ -24,7 +24,8 @@ from uuid import UUID, uuid4
 
 from PIL import Image, ImageOps
 
-from genlook_request_contract import RequestStage, build_stage_body, review_plan
+from genlook_request_contract import (RequestStage, build_stage_body, review_plan,
+                                      BASELINE_DETAIL_POLICY, detail_policy_manifest)
 from outfit_vton_provider import ProviderAvailability, ProviderFailure, ProviderResult, _regular_local
 
 API = "https://api.genlook.app/tryon/v1"
@@ -177,7 +178,10 @@ def verified_png(raw: bytes, content_type: str | None = None) -> bytes:
 
 class GenlookProvider:
     """One serial owner of a private durable spend ledger; HTTP injection is test-only."""
-    def __init__(self, settings: GenlookSettings | None = None, *, transport=None, review_timeout_seconds=0):
+    def __init__(self, settings: GenlookSettings | None = None, *, transport=None, review_timeout_seconds=0,
+                 detail_policy=BASELINE_DETAIL_POLICY):
+        details = detail_policy_manifest(detail_policy)
+        self._detail_policy = detail_policy
         self.settings = settings or GenlookSettings.environment()
         self._transport = transport
         self._initialized = False
@@ -207,6 +211,10 @@ class GenlookProvider:
                         resolution="default", remote_cancel_supported=False)
         if review_timeout_seconds:
             identity["operator_review"] = {"version": 1, "timeout_seconds": review_timeout_seconds}
+        if details:
+            # Opt-in cannot silently mutate/reuse a P54 ledger or its approval.
+            # Default identity remains byte-for-byte compatible with P54.
+            identity["detail_policy"] = details
         self.contract_sha = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.revision = contract + "-" + self.contract_sha[:16]
 
@@ -605,7 +613,7 @@ class GenlookProvider:
         products = self._stage_products(stage)
         body = build_stage_body(plan, image_id=image_id,
                                 customer_id=job["customer_id"],
-                                product_ids=products)
+                                product_ids=products, detail_policy=self._detail_policy)
         files = {("product" if len(plan.roles) == 1 else role): (role + ".png", garments[role], "image/png")
                  for role in plan.roles}
         # Persist intent BEFORE the paid POST. No retries, even if the response is lost.

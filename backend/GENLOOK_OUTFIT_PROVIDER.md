@@ -122,3 +122,36 @@ No deployment flags or private environment settings were enabled by this change.
 The three-credit P51 trial authorization is exhausted; it is not permission for
 another app job. See `docs/P51_GENLOOK_THREE_GARMENT_20261106.md` for actual evidence,
 quality defects, Android validation limits and remaining activation conditions.
+
+## P55: opt-in reference-detail experiment (not quality acceptance)
+
+P54 default requests, revision format, ledger fingerprints and the installed
+Android wire contract remain unchanged. No environment or deployment flag is
+enabled. An explicitly reviewed future trial can construct the existing provider
+with `detail_policy="reference-details-v1"`; the default is `"p54"`.
+
+The option adds role-specific instructions only to the documented product
+`description`: visible button count/placement and pockets for tops, waistband and
+pleats for bottoms, toe/heel/pattern for shoes, and preservation of the earlier
+garments during the shoe step. It does not assert an unseen button count or infer
+a garment style from its category. No unsupported mask or prompt API field is
+sent. This is a requested constraint, not a vendor fidelity guarantee.
+
+The exact instructions enter the provider contract digest. Existing approvals,
+old Android job tickets and spend ledgers cannot silently change meaning. A ledger
+from another detail policy is rejected without modification/network access; do
+not delete/reset it to regain credits. A future trial requires explicit renewed
+credit approval, reconciled existing spending and an operator-reviewed contract.
+Keep the P54 intermediate operator-review gate for any such trial. The model
+revision still uses the paired-v1/sequential-v2 wire format with a new digest.
+
+P55 sent **zero** vendor requests. Synthetic HTTP tests verify construction,
+budgeting, disclosure and receipt integrity only. All results still report
+`quality=NOT_EVALUATED`. The P50 region compositor remains offline/review-only:
+copying pixels from the original person cannot restore details of a different,
+newly selected garment. No compositor was applied to the P54 evidence.
+
+Reference: [official request schema](https://genlook.app/docs/tryon-api/endpoints/create-try-on).
+Additional licensed front/back/detail views may help a later trial, but this
+change neither invents views nor adds image uploads. A 2K request has a higher
+cost and is not enabled by this option.

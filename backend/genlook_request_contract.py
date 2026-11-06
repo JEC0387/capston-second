@@ -19,6 +19,34 @@ DESCRIPTIONS = {
 }
 IDENTITY = " Preserve the person's face, hair, hands, body pose and background."
 SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+BASELINE_DETAIL_POLICY = "p54"
+REFERENCE_DETAIL_POLICY = "reference-details-v1"
+
+
+def detail_policy_manifest(policy):
+    """Operator-only experiment, not a guarantee, segmentation mask or approval.
+
+    Do not infer a button count or product type from the wardrobe category. These
+    requests refer only to visible reference evidence; occluded details remain
+    unknown. The provider binds these exact instructions into its spend contract.
+    """
+    if not isinstance(policy, str) or policy not in (BASELINE_DETAIL_POLICY, REFERENCE_DETAIL_POLICY):
+        raise ValueError("invalid_detail_policy")
+    if policy == BASELINE_DETAIL_POLICY:
+        return {}
+    shared = (" Match only details visible in the supplied product image. "
+              "Do not add, remove or redesign visible fasteners, pockets, seams or motifs. ")
+    return {
+        "policy": policy,
+        "tops": shared + "Retain button count and relative placement, pocket shape and position, "
+                "collar, sleeve and hem construction. Do not invent obscured details.",
+        "bottoms": shared + "Retain waistband construction, visible button count and placement, "
+                   "pleats, pocket openings and leg silhouette. Do not invent obscured details.",
+        "shoes": shared + "Retain the reference toe shape, heel height and shape, opening, sole and "
+                 "pattern layout on both feet; adapt perspective without redesigning the footwear. "
+                 "Preserve the input upper-body and lower-body garments including their visible "
+                 "fasteners, pockets, seams, colours and patterns.",
+    }
 
 
 @dataclass(frozen=True)
@@ -50,13 +78,14 @@ def review_plan(mode="sequential-3", resolution="default"):
     raise ValueError("unsupported_plan")
 
 
-def build_stage_body(stage, *, image_id, customer_id, product_ids):
+def build_stage_body(stage, *, image_id, customer_id, product_ids, detail_policy=BASELINE_DETAIL_POLICY):
     """Build only the documented multipart data body; caller attaches file bytes.
 
     Single-product file key stays `product` for the existing wire contract;
     multi-product keys are role names. Private metadata and unsupported prompt
     fields cannot accidentally be added to the vendor API by this builder.
     """
+    details = detail_policy_manifest(detail_policy)
     if not isinstance(stage, RequestStage):
         raise ValueError("invalid_stage")
     if (not isinstance(image_id, str) or not 1 <= len(image_id) <= 1024 or
@@ -72,11 +101,11 @@ def build_stage_body(stage, *, image_id, customer_id, product_ids):
         raise ValueError("invalid_product_id")
     def description(role):
         if len(stage.roles) == 1:
-            return DESCRIPTIONS[role] + IDENTITY
+            return DESCRIPTIONS[role] + IDENTITY + details.get(role, "")
         # Do not tell the model to preserve a different garment that is also
         # explicitly selected for replacement in the same paired request.
         return ("The supplied " + TITLES[role].lower() + " only. Preserve its visible colour, pattern and cut. "
-                "Apply both supplied upper-body and lower-body garments together. Keep existing footwear unchanged." + IDENTITY)
+                "Apply both supplied upper-body and lower-body garments together. Keep existing footwear unchanged." + IDENTITY + details.get(role, ""))
 
     return {
         "products": [{"externalId": product_ids[role], "title": TITLES[role],
