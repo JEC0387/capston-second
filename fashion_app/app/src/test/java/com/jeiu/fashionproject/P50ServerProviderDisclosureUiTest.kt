@@ -15,7 +15,6 @@ import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.screens.ServerOutfitVtonScreen
 import com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -31,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class P50ServerProviderDisclosureUiTest {
-    @get:Rule val compose = createComposeRule(effectContext = StandardTestDispatcher())
+    @get:Rule val compose = createComposeRule()
     private fun await(condition: () -> Boolean) = compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); condition() }
 
     @Test fun externalDisclosureConsentResetAndCancellationAreVisibleWithoutPosting() {

@@ -22,7 +22,6 @@ import com.jeiu.fashionproject.ui.screens.ServerOutfitVtonScreen
 import com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -40,7 +39,7 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @OptIn(ExperimentalTestApi::class, ExperimentalCoroutinesApi::class)
 class P48ServerOutfitUiTest {
-    @get:Rule val compose = createComposeRule(effectContext = StandardTestDispatcher())
+    @get:Rule val compose = createComposeRule()
     private val app get() = ApplicationProvider.getApplicationContext<Application>()
     private fun png(color: Int): ByteArray {
         val bitmap = Bitmap.createBitmap(64, 96, Bitmap.Config.ARGB_8888).apply { eraseColor(color) }
