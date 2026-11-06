@@ -158,7 +158,7 @@ class ServerOutfitVtonViewModel(
             val created = clock()
             val ticket = OutfitServerTicket(id, deviceSha256(body), config.revision, session.base,
                 session.accountKey, ServerOutfitVtonRepository.selectionSha(frozen), created,
-                created + config.retentionSeconds * 1000, config.modelSha)
+                created + config.retentionSeconds * 1000, config.modelSha, config.providerInfo?.name.orEmpty())
             sessionFor(null).also { if (it.accountKey != session.accountKey || it.base != session.base) throw OutfitServerFailure("account_changed") }
             store!!.write(ticket) // Synchronous atomic metadata commit, before first byte of POST.
             original = job.person.bytes
@@ -184,7 +184,9 @@ class ServerOutfitVtonViewModel(
         cancelWanted = true
         if (state.ticket == null) return // Local preparation checks this before writing the ticket/POST.
         if (operation != null) {
-            state = state.copy(error = "취소를 요청했어요. 현재 통신이 끝난 뒤 서버에 전달하며 실제 종료 확인까지 새 생성을 막아요.")
+            state = state.copy(error = if (state.ticket?.let(ServerOutfitVtonRepository::isGenlook) == true)
+                "대기 종료·후속 생성 중단을 요청했어요. 이미 접수된 Genlook 작업의 취소·환불은 보장되지 않으며 자동 재생성하지 않아요."
+                else "취소를 요청했어요. 현재 통신이 끝난 뒤 서버에 전달하며 실제 종료 확인까지 새 생성을 막아요.")
             return
         }
         launchExclusive {
@@ -214,6 +216,7 @@ class ServerOutfitVtonViewModel(
             if (status.status in ServerOutfitVtonRepository.terminal) {
                 if (status.status == "completed" && status.resultAvailable && !cancelWanted) {
                     if (clock() >= status.expiresAt) throw OutfitServerFailure("result_expired")
+                    ServerOutfitVtonRepository.requireResultSource(ticket, status)
                     val bytes = gateway.result(session, ticket, status)
                     coroutineContext.ensureActive(); sessionFor(ticket)
                     OnDeviceVtonImages.validateResultPng(bytes)

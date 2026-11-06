@@ -41,6 +41,44 @@ def safe_code(value, fallback="engine_unavailable"):
     return value if isinstance(value, str) and CODE.fullmatch(value) else fallback
 
 
+def verified_provider_info(value):
+    """Public contract disclosure only, not provider credentials or raw errors."""
+    expected = {"name", "execution_location", "upstream_model", "mode", "max_credits_per_job",
+                "remote_cancellation_supported", "remote_retention_days", "notice"}
+    if (not isinstance(value, dict) or set(value) != expected or
+            value["name"] != "genlook" or value["execution_location"] != "third_party" or
+            value["upstream_model"] != "not_disclosed" or value["mode"] != "sequential-3" or
+            type(value["max_credits_per_job"]) is not int or value["max_credits_per_job"] != 3 or
+            value["remote_cancellation_supported"] is not False or
+            type(value["remote_retention_days"]) is not int or value["remote_retention_days"] != 1 or
+            not isinstance(value["notice"], str) or not 1 <= len(value["notice"]) <= 1000):
+        raise ValueError("invalid_provider_disclosure")
+    return dict(value)
+
+
+def verified_provider_source(value, model_id):
+    """Persist a bounded receipt; never signed URLs, raw API responses or guessed weights."""
+    if not model_id.startswith("genlook/"):
+        if value is not None:
+            raise ValueError("unexpected_provider_source")
+        return None
+    expected = {"provider", "service", "upstream_model", "generation_ids", "mode", "credits_reserved",
+                "credits_balance_before", "credits_balance_after", "quality"}
+    if (not isinstance(value, dict) or set(value) != expected or value["provider"] != "genlook" or
+            value["service"] != "tryon/v1" or value["upstream_model"] != "not_disclosed" or
+            value["mode"] != "sequential-3" or value["quality"] != "NOT_EVALUATED" or
+            type(value["credits_reserved"]) is not int or value["credits_reserved"] != 3):
+        raise ValueError("invalid_provider_source")
+    ids = value["generation_ids"]
+    if (not isinstance(ids, list) or len(ids) != 3 or
+            any(not isinstance(identity, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", identity) for identity in ids) or
+            len(set(ids)) != 3 or any(value[key] is not None and
+                (type(value[key]) is not int or not 0 <= value[key] <= 10**9)
+                for key in ("credits_balance_before", "credits_balance_after"))):
+        raise ValueError("invalid_provider_source")
+    return value | {"generation_ids": list(ids)}
+
+
 @dataclass(frozen=True)
 class OutfitSettings:
     enabled: bool = False
@@ -251,7 +289,7 @@ class OutfitService:
                     expected = {"request_id", "owner", "input_sha256", "model_id", "model_revision", "model_sha256",
                                 "policy_version", "quality", "status", "error", "progress", "result_sha256",
                                 "result_available", "expires_at", "created_at"}
-                    if not isinstance(job, dict) or set(job) != expected:
+                    if not isinstance(job, dict) or set(job) not in (expected, expected | {"source"}):
                         raise ValueError()
                     if (job["request_id"] != identity or not SHA.fullmatch(job["owner"]) or
                             not SHA.fullmatch(job["input_sha256"]) or not SHA.fullmatch(job["model_sha256"]) or
@@ -262,10 +300,14 @@ class OutfitService:
                         raise ValueError()
                     if job["status"] not in TERMINAL:
                         job.update(status="interrupted", error="server_restarted", result_available=False)
-                    if job["error"] == "worker_stop_unconfirmed":
-                        self.runtime_issue = "worker_stop_unconfirmed"
+                    if job["error"] in ("worker_stop_unconfirmed", "remote_execution_unconfirmed"):
+                        self.runtime_issue = job["error"]
                     if job["status"] == "completed":
+                        verified_provider_source(job.get("source"), job["model_id"])
                         self._read_result(job)  # Validate before exposing a restored completion.
+                    elif job.get("source") is not None:
+                        verified_provider_source(job["source"], job["model_id"])
+                        self._erase_result(job)
                     else:
                         self._erase_result(job)  # Interrupted workers cannot leave an orphan PNG.
             elif any(root.glob("*.png")):
@@ -328,6 +370,11 @@ class OutfitService:
         elif (not SHA.fullmatch(available.model_sha256) or not available.model_id or
               not available.model_revision or set(available.roles) != set(ROLES)):
             issue = issue or "invalid_model_contract"
+        if available.model_id.startswith("genlook/"):
+            try:
+                verified_provider_info(available.provider_info)
+            except (ValueError, AttributeError):
+                issue = issue or "invalid_model_contract"
         return available, issue
 
     def upload_attempt(self, owner):
@@ -411,6 +458,7 @@ class OutfitService:
         failed = False
         failure_code = "generation_failed"
         cleanup_failed = False
+        cleanup_code = "worker_stop_unconfirmed"
         try:
             job.update(status="running", progress=10)
             self.store_state()
@@ -419,6 +467,7 @@ class OutfitService:
             if (output.job_id != job["request_id"] or output.input_sha256 != job["input_sha256"] or
                     output.model_revision != available.model_revision or output.model_sha256 != available.model_sha256):
                 raise ValueError("result_identity_mismatch")
+            source = verified_provider_source(output.source, available.model_id)
             result = _canonical_image(output.png, "PNG", minimum=32, result=True)
             if any(result == image for image in images.values()):
                 raise ValueError("input_is_not_generated_result")
@@ -429,6 +478,8 @@ class OutfitService:
                 stream.write(result); stream.flush(); os.fsync(stream.fileno())
             job.update(status="completed", error=None, progress=100, result_available=True,
                        result_sha256=hashlib.sha256(result).hexdigest(), expires_at=time.time()+self.settings.retention_seconds)
+            if source is not None:
+                job["source"] = source
         except asyncio.TimeoutError:
             timed_out = True
             job.update(status="cancelling", error="generation_timeout", result_available=False)
@@ -449,9 +500,14 @@ class OutfitService:
                 if not worker.done():
                     worker.cancel()
                 async def join():
+                    nonlocal cleanup_code
                     failed = False
                     try:
                         await self.provider.cancel(job["request_id"])
+                    except ProviderFailure as failure:
+                        failed = True
+                        if failure.code == "remote_execution_unconfirmed":
+                            cleanup_code = failure.code
                     except Exception:
                         failed = True
                     outcomes = await asyncio.gather(worker, return_exceptions=True)
@@ -471,8 +527,8 @@ class OutfitService:
                 cleanup_failed = outcomes != [False]
             images.clear()
             if cleanup_failed:
-                job.update(status="interrupted", error="worker_stop_unconfirmed", result_available=False)
-                self.runtime_issue = "worker_stop_unconfirmed"
+                job.update(status="interrupted", error=cleanup_code, result_available=False)
+                self.runtime_issue = cleanup_code
             elif timed_out:
                 job.update(status="timeout", error="generation_timeout")
             elif cancelled:
@@ -518,8 +574,13 @@ class OutfitService:
 
     async def close(self):
         await asyncio.gather(*(self.cancel(identity) for identity in list(self.tasks)), return_exceptions=True)
-        if self.lease:
-            self.lease.close(); self.lease = None
+        try:
+            close_provider = getattr(self.provider, "close", None)
+            if close_provider is not None:
+                await close_provider()
+        finally:
+            if self.lease:
+                self.lease.close(); self.lease = None
 
 
 def create_router(service: OutfitService, auth_dependency=current_user):
@@ -531,11 +592,17 @@ def create_router(service: OutfitService, auth_dependency=current_user):
     async def config(request: Request, user=Depends(auth_dependency)):
         service.transport(request)
         available, issue = await service.availability()
-        return {"engine": ENGINE, "ready": issue is None, "reason": issue,
+        result = {"engine": ENGINE, "ready": issue is None, "reason": issue,
                 "model_id": available.model_id, "model_revision": available.model_revision,
                 "model_sha256": available.model_sha256, "policy_version": service.settings.policy_version,
                 "retention_seconds": service.settings.retention_seconds, "max_image_bytes": MAX_IMAGE,
                 "max_body_bytes": MAX_BODY, "roles": list(ROLES)}
+        if available.model_id.startswith("genlook/"):
+            try:
+                result["provider_info"] = verified_provider_info(available.provider_info)
+            except (ValueError, AttributeError):
+                result.update(ready=False, reason="invalid_model_contract")
+        return result
 
     @router.post("/jobs", status_code=202)
     async def submit(request: Request, user=Depends(auth_dependency)):

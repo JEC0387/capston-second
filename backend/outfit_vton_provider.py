@@ -43,7 +43,15 @@ class ProviderFailure(RuntimeError):
                    "cuda_unavailable", "vram_unapproved", "worker_failed", "worker_stop_unconfirmed",
                    "invalid_provider_input", "invalid_provider_result", "model_load_failed",
                    "model_inference_failed", "cuda_out_of_memory", "provider_busy",
-                   "workdir_review_required"}
+                   "workdir_review_required", "provider_selection_invalid",
+                   "genlook_disabled", "genlook_approval_required", "genlook_key_missing",
+                   "genlook_policy_unreviewed", "genlook_budget_exhausted", "genlook_insufficient_credits",
+                   "genlook_auth_failed", "genlook_rate_limited", "genlook_unavailable",
+                   "genlook_remote_failed", "genlook_invalid_response", "genlook_result_untrusted",
+                   "genlook_journal_unavailable", "genlook_reconciliation_required",
+                   "genlook_cleanup_required", "genlook_request_already_recorded",
+                   "genlook_invalid_input", "genlook_cancelled", "genlook_timeout",
+                   "remote_execution_unconfirmed"}
         self.code = code if code in allowed else "provider_failed"
         super().__init__(self.code)
 
@@ -58,6 +66,7 @@ class ProviderAvailability:
     license: str = "Apache-2.0; complete bundle review required"
     runtime: str = "self-hosted-cuda; not verified"
     roles: tuple[str, ...] = ROLES
+    provider_info: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,7 @@ class ProviderResult:
     input_sha256: str
     model_revision: str
     model_sha256: str
+    source: dict | None = None
 
 
 class VirtualTryOnProvider(Protocol):
@@ -78,14 +88,17 @@ class VirtualTryOnProvider(Protocol):
 
 
 class DisabledProvider:
+    def __init__(self, reason="provider_disabled"):
+        self.reason = ProviderFailure(reason).code
+
     async def initialize(self):
         return None
 
     async def check_availability(self):
-        return ProviderAvailability()
+        return ProviderAvailability(reason=self.reason)
 
     async def generate(self, job_id, input_sha256, images, placements):
-        raise ProviderFailure("provider_disabled")
+        raise ProviderFailure(self.reason)
 
     async def cancel(self, job_id):
         return None
@@ -405,5 +418,14 @@ class LocalGpuProvider:
 
 
 def configured_provider():
+    selected = os.getenv("OUTFIT_VTON_PROVIDER", "local_gpu")
+    if selected == "genlook":
+        try:
+            from genlook_outfit_provider import GenlookProvider
+        except ImportError:
+            return DisabledProvider("runtime_unavailable")
+        return GenlookProvider()
+    if selected != "local_gpu":
+        return DisabledProvider("provider_selection_invalid")
     settings = GpuProviderSettings.environment()
     return LocalGpuProvider(settings) if settings.enabled else DisabledProvider()

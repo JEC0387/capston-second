@@ -28,7 +28,10 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val accountState by DataAuth.state.collectAsState()
     val state = model.state
     val inputsReady = model.inputReady(selection)
-    var approved by remember(selection, state.config?.policy, state.configBinding, accountState) { mutableStateOf(false) }
+    var approved by remember(selection, state.config, state.configBinding, accountState) { mutableStateOf(false) }
+    val thirdParty = state.config?.providerInfo
+    val externalCancellation = state.ticket?.let(ServerOutfitVtonRepository::isGenlook)
+        ?: (thirdParty?.remoteCancellationSupported == false)
     var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
     var saving by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf(false) }
@@ -102,10 +105,23 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 Text("처리 정책 ${it.policy} · 서버 결과 보관 ${it.retentionSeconds}초. 법정 기준이 아니라 승인된 서버 설정이에요.",
                     style = MaterialTheme.typography.bodySmall)
             }
+            thirdParty?.let {
+                Text("외부 처리: Genlook · 스마트폰이 아닌 제3자 서버에서 실행", modifier = Modifier.testTag("serverOutfitProvider"))
+                Text("상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
+                Text("요청당 최대 ${it.maxCreditsPerJob}크레딧을 예약해요. 실제 청구액·환불 확정이 아니며 자동 충전하지 않아요.",
+                    modifier = Modifier.testTag("serverOutfitCost"))
+                Text("Genlook 이미지 보관 설정 ${it.remoteRetentionDays}일 · 앱 서버 결과 보관 시간과 별도예요. 생성 기록·동의·백업 보관 및 삭제 제한은 아래 정책을 확인해주세요.",
+                    modifier = Modifier.testTag("serverOutfitExternalRetention"))
+                Text(it.notice, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("serverOutfitProviderNotice"))
+                Text("공개된 원격 생성 취소 기능이 없어 대기 종료는 외부 작업 취소·환불·삭제 완료를 보장하지 않아요.",
+                    modifier = Modifier.testTag("serverOutfitCancellationLimits"))
+            }
             Row {
                 Checkbox(approved, onCheckedChange = { approved = it }, enabled = !state.busy && state.config?.ready == true,
                     modifier = Modifier.testTag("serverOutfitConsent"))
-                Text("선택한 인물·의류 3종을 표시된 정책의 서버로 전송하는 데 동의해요.", Modifier.weight(1f).padding(top = 10.dp))
+                Text(if (thirdParty != null) "선택한 인물·상의·하의·신발 4장의 이미지와 중간 생성 결과를 승인된 앱 서버를 통해 Genlook으로 전송하고 표시된 비용·보관 정책으로 처리하는 데 동의해요."
+                    else "선택한 인물·의류 3종을 표시된 정책의 서버로 전송하는 데 동의해요.",
+                    Modifier.weight(1f).padding(top = 10.dp).testTag("serverOutfitConsentText"))
             }
             Button(onClick = { comparison = false; reopened = null; model.start(context, selection, approved) },
                 enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null,
@@ -124,13 +140,18 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                     modifier = Modifier.testTag("serverOutfitResume")) { Text("기존 작업 상태 조회") }
                 TextButton(onClick = model::cancel,
                     enabled = state.status?.status !in ServerOutfitVtonRepository.terminal,
-                    modifier = Modifier.testTag("serverOutfitCancel")) { Text("서버 생성 취소 요청") }
+                    modifier = Modifier.testTag("serverOutfitCancel")) { Text(if (externalCancellation) "대기 종료·후속 생성 중단" else "서버 생성 취소 요청") }
                 Text("앱을 종료해도 작업 번호는 남아요. 다시 조회하며 응답 유실 시 자동 재전송하지 않아요. 미저장 원본 비교 이미지는 앱 종료 후 복구되지 않아요.",
                     style = MaterialTheme.typography.bodySmall)
             }
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("serverOutfitError")) }
             if (visible != null) Text(if (state.previous) "이전 서버 작업 결과 · 새 생성 아님" else "현재 서버 요청 결과 · 품질 검수 필요",
                 modifier = Modifier.testTag("serverOutfitResultLabel"))
+            if (visible != null) state.status?.source?.let {
+                Text("출처: Genlook Try-On API · 3회 순차 생성 · 내부 모델 버전 미공개. 파일 검증과 착장 품질 합격은 달라요.",
+                    modifier = Modifier.testTag("serverOutfitResultSource"))
+                Text("이 작업 예약 상한 ${it.creditsReserved}크레딧 · 실제 청구액은 공급자 사용 내역으로 확인해주세요.")
+            }
             TextButton(onClick = { comparison = true; showOriginal = false }, enabled = visible != null,
                 modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본·서버 결과 비교") }
             TextButton(onClick = {
