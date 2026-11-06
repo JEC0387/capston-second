@@ -8,6 +8,8 @@ reopen are NOT TESTED. Release remains NO-GO.** This is a previously published
 synthetic-person trial, not a private photograph or real-person fidelity test.
 
 Branch: `codex/fashionai-p51-three-garment-validation-20261106`.
+Integration checkpoint: `4de0eaeda1a56db40cebfd56eb42074fb7adc98d`
+(WIP because Android compilation/tests remain blocked; backend tests passed).
 Parent/executed trial-helper source: `0219e845e04238f6351f596f3b9aabe0ea8a7a93`.
 The final local commit containing this document identifies the P51 integration
 tree; it must not be confused with the earlier source used by the actual trial.

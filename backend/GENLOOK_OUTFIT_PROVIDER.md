@@ -122,4 +122,3 @@ No deployment flags or private environment settings were enabled by this change.
 The three-credit P51 trial authorization is exhausted; it is not permission for
 another app job. See `docs/P51_GENLOOK_THREE_GARMENT_20261106.md` for actual evidence,
 quality defects, Android validation limits and remaining activation conditions.
-
