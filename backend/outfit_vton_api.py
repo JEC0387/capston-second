@@ -94,6 +94,20 @@ def verified_provider_source(value, model_id, model_revision=None):
     return value | {"generation_ids": list(ids)}
 
 
+def verified_provider_progress(value, revision):
+    """Transient stage labels, never an estimated percentage or persisted receipt."""
+    if not isinstance(value, dict) or set(value) != {"mode", "stage_index", "stage_count", "phase"}:
+        raise ValueError("invalid_provider_progress")
+    mode = genlook_mode_for_revision(revision)
+    count = 2 if mode == "clothing-pair-then-shoes" else 3
+    if (value["mode"] != mode or type(value["stage_count"]) is not int or value["stage_count"] != count or
+            type(value["stage_index"]) is not int or not 1 <= value["stage_index"] <= count or
+            value["phase"] not in {"preparing", "uploading", "submitting", "waiting_for_generation", "validating_result", "finalizing"} or
+            value["phase"] == "finalizing" and value["stage_index"] != count):
+        raise ValueError("invalid_provider_progress")
+    return dict(value)
+
+
 @dataclass(frozen=True)
 class OutfitSettings:
     enabled: bool = False
@@ -463,7 +477,18 @@ class OutfitService:
         return job
 
     def view(self, job):
-        return {k: v for k, v in job.items() if k != "owner"} | {"engine": ENGINE}
+        result = {k: v for k, v in job.items() if k != "owner"} | {"engine": ENGINE}
+        if job["status"] == "running" and job["model_id"].startswith("genlook/"):
+            try:
+                getter = getattr(self.provider, "public_progress", None)
+                snapshot = getter(job["request_id"], job["input_sha256"]) if getter else None
+                if snapshot is not None:
+                    result["provider_progress"] = verified_provider_progress(snapshot, job["model_revision"])
+            except Exception:
+                # Status/ownership and result lifecycle remain authoritative.
+                # Malformed or stale progress cannot leak raw provider values.
+                pass
+        return result
 
     async def execute(self, job, images, placements, available):
         worker = None

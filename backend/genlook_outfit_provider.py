@@ -359,6 +359,56 @@ class GenlookProvider:
         await self.initialize()
         return self._availability()
 
+    def public_progress(self, job_id, input_sha256):
+        """Return a bounded, current-job stage snapshot without HTTP or persistence.
+
+        Stage position describes workflow state, not percentage, visual quality or
+        remote execution speed. The service must expose this only for its owned
+        running job; cancelled/restored/other-input work cannot supply a snapshot.
+        """
+        if (not isinstance(job_id, str) or not isinstance(input_sha256, str) or
+                not SHA.fullmatch(input_sha256) or not self._busy or self._current_job != job_id or
+                job_id in self._cancelled or self.settings.mode not in (SEQUENTIAL_MODE, PAIRED_MODE)):
+            return None
+        try:
+            if (not isinstance(self._ledger, dict) or self._ledger.get("contract_sha") != self.contract_sha or
+                    self._ledger.get("version") != self._ledger_version):
+                return None
+            job = self._ledger["jobs"].get(job_id)
+            if (not isinstance(job, dict) or job.get("input_sha") != input_sha256 or
+                    job.get("status") not in {"reserved", "uploading", "submitting", "polling", "downloaded"}):
+                return None
+            stages = job["stages"]
+            if (not isinstance(stages, list) or len(stages) != len(self._plan) or
+                    any(not isinstance(stage, dict) or stage.get("state") == "failed" for stage in stages)):
+                return None
+            phases = {"unsubmitted": "preparing", "uploading": "uploading", "uploaded": "submitting",
+                      "submitting": "submitting", "polling": "waiting_for_generation"}
+            for index, (plan, stage) in enumerate(zip(self._plan, stages), start=1):
+                if self._stage_plan(stage).roles != plan.roles:
+                    return None
+                state = stage["state"]
+                if state == "downloaded":
+                    result_sha = stage.get("result_sha")
+                    if result_sha is None:
+                        # Remote COMPLETED alone is not a validated local PNG.
+                        phase = "validating_result"
+                        break
+                    if not isinstance(result_sha, str) or not SHA.fullmatch(result_sha):
+                        return None
+                    continue
+                if state not in phases:
+                    return None
+                phase = phases[state]
+                break
+            else:
+                index, phase = len(stages), "finalizing"
+            return {"mode": self.settings.mode, "stage_index": index,
+                    "stage_count": len(stages), "phase": phase}
+        except (AttributeError, KeyError, TypeError, ValueError):
+            # Optional progress must not expose or destabilize private journal state.
+            return None
+
     @_private_transport
     async def _request(self, method, path, *, accepted=(200,), data=None, files=None):
         import httpx

@@ -38,6 +38,9 @@ data class OutfitServerSource(val provider: String, val service: String, val ups
     val generationIds: List<String>, val mode: String, val creditsReserved: Int,
     val creditsBalanceBefore: Int?, val creditsBalanceAfter: Int?)
 
+/** Provider-owned stage observations; not an estimate of inference percentage or quality. */
+data class OutfitServerProgress(val mode: String, val stageIndex: Int, val stageCount: Int, val phase: String)
+
 data class OutfitServerTicket(val id: String, val inputSha: String, val revision: String,
     val base: String, val accountKey: String, val selectionSha: String,
     val createdAt: Long, val expiresAt: Long, val modelSha: String, val providerName: String = "") {
@@ -45,7 +48,8 @@ data class OutfitServerTicket(val id: String, val inputSha: String, val revision
 }
 
 data class OutfitServerStatus(val status: String, val error: String?, val progress: Double,
-    val resultAvailable: Boolean, val resultSha: String?, val expiresAt: Long, val source: OutfitServerSource? = null)
+    val resultAvailable: Boolean, val resultSha: String?, val expiresAt: Long, val source: OutfitServerSource? = null,
+    val providerProgress: OutfitServerProgress? = null)
 
 /** Transport seam is injected only by tests. Production uses DataAuth's current bound account. */
 interface OutfitServerGateway {
@@ -63,6 +67,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
     val terminal = setOf("completed", "failed", "cancelled", "timeout", "interrupted", "expired")
     private val statuses = terminal + setOf("queued", "running", "cancelling")
     private val sha = Regex("[a-f0-9]{64}")
+    private val providerPhases = listOf("preparing", "uploading", "submitting", "waiting_for_generation",
+        "validating_result", "finalizing")
 
     fun validBase(base: String): Boolean = runCatching {
         val uri = URI(base)
@@ -72,6 +78,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
     }.getOrDefault(false)
 
     override fun session(): OutfitServerSession {
+        if (ServerOutfitQaConnection.supported)
+            return ServerOutfitQaConnection.sessionOrNull() ?: throw OutfitServerFailure("deployment_not_approved")
         if (!BuildConfig.SERVER_OUTFIT_APPROVED || BuildConfig.PREVIEW_BUILD)
             throw OutfitServerFailure("deployment_not_approved")
         val base = BackendApi.BASE_URL.trimEnd('/')
@@ -169,6 +177,28 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
             throw OutfitServerFailure("invalid_result_source")
     }
 
+    private fun parseProviderProgress(raw: Any?, state: String, ticket: OutfitServerTicket): OutfitServerProgress? {
+        if (raw == null || raw === JSONObject.NULL) return null
+        val value = raw as? JSONObject ?: throw OutfitServerFailure("invalid_provider_progress")
+        val mode = genlookMode(ticket.revision) ?: throw OutfitServerFailure("invalid_provider_progress")
+        val count = if (mode == "clothing-pair-then-shoes") 2 else 3
+        val index = boundedInteger(value.opt("stage_index"), count)
+        val phase = value.opt("phase") as? String ?: throw OutfitServerFailure("invalid_provider_progress")
+        if (state != "running" || !isGenlook(ticket) ||
+            value.keys().asSequence().toSet() != setOf("mode", "stage_index", "stage_count", "phase") ||
+            value.opt("mode") != mode || boundedInteger(value.opt("stage_count"), count) != count ||
+            index == null || index < 1 || phase !in providerPhases || phase == "finalizing" && index != count)
+            throw OutfitServerFailure("invalid_provider_progress")
+        return OutfitServerProgress(mode, index, count, phase)
+    }
+
+    internal fun requireProgressTransition(previous: OutfitServerProgress?, current: OutfitServerProgress) {
+        if (previous != null && (previous.mode != current.mode || previous.stageCount != current.stageCount ||
+                current.stageIndex < previous.stageIndex || current.stageIndex == previous.stageIndex &&
+                providerPhases.indexOf(current.phase) < providerPhases.indexOf(previous.phase)))
+            throw OutfitServerFailure("invalid_provider_progress")
+    }
+
     override suspend fun config(session: OutfitServerSession) = parseConfig(JSONObject(
         request(session, "/config").body.toString(Charsets.UTF_8)))
 
@@ -234,7 +264,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
             !expiry.isFinite() || expiry <= 0 || available && (state != "completed" || resultSha == null))
             throw OutfitServerFailure("invalid_status")
         return OutfitServerStatus(state, json.optString("error").takeIf { it.isNotBlank() && it != "null" }?.let(::safeCode),
-            progress / 100.0, available, resultSha, (expiry * 1000).toLong(), parseSource(json.opt("source")))
+            progress / 100.0, available, resultSha, (expiry * 1000).toLong(), parseSource(json.opt("source")),
+            parseProviderProgress(json.opt("provider_progress"), state, ticket))
             .also { requireResultSource(ticket, it) }
     }
 
@@ -331,6 +362,7 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
         "request_conflict", "result_binding_mismatch", "input_changed" -> "요청과 결과 정보가 일치하지 않아 차단했어요."
         "invalid_placement", "input_rejected", "image_size", "body_size" -> "사진·의류 3종·배치 정보와 이미지 크기를 확인해주세요."
         "invalid_provider_disclosure", "invalid_result_source" -> "외부 처리 조건이나 결과 출처가 확인되지 않아 차단했어요."
+        "invalid_provider_progress" -> "서버 진행 정보가 작업과 맞지 않거나 이전 단계로 되돌아가 표시를 중단했어요. 기존 작업 번호는 유지하며 새 요청을 자동 전송하지 않아요."
         "genlook_disabled", "genlook_approval_required", "genlook_policy_unreviewed" -> "Genlook의 비용·외부 사진 처리·보관 정책 승인이 필요해요. 승인 전에는 전송하지 않아요."
         "genlook_key_missing", "genlook_auth_failed" -> "서버의 Genlook 인증 설정을 확인해야 해요. 키를 앱이나 채팅에 입력하지 마세요."
         "genlook_budget_exhausted", "genlook_insufficient_credits" -> "승인된 시험 예산 또는 Genlook 크레딧이 부족해요. 자동 충전하거나 생성 요청을 반복하지 않아요."

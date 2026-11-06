@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.BuildConfig
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel
 import kotlinx.coroutines.CancellationException
@@ -28,7 +29,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val accountState by DataAuth.state.collectAsState()
     val state = model.state
     val inputsReady = model.inputReady(selection)
-    var approved by remember(selection, state.config, state.configBinding, accountState) { mutableStateOf(false) }
+    var approved by remember(selection, state.config, state.configBinding, accountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
     val thirdParty = state.config?.providerInfo
     val externalCancellation = state.ticket?.let(ServerOutfitVtonRepository::isGenlook)
         ?: (thirdParty?.remoteCancellationSupported == false)
@@ -85,8 +86,13 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             TextButton(onClick = onBack, modifier = Modifier.testTag("serverOutfitBack")) { Text("피팅으로 돌아가기") }
             Text("서버 AI · 3종 착장", style = MaterialTheme.typography.headlineSmall)
             Text("온디바이스 AI와 별도 모드예요. 운영 배포·모델 사용 권한·개인정보 처리 정책이 승인된 서버에서만 사용해요.")
-            Text("현재 Preview/QA에서는 운영 서버로 사진을 전송하지 않아요. 공개 연구 데모나 유료 AI로 자동 전환하지 않아요.",
+            Text(when {
+                ServerOutfitQaConnection.supported -> "격리 QA에서는 승인된 개발 서버와 별도 인증을 직접 설정한 경우에만 연결해요. 운영 서버·공개 연구 데모·유료 AI로 자동 전환하지 않아요."
+                BuildConfig.PREVIEW_BUILD -> "현재 Preview에서는 운영 서버로 사진을 전송하지 않아요. 공개 연구 데모나 유료 AI로 자동 전환하지 않아요."
+                else -> "승인된 서버 설정과 사용자 동의가 필요해요. 공개 연구 데모나 다른 유료 AI로 자동 전환하지 않아요."
+            },
                 style = MaterialTheme.typography.bodySmall)
+            OutfitQaConnectionPanel(enabled = !state.busy && !saving, onChanged = model::invalidateConnection)
             DeviceGarmentRole.entries.forEach { role ->
                 val count = selection?.garments?.count { it.role == role } ?: 0
                 val label = when (role) { DeviceGarmentRole.TOP -> "상의"; DeviceGarmentRole.BOTTOM -> "하의"; DeviceGarmentRole.SHOES -> "신발" }
@@ -128,11 +134,31 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                     Modifier.weight(1f).padding(top = 10.dp).testTag("serverOutfitConsentText"))
             }
             Button(onClick = { comparison = false; reopened = null; model.start(context, selection, approved) },
-                enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null,
+                enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null && model.startAllowedByPreviousJob(),
                 modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("선택한 3종으로 서버 AI 생성") }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Text("서버 작업: ${state.phase}. 화면 복귀로 새 생성 요청을 보내지 않아요.")
+            }
+            state.status?.takeIf { it.status == "running" && state.phase in setOf("running", "waiting") }?.providerProgress?.let { progress ->
+                val stage = when (progress.mode) {
+                    "clothing-pair-then-shoes" -> if (progress.stageIndex == 1) "상의·하의 함께" else "신발"
+                    "sequential-3" -> when (progress.stageIndex) { 1 -> "상의"; 2 -> "하의"; else -> "신발" }
+                    else -> "처리 단계 확인 필요"
+                }
+                val phase = when (progress.phase) {
+                    "preparing" -> "입력 준비 중"
+                    "uploading" -> "입력 전송 중"
+                    "submitting" -> "생성 요청 접수 중"
+                    "waiting_for_generation" -> "생성 결과 대기 중"
+                    "validating_result" -> "반환 이미지 확인 중"
+                    "finalizing" -> "최종 결과 정리 중"
+                    else -> "진행 상태 확인 필요"
+                }
+                Text("${progress.stageIndex}/${progress.stageCount}단계 · $stage · $phase",
+                    modifier = Modifier.testTag("serverOutfitStage"))
+                Text("서버가 확인한 처리 단계예요. 추론 완료율이나 착장 품질 합격을 뜻하지 않아요.",
+                    style = MaterialTheme.typography.bodySmall)
             }
             if (state.busy && state.phase == "preparing") {
                 TextButton(onClick = model::cancel, modifier = Modifier.testTag("serverOutfitCancelPreparation")) {

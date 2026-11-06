@@ -47,6 +47,10 @@ class ServerOutfitVtonViewModel(
     private var selection: DeviceVtonSelection? = null
     private var original: ByteArray? = null
     private var cancelWanted = false
+    private var lastProviderProgress: Pair<String, OutfitServerProgress>? = null
+    private var unresolvedRequestId: String? = null
+    private val uncertainExecutionErrors = setOf("remote_execution_unconfirmed", "worker_stop_unconfirmed",
+        "genlook_reconciliation_required", "genlook_journal_unavailable")
 
     fun initialize(context: Context) {
         if (initialized) return
@@ -78,6 +82,21 @@ class ServerOutfitVtonViewModel(
 
     fun canDisplay(): Boolean = state.result != null && runCatching { sessionFor(); true }.getOrDefault(false)
 
+    fun startAllowedByPreviousJob(): Boolean {
+        val ticket = state.ticket ?: return true
+        val status = state.status ?: return false
+        return status.status in ServerOutfitVtonRepository.terminal && status.error !in uncertainExecutionErrors &&
+            unresolvedRequestId != ticket.id
+    }
+
+    /** An explicit QA connection change never fetches or uploads; retain the old job journal. */
+    fun invalidateConnection() {
+        if (operation != null) return
+        state = state.copy(config = null, configBinding = null, configHost = null, status = null,
+            result = null, error = null, previous = state.ticket != null,
+            phase = if (state.ticket == null) "idle" else "recovered")
+    }
+
     /** Reuse the preparer's metadata/URI checks without opening any image. */
     fun inputReady(selected: DeviceVtonSelection?): Boolean {
         val config = state.config?.takeIf { it.ready } ?: return false
@@ -95,6 +114,7 @@ class ServerOutfitVtonViewModel(
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: OutfitServerFailure) {
+                if (failure.code in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
                 state = state.copy(phase = "blocked", result = null,
                     error = ServerOutfitVtonRepository.friendly(failure.code))
             } catch (_: OutOfMemoryError) {
@@ -129,8 +149,8 @@ class ServerOutfitVtonViewModel(
             return
         }
         // A lost response, process restart or cancellation never authorizes a second POST.
-        if (state.ticket != null && state.status?.status !in ServerOutfitVtonRepository.terminal) {
-            state = state.copy(error = "이전 작업의 종료 상태를 먼저 조회해주세요. 새 요청을 중복 전송하지 않아요.")
+        if (!startAllowedByPreviousJob()) {
+            state = state.copy(error = "이전 작업의 종료·과금 상태를 먼저 확인해야 해요. 기존 작업 상태 조회만 가능하며 새 사진을 준비하거나 전송하지 않아요.")
             return
         }
         val frozen = selected.copy()
@@ -199,6 +219,14 @@ class ServerOutfitVtonViewModel(
     }
 
     private fun applyStatus(status: OutfitServerStatus) {
+        status.providerProgress?.let { current ->
+            val ticketId = state.ticket?.id ?: throw OutfitServerFailure("invalid_provider_progress")
+            val previous = lastProviderProgress?.takeIf { it.first == ticketId }?.second
+            ServerOutfitVtonRepository.requireProgressTransition(previous, current)
+            lastProviderProgress = ticketId to current
+        }
+        if (status.error in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
+        else if (status.status in ServerOutfitVtonRepository.terminal) unresolvedRequestId = null
         state = state.copy(status = status, phase = status.status,
             error = status.error?.let(ServerOutfitVtonRepository::friendly))
     }
