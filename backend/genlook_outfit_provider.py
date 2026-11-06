@@ -177,7 +177,7 @@ def verified_png(raw: bytes, content_type: str | None = None) -> bytes:
 
 class GenlookProvider:
     """One serial owner of a private durable spend ledger; HTTP injection is test-only."""
-    def __init__(self, settings: GenlookSettings | None = None, *, transport=None):
+    def __init__(self, settings: GenlookSettings | None = None, *, transport=None, review_timeout_seconds=0):
         self.settings = settings or GenlookSettings.environment()
         self._transport = transport
         self._initialized = False
@@ -190,6 +190,10 @@ class GenlookProvider:
         self._lease = None
         self._root = None
         self._ledger = None
+        # Explicit operator-only opt-in. No new unauthenticated HTTP endpoint and
+        # no implicit approval based on a decodable image or a completed job.
+        self._review_timeout = review_timeout_seconds
+        self._reviewing_job = None
         self._paired = self.settings.mode == PAIRED_MODE
         self._plan = review_plan(self.settings.mode) if self.settings.mode in (SEQUENTIAL_MODE, PAIRED_MODE) else ()
         self._ledger_version = 2 if self._paired else 1
@@ -201,6 +205,8 @@ class GenlookProvider:
         identity.update(api=API, contract=contract, account_fingerprint=hashlib.sha256(self.settings.api_key.encode()).hexdigest(),
                         mode=self.settings.mode, roles=ROLES, keep_for_days=1, crop=False,
                         resolution="default", remote_cancel_supported=False)
+        if review_timeout_seconds:
+            identity["operator_review"] = {"version": 1, "timeout_seconds": review_timeout_seconds}
         self.contract_sha = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         self.revision = contract + "-" + self.contract_sha[:16]
 
@@ -234,6 +240,9 @@ class GenlookProvider:
             return
         self._initialized = True
         self._issue = self.settings.issue()
+        if (type(self._review_timeout) is not int or self._review_timeout < 0 or
+                self._review_timeout and (not self._paired or self._review_timeout > self.settings.timeout_seconds)):
+            self._issue = "genlook_policy_unreviewed"
         if self._issue:
             return
         try:
@@ -254,10 +263,19 @@ class GenlookProvider:
                 with (root / MARKER).open("xb") as marker:
                     marker.write(b"fashionai-genlook-v1\n")
                 os.chmod(root / MARKER, 0o600)
-            if any(path.name not in {MARKER, "provider.lock", "ledger.json"} for path in root.iterdir()):
+            allowed = {MARKER, "provider.lock", "ledger.json"}
+            if self._review_timeout:
+                allowed.add("reviews")
+            if any(path.name not in allowed for path in root.iterdir()):
                 raise ValueError()
             for path in root.iterdir():
                 _regular_local(path)
+                if path.name == "reviews" and self._review_timeout:
+                    if not path.is_dir():
+                        raise ValueError()
+                    for child in path.rglob("*"):
+                        _regular_local(child)
+                    continue
                 if not path.is_file():
                     raise ValueError()
             lease = root / "provider.lock"
@@ -378,6 +396,9 @@ class GenlookProvider:
             if (not isinstance(job, dict) or job.get("input_sha") != input_sha256 or
                     job.get("status") not in {"reserved", "uploading", "submitting", "polling", "downloaded"}):
                 return None
+            if self._reviewing_job == job_id:
+                return {"mode": self.settings.mode, "stage_index": 1,
+                        "stage_count": len(self._plan), "phase": "validating_result"}
             stages = job["stages"]
             if (not isinstance(stages, list) or len(stages) != len(self._plan) or
                     any(not isinstance(stage, dict) or stage.get("state") == "failed" for stage in stages)):
@@ -509,6 +530,63 @@ class GenlookProvider:
         if identity in self._cancelled:
             raise asyncio.CancelledError()
 
+    async def _review_pair(self, job_id, input_sha256, png):
+        """Wait for a private, exact-binding operator decision; never repeat a POST.
+
+        The operator reviews intermediate.png and atomically creates decision.json
+        from request.json's binding with decision='approve' or 'reject'. A restart
+        remains blocked by the existing unfinished-ledger reconciliation rule.
+        Files inherit the reviewed ledger ACL; caller must enforce Windows ACLs.
+        """
+        directory = None
+        self._reviewing_job = job_id
+        try:
+            review_root = self._root / "reviews"
+            review_root.mkdir(mode=0o700, exist_ok=True)
+            _regular_local(review_root)
+            directory = review_root / job_id
+            directory.mkdir(mode=0o700, exist_ok=False)
+            _regular_local(directory)
+            image = directory / "intermediate.png"
+            with image.open("xb") as stream:
+                os.chmod(image, 0o600)
+                stream.write(png); stream.flush(); os.fsync(stream.fileno())
+            binding = {"job_id": job_id, "input_sha256": input_sha256,
+                       "result_sha256": hashlib.sha256(png).hexdigest(),
+                       "model_revision": self.revision, "nonce": uuid4().hex}
+            request = directory / "request.next"
+            with request.open("x", encoding="utf-8") as stream:
+                os.chmod(request, 0o600)
+                json.dump(binding, stream, sort_keys=True)
+                stream.flush(); os.fsync(stream.fileno())
+            request.replace(directory / "request.json")
+            decision = directory / "decision.json"
+            until = time.monotonic() + self._review_timeout
+            while True:
+                self._check_cancel(job_id)
+                if time.monotonic() >= until:
+                    raise ProviderFailure("genlook_review_timeout")
+                if decision.exists():
+                    _regular_local(decision)
+                    _regular_local(image)
+                    if not decision.is_file() or decision.stat().st_size > 4096 or image.stat().st_size > MAX_IMAGE:
+                        raise ProviderFailure("genlook_review_invalid")
+                    value = json.loads(decision.read_bytes())
+                    if (not isinstance(value, dict) or set(value) != {*binding, "decision"} or
+                            any(value.get(key) != expected for key, expected in binding.items()) or
+                            value["decision"] not in ("approve", "reject") or
+                            hashlib.sha256(image.read_bytes()).hexdigest() != binding["result_sha256"]):
+                        raise ProviderFailure("genlook_review_invalid")
+                    self._check_cancel(job_id)
+                    if value["decision"] == "reject":
+                        raise ProviderFailure("genlook_review_rejected")
+                    return
+                await asyncio.sleep(.2)
+        except (OSError, ValueError, TypeError):
+            raise ProviderFailure("genlook_review_invalid") from None
+        finally:
+            self._reviewing_job = None
+
     async def _stage(self, identity, job, stage, person, garments, remaining):
         self._check_cancel(identity)
         if await self._credits() < remaining:
@@ -592,9 +670,11 @@ class GenlookProvider:
                 self._ledger["jobs"][job_id] = job; self._persist()
                 current = normalized["person"]
                 remaining = 3
-                for stage in job["stages"]:
+                for stage_index, stage in enumerate(job["stages"]):
                     current = await self._stage(job_id, job, stage, current, normalized, remaining)
                     remaining -= self._stage_plan(stage).expected_credits
+                    if self._review_timeout and stage_index == 0:
+                        await self._review_pair(job_id, input_sha256, current)
                 self._check_cancel(job_id)
                 try:
                     job["balance_after"] = await self._credits()

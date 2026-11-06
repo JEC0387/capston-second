@@ -51,6 +51,7 @@ class ProviderFailure(RuntimeError):
                    "genlook_journal_unavailable", "genlook_reconciliation_required",
                    "genlook_cleanup_required", "genlook_request_already_recorded",
                    "genlook_invalid_input", "genlook_cancelled", "genlook_timeout",
+                   "genlook_review_rejected", "genlook_review_timeout", "genlook_review_invalid",
                    "remote_execution_unconfirmed"}
         self.code = code if code in allowed else "provider_failed"
         super().__init__(self.code)
