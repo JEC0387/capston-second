@@ -55,7 +55,7 @@ class P57AuthPreservationTest {
 
     @Test fun unavailableProvidersAndCancelledCallbackCannotChangeAccountOrData() = runBlocking {
         AuthStore.continueAsGuest(app)
-        assertFalse(AuthStore.isGoogleConfigured())
+        // The app may carry the public Google web client ID; the server switch still keeps every login off.
         assertTrue(AuthStore.serverProviders().values.all { !it })
         assertTrue(AuthStore.signInWithGoogle(app) is AuthStore.Result.Failed)
         AuthStore.Provider.entries.forEach {
