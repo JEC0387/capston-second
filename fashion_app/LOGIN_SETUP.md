@@ -29,11 +29,10 @@ DB 표(`user_logins`)는 `005_user_logins.sql` 로 이미 있으므로 새 마�
      `cd fashion_app && ./gradlew signingReport` 의 debug SHA1.
      GitHub Actions 가 만든 APK 를 쓰면 그 APK 서명 키의 SHA-1 도 등록한다.
 
-## 2. 앱 — `fashion_app/local.properties`
+## 2. 앱
 
-```
-GOOGLE_WEB_CLIENT_ID=웹클라이언트ID.apps.googleusercontent.com
-```
+웹 클라이언트 ID 는 `app/build.gradle.kts` 에 기본값으로 들어가 있다 (비밀 값 아님). 따로 넣을 것 없음.
+다른 ID 로 시험할 때만 `fashion_app/local.properties` 에 `GOOGLE_WEB_CLIENT_ID=...` 를 넣어 덮어쓴다.
 
 ## 3. 서버 — Railway Variables
 
