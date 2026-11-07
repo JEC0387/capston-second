@@ -61,9 +61,11 @@ android {
         // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는
         // SERVER_URL=http://PC의IP:8000 (실제 폰)을 넣거나, 앱 마이페이지 > 서버 주소 에서 바꾼다.
         buildConfigField("String", "SERVER_URL", "\"${localProperties.getProperty("SERVER_URL", "https://fashion-backend-production-aba0.up.railway.app")}\"")
-        // Google 로그인용 웹 클라이언트 ID (Google Cloud 콘솔 > 사용자 인증 정보 > 웹 애플리케이션).
-        // local.properties 에 GOOGLE_WEB_CLIENT_ID=... 를 넣는다 (GitHub 에 올리지 않음). 비어 있으면 Google 버튼이 꺼진다.
-        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(localProperties.getProperty("GOOGLE_WEB_CLIENT_ID", "").trim()))
+        // Google 로그인용 웹 클라이언트 ID (Google Cloud 콘솔 > 클라이언트 > 웹 애플리케이션, 프로젝트 fashion-ai).
+        // 클라이언트 ID 는 비밀 값이 아니다 (APK 안에 그대로 들어감). 클라이언트 보안 비밀번호(secret)는 쓰지 않으며 넣지 않는다.
+        // 다른 ID 로 시험할 때만 local.properties 에 GOOGLE_WEB_CLIENT_ID=... 를 넣어 덮어쓴다.
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", quoted(localProperties.getProperty("GOOGLE_WEB_CLIENT_ID",
+            "799418861364-17825lccc7a1v3csel3jobejr7hh90eh.apps.googleusercontent.com").trim()))
         buildConfigField("String", "GIT_SHA", quoted(sourceSha))
         buildConfigField("String", "BUILD_BRANCH", quoted(sourceBranch))
         buildConfigField("String", "BUILD_NUMBER", quoted(buildNumber))
