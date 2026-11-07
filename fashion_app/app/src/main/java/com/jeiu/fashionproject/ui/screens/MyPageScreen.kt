@@ -131,8 +131,10 @@ fun MyPageScreen(
         ManualBodyStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
-    val nickname = profile?.nickname ?: "나의 스타일"
-    val email = profile?.email?.takeIf { it.isNotBlank() } ?: "소셜 로그인 미설정 · 로컬 게스트"
+    val signedIn by com.jeiu.fashionproject.data.AuthStore.account.collectAsState()
+    val nickname = profile?.nickname ?: signedIn?.name?.takeIf { it.isNotBlank() } ?: "나의 스타일"
+    val email = signedIn?.let { a -> "${a.provider.label} 로그인" + (a.email.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") }
+        ?: profile?.email?.takeIf { it.isNotBlank() } ?: "로그인 안 함 · 로컬 게스트"
     // 서버에 연결되지 않으면 폰에 있는 기록으로 센다 (예전에는 고정 숫자 12 · 8 · 24 를 보여 줬음)
     val wardrobeItems by WardrobeStore.items.collectAsState()
     val interestIds by ProductInterestStore.ids.collectAsState()
@@ -395,7 +397,7 @@ fun MyPageScreen(
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.AccountCircle, label = "계정 · 게스트 이용", onClick = { showAccountDialog = true })
-            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "로그인 방법 · 설정 상태", onClick = onLogin)
+            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
         }
 
         Spacer(modifier = Modifier.height(16.dp))

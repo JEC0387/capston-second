@@ -24,10 +24,14 @@ class P57LoginUiTest {
         val before = names.associateWith { app.getSharedPreferences(it, 0).all.toMap() }
         var entered = 0
         compose.setContent { LoginScreen(onDone = { entered++ }) }
+        // The server cannot be reached in tests, so no provider becomes available.
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("loginUnconfigured").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("loginUnconfigured").assertTextContains("아직 설정되지", substring = true)
-        listOf("google", "kakao", "facebook", "apple").forEach {
+        listOf("google", "kakao").forEach {
             compose.onNodeWithTag("login_$it").performScrollTo().assertIsNotEnabled()
         }
+        // Facebook · Apple are not offered at all.
+        listOf("facebook", "apple").forEach { compose.onNodeWithTag("login_$it").assertDoesNotExist() }
         compose.onNodeWithTag("guestLogin").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals(1, entered)

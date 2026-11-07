@@ -222,6 +222,40 @@ object DataAuth {
         }
     }
 
+    /** Server answer to a social login call (Google · Kakao). The body never contains this device's token. */
+    data class SocialReply(val code: Int, val body: String)
+
+    /**
+     * Google · Kakao login with this installation's Bearer account (never a device ID).
+     * When the identity belongs to another account the server rotates that account's token and returns it:
+     * it is stored with restore pending, so sync stays paused until that account's snapshot is installed
+     * (BackupRestore.restoreClaimed → app restart, the same path as recovery).
+     * @return null when offline, unauthenticated or the token could not be stored safely
+     */
+    suspend fun socialLogin(path: String, body: JSONObject): SocialReply? = DbSync.exclusiveAccountChange {
+        if (!::context.isInitialized || RestoreJournal.hasPending(context)) return@exclusiveAccountChange null
+        ensureReady()
+        lock.withLock {
+            val access = accessToken ?: return@withLock null
+            val reply = call(path, body, access) ?: return@withLock null
+            if (reply.server != BackendApi.BASE_URL) return@withLock null
+            if (reply.code == 401) markUnauthorized(access)
+            if (reply.code == 200) {
+                val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return@withLock null
+                if (json.optBoolean("switched")) {
+                    val rotated = json.optString("accessToken")
+                    if (!Regex("[A-Za-z0-9_-]{40,100}").matches(rotated)) return@withLock null
+                    // The other account's recovery code is not known here; Google/Kakao login is its recovery.
+                    if (!persist(rotated, null, true, true, false, reply.server, requestedRecovery = null)) return@withLock null
+                }
+                // Secrets stay inside DataAuth; callers only see account metadata.
+                json.remove("accessToken"); json.remove("recoveryCode")
+                return@withLock SocialReply(reply.code, json.toString())
+            }
+            SocialReply(reply.code, reply.body)
+        }
+    }
+
     suspend fun resumePendingAuthentication(): Boolean {
         val code = requestedRecovery
         if (code != null && requestedRecoveryServer != BackendApi.BASE_URL) {

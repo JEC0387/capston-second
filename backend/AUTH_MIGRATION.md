@@ -81,3 +81,16 @@
 - 디스크 고장/공간 부족으로 저널 적용에 실패하면 저널과 원본을 보존한다. 강제 삭제로
   우회하지 말고 저장 공간/기기 상태를 해결한 후 재시작한다. 실기기 강제 종료와
   Keystore 접근 상실 검증은 JVM 테스트와 별도로 필요하다.
+
+### Google · 카카오 로그인 (Bearer 연결)
+
+- `SOCIAL_LOGIN_ENABLED=true` 와 제공자 설정(`GOOGLE_CLIENT_ID` / `KAKAO_REST_API_KEY`)이 모두 있을 때만 켜진다.
+  꺼져 있으면 모든 소셜 경로가 `503 social_auth_bridge_unavailable` 이다. Facebook · Apple 은 항상 꺼져 있다.
+- 모든 요청은 Bearer 토큰이 필요하다. 기기 번호는 받지 않는다.
+- 처음 보는 신원: 현재 Bearer 계정에 `user_logins` 로 연결한다. 데이터 이동 없음.
+- 다른 Bearer 계정에 연결된 신원: 그 계정의 토큰을 교체해 돌려준다(복구와 같은 단일 기기 규칙).
+  앱은 복원 대기 상태로 저장한 뒤 기존 복원 경로(스냅샷 → 저널 → 재시작)로 기록을 받는다. 현재 계정 행은 건드리지 않는다.
+- `auth_credentials` 가 없는(구 기기 번호) 사용자에 연결된 신원: `409 social_account_requires_review` — 운영자 승인 경로만.
+- 이전 선택 대기(`data_enabled=false`) 계정: `409 legacy_decision_required`.
+- 같은 제공자의 다른 신원이 이미 연결된 계정: `409 provider_already_linked`.
+- 카카오 state 와 1회용 코드는 시작한 계정(`user:<id>`)에 묶이며, 교환 시 같은 Bearer 계정이어야 한다.
