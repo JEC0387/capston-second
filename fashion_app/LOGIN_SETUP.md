@@ -48,16 +48,18 @@ GOOGLE_CLIENT_ID=웹클라이언트ID.apps.googleusercontent.com
 ## 1. Kakao Developers (https://developers.kakao.com)
 
 1. 내 애플리케이션 → 애플리케이션 추가 (앱 이름 `STYLE AI`)
-2. **카카오 로그인** 활성화 ON
-3. **Redirect URI** 등록: `https://fashion-backend-production-aba0.up.railway.app/api/auth/kakao/callback`
-4. **동의항목**: 닉네임(필수), 카카오계정(이메일)(선택)
-5. (선택) 보안 → Client Secret 사용 ON
+2. **[앱] > [플랫폼 키] > [REST API 키]**
+   - REST API 키 값 복사
+   - 리다이렉트 URI 등록: `https://fashion-backend-production-aba0.up.railway.app/api/auth/kakao/callback`
+   - 클라이언트 시크릿: 기본으로 켜져 있다 → 값 복사 (끄지 않는다)
+3. **[카카오 로그인]** 사용 설정 ON
+4. **[카카오 로그인] > [동의항목]**: 닉네임(필수). 이메일은 비즈 앱 전환이 필요하므로 없어도 된다.
 
 ## 2. 서버 — Railway Variables
 
 ```
-KAKAO_REST_API_KEY=앱 키의 REST API 키
-KAKAO_CLIENT_SECRET=...              # 5번을 켰을 때만
+KAKAO_REST_API_KEY=REST API 키
+KAKAO_CLIENT_SECRET=클라이언트 시크릿
 ```
 
 앱에는 카카오 값을 넣지 않는다.
