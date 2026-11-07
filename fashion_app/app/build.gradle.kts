@@ -23,12 +23,19 @@ require(!deviceQaBuild || previewBuild) { "Device QA must retain Preview network
 val outfitServerApproved = !previewBuild && providers.gradleProperty("fashionOutfitServerApproved").orNull == "true"
 val packagedVersionName = appVersionName + if (deviceQaBuild) "-qa" else if (previewBuild) "-preview" else ""
 require(appVersionName.matches(Regex("[A-Za-z0-9._-]+")))
-fun gitValue(vararg args: String) = providers.exec {
-    workingDir(rootProject.projectDir.parentFile)
-    commandLine("git", *args)
-}.standardOutput.asText.get().trim()
-val sourceSha = gitValue("rev-parse", "HEAD")
-val sourceBranch = gitValue("branch", "--show-current").ifEmpty { "detached" }
+// GitHub ZIP 다운로드처럼 .git 이 없거나 git 이 없는 PC 에서도 빌드되게 한다.
+// 그때는 SHA 를 0 으로, 상태를 dirty 로 기록하므로 그 APK 는 배포(release)용으로 인정되지 않는다.
+val noGit = "no-git"
+fun gitValue(vararg args: String): String = runCatching {
+    val output = providers.exec {
+        workingDir(rootProject.projectDir.parentFile)
+        commandLine("git", *args)
+        isIgnoreExitValue = true
+    }
+    if (output.result.get().exitValue == 0) output.standardOutput.asText.get().trim() else null
+}.getOrNull() ?: noGit
+val sourceSha = gitValue("rev-parse", "HEAD").takeIf { it.matches(Regex("[a-f0-9]{40}")) } ?: "0".repeat(40)
+val sourceBranch = gitValue("branch", "--show-current").let { if (it == noGit) "zip-download" else it.ifEmpty { "detached" } }
 // Untracked source/resources can enter an APK; ignored build outputs/secrets still stay excluded.
 val sourceDirty = gitValue("status", "--porcelain", "--untracked-files=normal").isNotEmpty()
 val buildNumber = providers.environmentVariable("FASHION_BUILD_NUMBER").orNull ?: "local"
