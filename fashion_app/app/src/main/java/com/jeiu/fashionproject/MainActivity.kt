@@ -12,9 +12,8 @@ import com.jeiu.fashionproject.ui.theme.FashionProjectTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 카카오 · 페이스북 · Apple 로그인 뒤 fashionai://login 으로 열렸으면 로그인 화면이 마무리한다
-        if (savedInstanceState == null) AuthStore.handleRedirect(intent?.data)
         enableEdgeToEdge()
+        if (savedInstanceState == null) AuthStore.handleRedirect(intent?.data)
         setContent {
             FashionProjectTheme {
                 AppNavigation()
@@ -22,6 +21,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Kakao browser login returns here (fashionai://login?...); AuthStore validates the link strictly. */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

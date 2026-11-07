@@ -1,7 +1,6 @@
 package com.jeiu.fashionproject.navigation
 
 sealed class Screen(val route: String) {
-    /** 로그인 (구글 계정 · 로그인 없이 둘러보기) — 로그인하지 않았으면 앱 첫 화면 */
     object Login : Screen("login")
     object Onboarding : Screen("onboarding")
     object Home : Screen("home")
@@ -12,10 +11,13 @@ sealed class Screen(val route: String) {
     }
     object WeatherOutfit : Screen("weather_outfit")
     object BodyAnalysis : Screen("body_analysis")
+    object BodyAnalysisPhoto : Screen("body_analysis_photo")
+    object BodyAnalysisAvatar : Screen("body_analysis_avatar")
+    object BodySizeComparison : Screen("body_size_comparison")
     object Shop : Screen("shop")
-    /** 상품 상세 — id(상품 id)를 주면 그 상품, 없으면 기본 상품 */
-    object ProductDetail : Screen("product_detail?id={id}") {
-        fun route(id: String? = null) = if (id.isNullOrBlank()) "product_detail" else "product_detail?id=${android.net.Uri.encode(id)}"
+    object ProductDetail : Screen("product_detail?productId={productId}") {
+        // Navigation decodes the argument once. Never decode it again in the screen.
+        fun route(productId: String) = "product_detail?productId=${android.net.Uri.encode(productId)}"
     }
     object MyPage : Screen("my_page")
     object StyleAnalysis : Screen("style_analysis")

@@ -30,7 +30,9 @@ object ProductRecommender {
     private fun probe(p: ShopProduct): WardrobeItem = WardrobeItem(
         id = OutfitSources.candidateId(p), name = p.name, category = p.category ?: "",
         colorName = p.clothingColorName ?: "", colorValue = p.clothingColorValue ?: 0xFF888888,
-        imageUri = "", subCategory = p.subCategory, detailType = p.detailType, isOwned = false
+        imageUri = "", subCategory = p.subCategory, detailType = p.detailType, isOwned = false,
+        // Unknown catalog color must not become a gray/minimal style through placeholder pixels.
+        style = ""
     )
 
     fun rank(
@@ -60,7 +62,7 @@ object ProductRecommender {
                         .filter { o -> o.score >= MissingItemFinder.GOOD_SCORE && o.items.any { it.id == c.id } }
                         .map { look(it) }.filter { it !in baseLooks }.distinct().size
                 } ?: 0
-                val styles = preferred.filter { PreferredStyles.matches(item, it) }
+                val styles = PreferredStyles.normalize(preferred).filter { PreferredStyles.matches(item, it) }
                 val affinity = PreferredStyles.learnedAffinity(listOf(item), learned)
                 val color = item.colorName.takeIf { it.isNotBlank() && it in likedColors }
                 val kind = SituationRules.kindOf(item).takeIf { it in likedKinds }
@@ -70,7 +72,9 @@ object ProductRecommender {
                 val reasons = buildList {
                     if (outfits > 0) add("내 옷장 옷과 코디 ${outfits}가지")
                     styles.firstOrNull()?.let { add("선호하는 $it 스타일") }
-                    if (affinity > 0.3 && styles.isEmpty()) PreferredStyles.dominant(listOf(item))?.let { add("취향 학습에서 좋아한 $it") }
+                    if (affinity > 0.3 && styles.isEmpty()) PreferredStyles.canonicalScores(learned)
+                        .filter { (style, score) -> score > 0 && PreferredStyles.matches(item, style) }
+                        .maxByOrNull { it.value }?.key?.let { add("취향 학습에서 좋아한 $it") }
                     color?.let { add("좋아하는 $it") }
                     kind?.let { add("자주 고르는 $it") }
                 }

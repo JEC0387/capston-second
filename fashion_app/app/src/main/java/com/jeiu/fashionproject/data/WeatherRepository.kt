@@ -1,10 +1,8 @@
 package com.jeiu.fashionproject.data
 
-import com.jeiu.fashionproject.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -94,23 +92,12 @@ data class DayForecast(
 }
 
 object WeatherRepository {
-    // 키는 서버(Railway Variables)에 둔다. 앱의 키(local.properties의 OWM_API_KEY)는 서버가 안 될 때만 쓰는 예비용 — 없어도 된다
-    private val API_KEY = BuildConfig.OWM_API_KEY
-
-    /**
-     * 5일 예보를 날짜별 요약으로 받는다.
-     * 1) 우리 서버(/api/weather/forecast)에 먼저 묻고  2) 서버가 안 되면 앱에 키가 있을 때만 OpenWeatherMap에 직접 묻는다.
-     * 둘 다 안 되면 예외.
-     */
+    /** Forecast data is fetched only through the server credential proxy. */
     suspend fun fetchForecast(lat: Double, lon: Double): List<DayForecast> = withContext(Dispatchers.IO) {
         BackendApi.getJson("/api/weather/forecast?lat=$lat&lon=$lon")
             ?.let { body -> runCatching { parseForecast(JSONObject(body)) }.getOrNull() }
             ?.takeIf { it.isNotEmpty() }
-            ?.let { return@withContext it }
-
-        check(API_KEY.isNotBlank()) { "서버에서 예보를 받지 못했고, local.properties에 OWM_API_KEY도 없어요" }
-        val url = "https://api.openweathermap.org/data/2.5/forecast?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=kr"
-        parseForecast(JSONObject(URL(url).readText()))
+            ?: throw IllegalStateException("서버에서 예보를 받지 못했어요.")
     }
 
     private class Slot(val hour: Int, val temp: Double, val humidity: Int, val pop: Double, val id: Int, val desc: String)
@@ -156,15 +143,8 @@ object WeatherRepository {
     }
 
     suspend fun fetch(lat: Double, lon: Double): WeatherInfo = withContext(Dispatchers.IO) {
-        val url = "https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lon&appid=$API_KEY&units=metric&lang=kr"
-        val json = JSONObject(URL(url).readText())
-        val weather = json.getJSONArray("weather").getJSONObject(0)
-        val main = json.getJSONObject("main")
-        WeatherInfo(
-            condition = weather.getString("description"),
-            temp = main.getDouble("temp").toInt(),
-            humidity = main.getInt("humidity"),
-            conditionId = weather.getInt("id")
-        )
+        val server = BackendApi.fetchWeather(lat, lon)
+            ?: throw IllegalStateException("서버에서 날씨를 받지 못했어요.")
+        WeatherInfo(server.condition, server.temp, server.humidity, server.conditionId)
     }
 }

@@ -7,6 +7,7 @@ import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.NaverImageSearchRepository
 import com.jeiu.fashionproject.data.ShopImageResult
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -20,7 +21,11 @@ sealed class ShopUiState {
     data class NotFashion(val message: String) : ShopUiState()
 }
 
-class ShopViewModel : ViewModel() {
+class ShopViewModel(
+    private val searchImages: suspend (String, Int) -> List<ShopImageResult> = { query, display ->
+        NaverImageSearchRepository.search(query, display)
+    }
+) : ViewModel() {
 
     private val _state = MutableStateFlow<ShopUiState>(ShopUiState.Loading)
     /** 스타일 검색 결과 */
@@ -42,6 +47,8 @@ class ShopViewModel : ViewModel() {
     private var lastProductKey: String? = null
     private var styleJob: Job? = null
     private var productJob: Job? = null
+    private var styleRequest = 0L
+    private var productRequest = 0L
 
     /**
      * 스타일 검색 — 옷 스타일과 관련된 검색어만 (FashionQuery.stylePlan).
@@ -52,20 +59,24 @@ class ShopViewModel : ViewModel() {
         val key = "${plan.query}|${plan.message}|$gender"
         if (key == lastKey) return
         lastKey = key
+        val request = ++styleRequest
         styleJob?.cancel()
         if (plan.query == null) { _state.value = ShopUiState.NotFashion(plan.message ?: FashionQuery.STYLE_HINT); return }
 
         _state.value = ShopUiState.Loading
         styleJob = viewModelScope.launch {
-            _state.value = try {
-                val results = NaverImageSearchRepository.search(plan.query, display = 50)
+            val next = try {
+                val results = searchImages(plan.query, 50)
                     .filter { FashionQuery.keep(it.title, plan, gender) }
                     .take(30)
                 ShopUiState.Success(results, plan.query)
-            } catch (e: Exception) {
-                lastKey = null
-                ShopUiState.Error(e.message ?: "이미지를 불러오지 못했어요.")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (request == styleRequest) lastKey = null
+                ShopUiState.Error("이미지를 불러오지 못했어요. 서버 연결을 확인해 주세요.")
             }
+            if (request == styleRequest) _state.value = next
         }
     }
 
@@ -75,6 +86,7 @@ class ShopViewModel : ViewModel() {
         val key = "${plan.query}|${plan.message}|$gender"
         if (key == lastProductKey) return
         lastProductKey = key
+        val request = ++productRequest
         productJob?.cancel()
         when {
             plan.message != null -> { _productState.value = ShopUiState.NotFashion(plan.message); return }
@@ -82,15 +94,18 @@ class ShopViewModel : ViewModel() {
         }
         _productState.value = ShopUiState.Loading
         productJob = viewModelScope.launch {
-            _productState.value = try {
-                val results = NaverImageSearchRepository.search("${plan.query} 상품", display = 50)
+            val next = try {
+                val results = searchImages("${plan.query} 상품", 50)
                     .filter { FashionQuery.keep(it.title, plan, gender) }
                     .take(20)
                 ShopUiState.Success(results, plan.query!!)
-            } catch (e: Exception) {
-                lastProductKey = null
-                ShopUiState.Error(e.message ?: "상품을 불러오지 못했어요.")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (request == productRequest) lastProductKey = null
+                ShopUiState.Error("상품을 불러오지 못했어요. 서버 연결을 확인해 주세요.")
             }
+            if (request == productRequest) _productState.value = next
         }
     }
 }

@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """관심 상품 · 취향 평가 기록 · 성별 · 상품 카탈로그 DB API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -11,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 import data
 import main
 from database import Base, get_db, optional_db
+from tests.support_auth import AuthHeaders
 from seed_catalog import upsert_catalog
 
 SHIRT = 'https://www.musinsa.com/products/6405693'
@@ -30,7 +32,8 @@ class UserDataApiTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
-        self.headers = {'X-Device-Id': 'device-a'}
+        self.auth = AuthHeaders(self.client)
+        self.headers = self.auth('device-a')
 
     def tearDown(self):
         self.client.close()
@@ -38,10 +41,10 @@ class UserDataApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def post(self, path, payload, device='device-a'):
-        return self.client.post(path, json=payload, headers={'X-Device-Id': device})
+        return self.client.post(path, json=payload, headers=self.auth(device))
 
     def get(self, path, device='device-a'):
-        return self.client.get(path, headers={'X-Device-Id': device})
+        return self.client.get(path, headers=self.auth(device))
 
     def seed(self):
         with self.factory() as db:
@@ -92,7 +95,7 @@ class UserDataApiTest(unittest.TestCase):
         self.seed()
         self.post('/api/product-interests/sync', {'productIds': [SHIRT, PANTS]}, device='a')
         self.post('/api/product-interests/sync', {'productIds': [SHIRT]}, device='b')
-        items = self.client.get('/api/product-interests/popular').json()['items']
+        items = operator_get(self.client, '/api/product-interests/popular').json()['items']
         self.assertEqual(SHIRT, items[0]['productKey'])
         self.assertEqual(2, items[0]['interestCount'])
         self.assertEqual(1, items[1]['interestCount'])

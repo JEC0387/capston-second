@@ -13,7 +13,7 @@ import java.io.File
 /**
  * 백업 코드로 다른 폰(또는 앱을 다시 설치한 폰)의 기록을 서버 DB 에서 가져온다.
  *
- * 백업 코드 = 예전 폰의 기기 번호. 서버는 기기 번호로 사용자를 구분하므로, 이 폰이 그 번호를 이어서 쓰게 된다.
+ * New recovery codes rotate the account access token. Old device IDs cannot read server data.
  * 가져오는 것: 옷장(+ 사진 백업 · 가격 · 브랜드) · 착용 기록 · 선호 스타일 · 성별 · 관심 상품 · 취향 평가 기록 ·
  * 스타일 점수 · 저장한 코디 · 코디 일정.
  * 가져오지 않는 것: 체형 사진(원래 서버에 없음), 체형 동의 상태(이 폰에서 다시 동의), 알림 설정.
@@ -29,12 +29,13 @@ object BackupRestore {
         object SameCode : Result()
         object Offline : Result()
         object NotFound : Result()
+        object RestartRequired : Result()
     }
 
-    /** 사용자가 입력한 코드 다듬기 (공백 제거 · 소문자). 형식이 틀리면 null */
+    /** Case-sensitive, high-entropy recovery code. Old UUID backup codes are intentionally rejected. */
     fun normalize(input: String): String? {
-        val code = input.filterNot { it.isWhitespace() }.lowercase()
-        return code.takeIf { Regex("[a-z0-9-]{8,64}").matches(it) }
+        val code = input.trim()
+        return code.takeIf { Regex("[A-Za-z0-9_-]{40,100}").matches(it) }
     }
 
     data class RemoteClothing(val item: WardrobeItem, val hasPhoto: Boolean)
@@ -53,7 +54,7 @@ object BackupRestore {
     ) {
         val isEmpty: Boolean
             get() = clothes.isEmpty() && wearLogs.isEmpty() && interests.isEmpty() && tasteEvents.isEmpty() &&
-                preferredStyles.isEmpty() && styleRatedCount == 0 && savedOutfits.isEmpty() && plans.isEmpty()
+                preferredStyles.isEmpty() && gender == null && styleRatedCount == 0 && savedOutfits.isEmpty() && plans.isEmpty()
     }
 
     // ── 서버 응답 읽기 (PC 단위 테스트 가능) ──────────────────
@@ -179,65 +180,89 @@ object BackupRestore {
         return scores to o.optInt("ratedCount")
     }
 
+    /** Versioned single-account snapshot. Parse every section before touching local stores. */
+    fun parseSnapshot(document: JSONObject): Snapshot {
+        require(document.getInt("version") == 1)
+        val profile = parseProfile(document.getJSONObject("profile").toString())
+        val preference = parseStylePreference(document.getJSONObject("stylePreference").toString())
+        return Snapshot(parseWardrobe(document.getJSONObject("wardrobe").toString()),
+            parseWearLogs(document.getJSONObject("wearLogs").toString()), profile.first, profile.second,
+            parseInterests(document.getJSONObject("interests").toString()),
+            parseTasteEvents(document.getJSONObject("tasteEvents").toString()), preference.first, preference.second,
+            parseSavedOutfits(document.getJSONObject("savedOutfits").toString()),
+            parsePlans(document.getJSONObject("outfitPlans").toString()))
+    }
+
+    fun verifyPhoto(bytes: ByteArray, expected: String): Boolean =
+        expected.matches(Regex("[a-f0-9]{64}")) && java.security.MessageDigest.getInstance("SHA-256")
+            .digest(bytes).joinToString("") { "%02x".format(it) } == expected
+
     // ── 복원 ──────────────────────────────────────────
 
-    suspend fun restore(context: Context, input: String): Result = withContext(Dispatchers.IO) {
-        val code = normalize(input) ?: return@withContext Result.InvalidCode
-        if (code == DbSync.backupCode?.lowercase()) return@withContext Result.SameCode
+    suspend fun restore(context: Context, input: String): Result {
+        val code = normalize(input) ?: return Result.InvalidCode
+        if (code == DbSync.backupCode && !DataAuth.isRestorePending) return Result.SameCode
+
+        return DbSync.exclusiveAccountChange {
+            if (!DataAuth.recover(code)) Result.Offline else restoreAuthenticated(context)
+        }
+    }
+
+    /** Called after an operator-approved legacy claim; sync remains paused until all writes finish. */
+    suspend fun restoreClaimed(context: Context): Result =
+        DbSync.exclusiveAccountChange {
+            if (DataAuth.isRestorePending && DataAuth.resumePendingAuthentication()) restoreAuthenticated(context) else Result.Offline
+        }
+
+    private suspend fun restoreAuthenticated(context: Context): Result = withContext(Dispatchers.IO) {
+        if (RestoreJournal.hasPending(context)) return@withContext Result.RestartRequired
         val health = BackendApi.getJson("/api/health/database") ?: return@withContext Result.Offline
         if (!runCatching { JSONObject(health).optBoolean("ready") }.getOrDefault(false)) return@withContext Result.Offline
 
-        val wardrobe = BackendApi.getJson("/api/wardrobe", code) ?: return@withContext Result.Offline
-        val wear = BackendApi.getJson("/api/wear-logs", code) ?: return@withContext Result.Offline
-        val profile = BackendApi.getJson("/api/profile", code)?.let { runCatching { parseProfile(it) }.getOrNull() }
-        val interests = BackendApi.getJson("/api/product-interests", code)?.let { runCatching { parseInterests(it) }.getOrNull() }
-        val taste = BackendApi.getJson("/api/taste-events", code)?.let { runCatching { parseTasteEvents(it) }.getOrNull() }
-        val pref = BackendApi.getJson("/api/style-preference", code)?.let { runCatching { parseStylePreference(it) }.getOrNull() }
-        val savedOutfits = BackendApi.getJson("/api/saved-outfits", code)?.let { runCatching { parseSavedOutfits(it) }.getOrNull() }
-        val plans = BackendApi.getJson("/api/outfit-plans", code)?.let { runCatching { parsePlans(it) }.getOrNull() }
-
-        val snapshot = runCatching {
-            Snapshot(parseWardrobe(wardrobe), parseWearLogs(wear), profile?.first.orEmpty(), profile?.second,
-                interests.orEmpty(), taste.orEmpty(), pref?.first, pref?.second ?: 0, savedOutfits.orEmpty(), plans.orEmpty())
-        }.getOrNull() ?: return@withContext Result.Offline
+        val body = BackendApi.getJson("/api/backup/snapshot") ?: return@withContext Result.Offline
+        val document = runCatching { JSONObject(body) }.getOrNull() ?: return@withContext Result.Offline
+        val snapshot = runCatching { parseSnapshot(document) }.getOrNull() ?: return@withContext Result.Offline
+        val manifest = runCatching { document.getJSONObject("photos") }.getOrNull() ?: return@withContext Result.Offline
         if (snapshot.isEmpty) return@withContext Result.NotFound
 
         // 옷 사진 받기
         val dir = File(context.filesDir, "wardrobe").apply { mkdirs() }
         val files = mutableMapOf<String, File>()
         val uris = mutableMapOf<String, String>()
-        val stamp = System.currentTimeMillis()
-        val items = snapshot.clothes.map { rc ->
-            if (!rc.hasPhoto) return@map withPhoto(rc.item, null)
-            val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}", code)
-            val file = got?.let { (bytes, mime) ->
-                runCatching {
-                    val safeId = rc.item.id.replace(Regex("[^A-Za-z0-9_-]"), "_")
-                    File(dir, "restored_${safeId}_$stamp.${PhotoBackup.extension(mime)}").apply { writeBytes(bytes) }
-                }.getOrNull()
-            }
-            if (file == null) withPhoto(rc.item, null)
-            else {
-                val uri = Uri.fromFile(file).toString()
-                files[rc.item.id] = file
-                uris[rc.item.id] = uri
-                withPhoto(rc.item, uri)
-            }
+        val items = mutableListOf<WardrobeItem>()
+        for (rc in snapshot.clothes) {
+            if (!rc.hasPhoto) { items += withPhoto(rc.item, null); continue }
+            val got = BackendApi.getBytes("/api/wardrobe/photos/${Uri.encode(rc.item.id)}")
+                ?: return@withContext Result.Offline
+            if (!verifyPhoto(got.first, manifest.optString(rc.item.id))) return@withContext Result.Offline
+            val file = runCatching {
+                File(dir, "restored_${java.util.UUID.randomUUID()}.${PhotoBackup.extension(got.second)}")
+                    .apply { java.io.FileOutputStream(this).use { out -> out.write(got.first); out.fd.sync() } }
+            }.getOrNull() ?: return@withContext Result.Offline
+            val uri = Uri.fromFile(file).toString()
+            files[rc.item.id] = file
+            uris[rc.item.id] = uri
+            items += withPhoto(rc.item, uri)
         }
 
-        // 이 폰 저장소를 바꿔 쓰기 (앱을 다시 시작하면 불러옴)
-        WardrobeStore.writeForRestore(context, items)
-        SampleWearHistory.markApplied(context)
-        WearLogStore.writeForRestore(context, snapshot.wearLogs)
-        ProfileStore.writeForRestore(context, snapshot.preferredStyles)
-        UserPreferencesViewModel.writeForRestore(context, snapshot.gender)
-        ProductInterestStore.writeForRestore(context, snapshot.interests)
-        TastePreferenceStore.writeForRestore(context, snapshot.tasteEvents)
-        snapshot.styleScores?.let { StylePreferenceStore.writeForRestore(context, it, snapshot.styleRatedCount) }
-        SavedOutfitStore.writeForRestore(context, snapshot.savedOutfits)
-        OutfitPlanStore.writeForRestore(context, snapshot.plans)
-        RecommendationLog.clearForRestore(context)
-        DbSync.adoptForRestore(code, files, uris)
+        // Stage all stores, then install a durable redo journal. Sync stays paused until restart.
+        val installed = runCatching { withContext(Dispatchers.Main.immediate) {
+            RestoreJournal.stage(context) { staging ->
+                WardrobeStore.writeForRestore(staging, items)
+                SampleWearHistory.markApplied(staging)
+                WearLogStore.writeForRestore(staging, snapshot.wearLogs)
+                ProfileStore.writeForRestore(staging, snapshot.preferredStyles)
+                UserPreferencesViewModel.writeForRestore(staging, snapshot.gender)
+                ProductInterestStore.writeForRestore(staging, snapshot.interests)
+                TastePreferenceStore.writeForRestore(staging, snapshot.tasteEvents)
+                snapshot.styleScores?.let { StylePreferenceStore.writeForRestore(staging, it, snapshot.styleRatedCount) }
+                SavedOutfitStore.writeForRestore(staging, snapshot.savedOutfits)
+                OutfitPlanStore.writeForRestore(staging, snapshot.plans)
+                RecommendationLog.clearForRestore(staging)
+                DbSync.stageForRestore(staging, files, uris)
+            }
+        } }.isSuccess
+        if (!installed) return@withContext Result.Offline
 
         Result.Done(items.size, files.size, snapshot.wearLogs.size, snapshot.interests.size, snapshot.tasteEvents.size)
     }

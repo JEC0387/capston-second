@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.data
 
 import android.content.Context
+import com.jeiu.fashionproject.BuildConfig
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,28 +39,43 @@ object BackendApi {
     /** 서버 주소 — 앱 시작 때 ServerSettings.load 가 저장된 값(없으면 BuildConfig.SERVER_URL)으로 바꾼다 */
     @Volatile var BASE_URL = "http://10.0.2.2:8000"
 
-    /** 이 폰의 기기 번호 — 서버 DB가 폰마다 데이터를 따로 저장하도록 모든 요청에 붙인다 (DbSync.init 에서 설정). */
-    @Volatile var deviceId: String? = null
+    private fun privatePath(path: String): Boolean = listOf(
+        "/api/wardrobe", "/api/wear-logs", "/api/body-measurements", "/api/profile",
+        "/api/style-preference", "/api/product-interests", "/api/taste-events",
+        "/api/recommendations", "/api/saved-outfits", "/api/outfit-plans", "/api/me", "/api/backup",
+        "/api/clothing/classify", "/api/object-detection"
+    ).any { path == it || path.startsWith("$it/") || path.startsWith("$it?") }
 
-    private fun HttpURLConnection.addDeviceHeader() {
-        deviceId?.let { setRequestProperty("X-Device-Id", it) }
+    private fun HttpURLConnection.addPrivateAuthorization(path: String): String? {
+        if (!privatePath(path)) return null
+        if (BuildConfig.PREVIEW_BUILD) return null // Preview never shares production personal records.
+        val token = DataAuth.authorizationFor(url) ?: return null
+        setRequestProperty("Authorization", "Bearer $token")
+        return token
+    }
+
+    private fun HttpURLConnection.noteUnauthorized(path: String, code: Int, sentToken: String?) {
+        if (code == 401 && privatePath(path) && url.protocol == "https" && sentToken != null)
+            DataAuth.markUnauthorized(sentToken)
     }
 
     // ── 공용 HTTP 헬퍼 ──────────────────────────────────────────────
 
     /**
      * GET 요청 → 응답 본문 문자열. 실패 시 null (호출부가 로컬 폴백)
-     * @param asDevice 백업 코드로 복원할 때만 — 이 폰 대신 다른 기기 번호로 조회
      */
-    suspend fun getJson(path: String, asDevice: String? = null): String? = withContext(Dispatchers.IO) {
+    suspend fun getJson(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 10_000
-                if (asDevice != null) setRequestProperty("X-Device-Id", asDevice) else addDeviceHeader()
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             val code = conn.responseCode
+            conn.noteUnauthorized(path, code, sentToken)
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }
             conn.disconnect()
@@ -71,15 +87,18 @@ object BackendApi {
     suspend fun postJson(path: String, jsonBody: String, readTimeoutMs: Int = 5_000): String? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 3_000
                 readTimeout = readTimeoutMs
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                addDeviceHeader()
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
+            conn.noteUnauthorized(path, code, sentToken)
             val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
                 ?.bufferedReader()?.use { it.readText() }
             conn.disconnect()
@@ -87,38 +106,21 @@ object BackendApi {
         }.getOrNull()
     }
 
-    /** JSON POST → (HTTP 코드, 응답 본문). 서버에 연결하지 못하면 코드 -1 — 로그인처럼 실패 이유를 알려야 할 때 */
-    suspend fun postJsonWithCode(path: String, jsonBody: String, readTimeoutMs: Int = 15_000): Pair<Int, String?> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 5_000
-                    readTimeout = readTimeoutMs
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    addDeviceHeader()
-                }
-                conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                val body = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }
-                conn.disconnect()
-                code to body
-            }.getOrDefault(-1 to null)
-        }
-
     /** GET 으로 파일(사진) 받기 → (바이트, Content-Type). 없거나 실패하면 null. 복원할 때 옷 사진용 (최대 3MB) */
-    suspend fun getBytes(path: String, asDevice: String? = null): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
+    suspend fun getBytes(path: String): Pair<ByteArray, String>? = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
                 requestMethod = "GET"
                 connectTimeout = 3_000
                 readTimeout = 15_000
-                if (asDevice != null) setRequestProperty("X-Device-Id", asDevice) else addDeviceHeader()
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching null }
             try {
-                if (conn.responseCode !in 200..299) return@runCatching null
+                val code = conn.responseCode
+                conn.noteUnauthorized(path, code, sentToken)
+                if (code !in 200..299) return@runCatching null
                 val type = conn.contentType?.substringBefore(';')?.trim().orEmpty()
                 val bytes = conn.inputStream.use { input ->
                     val out = java.io.ByteArrayOutputStream()
@@ -142,12 +144,15 @@ object BackendApi {
     suspend fun delete(path: String, readTimeoutMs: Int = 5_000): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
                 requestMethod = "DELETE"
                 connectTimeout = 3_000
                 readTimeout = readTimeoutMs
-                addDeviceHeader()
             }
+            val sentToken = conn.addPrivateAuthorization(path)
+            if (privatePath(path) && sentToken == null) { conn.disconnect(); return@runCatching false }
             val code = conn.responseCode
+            conn.noteUnauthorized(path, code, sentToken)
             conn.disconnect()
             code in 200..299
         }.getOrDefault(false)
@@ -157,9 +162,10 @@ object BackendApi {
     suspend fun isServerUp(): Boolean = getJson("/") != null
 
     /** YOLOv8 객체 탐지: 이미지를 multipart로 업로드하고 탐지 결과를 받는다. */
-    suspend fun detectObjects(context: Context, uri: Uri, confThreshold: Float = 0.25f): DetectionResult =
+    suspend fun detectObjects(context: Context, uri: Uri, confThreshold: Float = 0.25f,
+                              consent: ClothingPhotoConsent? = null): DetectionResult =
         withContext(Dispatchers.IO) {
-            val json = JSONObject(postPhoto(context, "/api/object-detection", uri, confThreshold))
+            val json = JSONObject(postPhoto(context, "/api/object-detection", uri, confThreshold, consent = consent))
             val detections = buildList {
                 val arr = json.getJSONArray("detections")
                 for (i in 0 until arr.length()) {
@@ -182,15 +188,18 @@ object BackendApi {
                 totalCount = json.getInt("totalCount"),
                 detections = detections,
                 counts = counts,
-                resultImageUrl = BASE_URL + json.getString("resultImageUrl")
+                resultImageUrl = json.getString("resultImageUrl").let { value ->
+                    if (value.startsWith("data:image/jpeg;base64,")) value else BASE_URL + value
+                }
             )
         }
 
     /** 옷 종류 분류 (DeepFashion2 + COCO 가방류): 크게 잡힌 순서의 후보 목록을 받는다. */
-    suspend fun classifyClothing(context: Context, uri: Uri, confThreshold: Float = 0.3f): List<ClothingCandidate> =
+    suspend fun classifyClothing(context: Context, uri: Uri, confThreshold: Float = 0.3f,
+                                consent: ClothingPhotoConsent? = null): List<ClothingCandidate> =
         withContext(Dispatchers.IO) {
             // 첫 호출 때 서버가 모델을 불러오느라 오래 걸릴 수 있어 읽기 제한을 넉넉히 둔다
-            val json = JSONObject(postPhoto(context, "/api/clothing/classify", uri, confThreshold, readTimeoutMs = 60_000))
+            val json = JSONObject(postPhoto(context, "/api/clothing/classify", uri, confThreshold, readTimeoutMs = 60_000, consent = consent))
             val arr = json.getJSONArray("candidates")
             List(arr.length()) { i ->
                 val c = arr.getJSONObject(i)
@@ -209,17 +218,30 @@ object BackendApi {
         path: String,
         uri: Uri,
         confThreshold: Float,
-        readTimeoutMs: Int = 30_000
+        readTimeoutMs: Int = 30_000,
+        consent: ClothingPhotoConsent? = null
     ): String {
+        // Fail before opening an image stream or sending a request. A gallery choice is not upload consent.
+        check(consent != null && consent.matches(uri, BASE_URL)) { "이 사진과 서버에 대한 전송 동의가 필요합니다" }
+        val purpose = if (path == "/api/clothing/classify") ClothingPhotoConsent.CLASSIFY else ClothingPhotoConsent.DETECT
+        check(consent.purpose == purpose) { "이 분석 목적에 대한 전송 동의가 필요합니다" }
+        check(!BuildConfig.PREVIEW_BUILD) { "평가용 앱에서는 옷 사진 분류 서버 전송을 지원하지 않습니다" }
+        val destination = URL("${consent.server}$path")
+        check(destination.protocol == "https" && DataAuth.authorizationFor(destination) != null) { "보안 서버 인증이 필요합니다" }
+        check(consent.claimOnce()) { "이미 사용한 전송 동의입니다. 다시 요청하려면 확인이 필요합니다" }
         val boundary = "----FashionBoundary${System.currentTimeMillis()}"
-        val conn = (URL("$BASE_URL$path").openConnection() as HttpURLConnection).apply {
+        val conn = (destination.openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
             requestMethod = "POST"
             doOutput = true
             connectTimeout = 5_000
             readTimeout = readTimeoutMs
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            addDeviceHeader()
+            setRequestProperty("X-Photo-Processing-Consent", purpose)
         }
+        val sentToken = conn.addPrivateAuthorization(path)
+        if (privatePath(path) && sentToken == null) { conn.disconnect(); error("보안 백업 인증이 필요합니다") }
+        if (!consent.matches(uri, BASE_URL)) { conn.disconnect(); error("서버가 변경되어 전송 동의를 다시 확인해야 합니다") }
 
         val imageBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalStateException("이미지를 읽을 수 없습니다")

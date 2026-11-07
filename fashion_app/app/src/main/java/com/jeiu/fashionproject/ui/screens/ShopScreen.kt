@@ -122,7 +122,7 @@ fun ShopScreen(
         ) {
             Text(
                 when {
-                    tab == ShopTab.PRODUCTS -> "내 옷장 옷과 만들 수 있는 코디 수 · 선호 스타일 · 취향으로 순서를 정했어요. 하트를 누르면 옷장 '관심 옷'에 담겨요"
+                    tab == ShopTab.PRODUCTS -> "앱에 등록된 카탈로그예요. 가격·재고는 실시간 정보가 아니에요. 옷장과 저장한 취향을 기준으로 순서를 정하며, 하트는 관심 옷에 담겨요."
                     gender != null -> "네이버 이미지 검색에서 ${gender.label} 맞춤 스타일을 가져왔어요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                     else -> "네이버 이미지 검색 결과예요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
                 },
@@ -175,7 +175,7 @@ private fun ProductGrid(
     LaunchedEffect(Unit) {
         WardrobeStore.load(context); StylePreferenceStore.load(context); TastePreferenceStore.load(context)
     }
-    ProfileStore.load(context)
+    LaunchedEffect(Unit) { ProfileStore.load(context) }
     val wardrobe by WardrobeStore.items.collectAsState()
     val preferred by ProfileStore.styles.collectAsState()
     val learned by StylePreferenceStore.scores.collectAsState()
@@ -286,7 +286,7 @@ private fun ProductGrid(
                         }
                         Text("온라인 쇼핑몰의 \"${query.trim()}\"", style = MaterialTheme.typography.titleSmall,
                             color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                        Text("옷 상품만 모았어요 · 누르면 쇼핑몰에서 바로 검색해요", style = MaterialTheme.typography.labelSmall, color = MediumGray)
+                        Text("옷 관련 이미지 검색 결과예요 · 누르면 쇼핑몰에서 검색해요", style = MaterialTheme.typography.labelSmall, color = MediumGray)
                     }
                 }
                 if (online.results.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {

@@ -239,8 +239,8 @@ class GoogleLoginRequest(BaseModel):
 
 class LoginResponse(BaseModel):
     """
-    accountKey: 이 계정의 기록을 가리키는 번호 — 앱은 이 값을 기기 번호(X-Device-Id)로 바꿔 쓴다.
-    switched: True 면 다른 폰에서 쓰던 계정이라 앱이 서버 기록을 받아 와야 함 (False 면 이 폰 기록을 그대로 이어 씀).
+    Legacy team response schema retained for compatibility review only.
+    accountKey is not an authentication credential; active routes never issue it.
     """
     accountKey: str
     email: str

@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """옷 사진 백업 · 복원용 조회 · 추천 기록 / 성능 · 내 데이터 지우기 API 테스트 (격리된 SQLite, 운영 DB 접근 없음)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -12,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db
 from db_models import ClothingPhoto, RecommendationLog, User
+from tests.support_auth import AuthHeaders
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 32
 JPEG = b'\xff\xd8\xff\xe0' + b'\x00' * 32
@@ -39,6 +41,7 @@ class BackupApiTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
+        self.auth = AuthHeaders(self.client)
 
     def tearDown(self):
         self.client.close()
@@ -46,10 +49,10 @@ class BackupApiTest(unittest.TestCase):
         self.engine.dispose()
 
     def post(self, path, payload, device='device-a'):
-        return self.client.post(path, json=payload, headers={'X-Device-Id': device})
+        return self.client.post(path, json=payload, headers=self.auth(device))
 
     def get(self, path, device='device-a'):
-        return self.client.get(path, headers={'X-Device-Id': device})
+        return self.client.get(path, headers=self.auth(device))
 
     def count(self, model):
         with self.factory() as db:
@@ -164,7 +167,7 @@ class BackupApiTest(unittest.TestCase):
         self.assertEqual(('2026-10-17', '2026-10-17', 1), (s['since'], s['until'], s['users']))
         # 전체 통계는 기기 번호 없이, 다른 사람 기록도 합친다
         self.post('/api/recommendations/sync', {'logs': [self.rec('2026-10-18', 'home', ['q'])]}, device='device-b')
-        all_stats = self.client.get('/api/recommendations/stats/all').json()
+        all_stats = operator_get(self.client, '/api/recommendations/stats/all').json()
         self.assertEqual(5, all_stats['total']['shown'])
         self.assertEqual(2, all_stats['users'])
         self.assertEqual(0, self.get('/api/recommendations/stats', device='device-c').json()['total']['shown'])
@@ -179,7 +182,7 @@ class BackupApiTest(unittest.TestCase):
                       device=device)
             self.post('/api/recommendations/sync', {'logs': [self.rec('2026-10-18', 'home', ['c1'])]}, device=device)
             self.post('/api/product-interests/sync', {'productIds': ['https://example.com/p']}, device=device)
-        r = self.client.delete('/api/me', headers={'X-Device-Id': 'device-a'})
+        r = self.client.delete('/api/me', headers=self.auth('device-a'))
         self.assertEqual(200, r.status_code, r.text)
         d = r.json()['deleted']
         self.assertEqual(1, d['clothes'])
@@ -188,8 +191,8 @@ class BackupApiTest(unittest.TestCase):
         self.assertEqual(1, self.count(ClothingPhoto))
         self.assertEqual(1, self.count(RecommendationLog))
         with self.factory() as db:
-            self.assertEqual(['device-b'], list(db.scalars(select(User.device_id))))
-        self.assertEqual(0, self.get('/api/wardrobe').json()['totalCount'])        # 새 빈 사용자
+            self.assertEqual(1, db.query(User).count())
+        self.assertEqual(401, self.get('/api/wardrobe').status_code)  # deleted token cannot recreate the account
         self.assertEqual(1, self.get('/api/wardrobe', device='device-b').json()['totalCount'])
 
 

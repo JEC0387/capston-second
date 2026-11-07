@@ -1,0 +1,4 @@
+# Optional local research client only. Not production FastAPI/Android dependencies.
+# No model weights, provider keys, paid API, or automatic generation on install.
+gradio_client==2.7.2
+Pillow==13.0.0

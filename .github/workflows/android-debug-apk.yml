@@ -1,34 +1,58 @@
 name: Android debug APK
 
-# 이지민의 body-analysis-debug-apk.yml 을 이 저장소 구조(fashion_app/ 이 최상위)에 맞게 옮긴 것.
-# fashion_app 이 바뀐 커밋을 올리면 단위 테스트 → 디버그 APK 빌드 → Lint 를 돌리고,
-# 폰에 설치할 수 있는 APK 를 Actions 실행 화면의 Artifacts 에 올려 준다. (API 키는 넣지 않음)
+# Routine development: run focused tests locally; pushes do not consume Actions minutes.
+# PR checks retain their existing names and full coverage. Manual runs default to light
+# release-tool checks; select full only for an approved final Android/backend release check.
+# Manual dispatch is not operational until this workflow path is registered on the
+# default branch. See docs/P29_CI_USAGE_PROTECTION_20261105.md; no default-branch merge implied.
 on:
-  push:
-    branches:
-      - main
-      - 'merge/**'
-      - 'feature/**'
-    paths:
-      - .github/workflows/android-debug-apk.yml
-      - fashion_app/**
-      - backend/**
   pull_request:
     paths:
       - .github/workflows/android-debug-apk.yml
       - fashion_app/**
       - backend/**
+      - tools/**
   workflow_dispatch:
+    inputs:
+      check_level:
+        description: 'light: release-tool checks only; full: complete tests and guarded APK publication'
+        required: true
+        type: choice
+        default: light
+        options:
+          - light
+          - full
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: android-debug-apk-${{ github.ref }}
-  cancel-in-progress: true
+  # A lightweight manual check must never cancel a full release run or a PR check.
+  group: android-debug-apk-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || inputs.check_level || 'full' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  development:
+    if: github.event_name == 'workflow_dispatch' && inputs.check_level == 'light'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Lightweight release-tool safety checks (not Android or backend validation)
+        working-directory: tools
+        run: python3 -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
+
   build:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
+    # Never publish an update APK when a backend regression or startup matrix has failed.
+    needs: [backend, server-start]
+    # Serialize distribution checks/uploads across branches to reject stale builds.
+    concurrency:
+      group: fashionai-apk-distribution
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -62,11 +86,42 @@ jobs:
             --sdk_root="$ANDROID_HOME" \
             'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools'
 
-      - name: Keep the debug signing key between builds (so APK updates install over each other)
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: ${{ env.ANDROID_USER_HOME }}/debug.keystore
-          key: android-debug-keystore-${{ runner.os }}-v1
+      - name: Allocate and guard distribution version
+        working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python tools/apk_release.py prepare
+
+      - name: Restore explicitly managed signing key (never cache or regenerate a distribution key)
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo '::warning::Distribution signing is not configured. Tests will run; APK publication will be blocked.'
+            exit 0
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/fashionai-signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fashionai-signing/debug.keystore"
+          echo "ANDROID_DISTRIBUTION_KEYSTORE=$RUNNER_TEMP/fashionai-signing/debug.keystore" >> "$GITHUB_ENV"
+
+      - name: Export signing passwords to Gradle only
+        if: github.event_name != 'pull_request'
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$ANDROID_DISTRIBUTION_KEYSTORE" ]; then
+            [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ] || { echo '::error::Signing passwords missing'; exit 1; }
+            echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=${KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Focused P23 preservation and guest regressions
+        run: set -o pipefail; bash gradlew :app:testDebugUnitTest --tests '*DataAuthRecoverySafetyTest' --tests '*P23*' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/p23-focused.log"
 
       - name: Build debug APK
         run: set -o pipefail; bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log"
@@ -88,29 +143,152 @@ jobs:
           { echo '### Gradle errors'; echo '```'; cat "$RUNNER_TEMP/errors.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Lint
-        continue-on-error: true
         run: bash gradlew :app:lintDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
 
-      - name: Prepare APK and build information
-        if: always()
+      - name: Verify APK metadata and packaged features (validation only)
+        working-directory: .
+        run: python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk fashion_app/build/validation-apk
+
+      - name: Preserve complete primary regression results before Preview replaces test outputs
         run: |
-          [ -f app/build/outputs/apk/debug/app-debug.apk ] || exit 0
-          mkdir -p "$GITHUB_WORKSPACE/apk-artifact"
-          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/apk-artifact/fashion-app-debug.apk"
-          cd "$GITHUB_WORKSPACE/apk-artifact"
-          sha256sum fashion-app-debug.apk > SHA256SUMS.txt
-          printf 'Repository: %s\nBranch: %s\nCommit: %s\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$GITHUB_SHA" > BUILD_INFO.txt
-          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging fashion-app-debug.apk | sed -n '1p' >> BUILD_INFO.txt
+          cp -R app/build/test-results/testDebugUnitTest build/primary-test-results
+          cp -R app/build/reports/tests/testDebugUnitTest build/primary-test-reports
+
+      - name: Build isolated Preview and test isolation, sample photos and body entry
+        run: |
+          # Keep the complete primary regression above. Also exercise package-dependent
+          # sample resources, data preservation and Compose entry flows in the distributed app.
+          bash gradlew :app:assembleDebug :app:testDebugUnitTest -PfashionPreview=true \
+            --tests '*PreviewIsolationTest' --tests '*AppBuildInfoTest' \
+            --tests '*SampleWardrobePreviewTest' --tests '*WardrobeSampleRestoreUiTest' \
+            --tests '*BackupAndRecommendationLogTest' --tests '*BodyMethodSelectionUiTest' \
+            --tests '*BodyPhotoEntryUiTest' --tests '*BodyAnalysisResultUiTest' \
+            --tests '*BodyAvatarTest' --tests '*HomeWeatherUiTest' \
+            --tests '*AvatarProfileTest' --tests '*AvatarFittingTest' \
+            --tests '*PresentationFittingUiTest' --tests '*LocalVton*' --tests '*OfficialDemoTest' --tests '*P7*' \
+            --tests '*MeasuredSize*' --tests '*SilhouetteMeasurerTest' --tests '*P9*' --tests '*P10*' --tests '*P12*' --tests '*P16*' --tests '*P19*' --tests '*P22*' --tests '*P23*' \
+            --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Build Preview instrumentation harness (no device or live service execution)
+        run: |
+          bash gradlew :app:assembleDebugAndroidTest -PfashionPreview=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+          mkdir -p build/preview-instrumentation
+          cp app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk build/preview-instrumentation/
+
+      - name: Verify every packaged 64-bit ELF and APK ZIP alignment
+        working-directory: .
+        run: |
+          python tools/native_alignment.py fashion_app/app/build/outputs/apk/debug/app-debug.apk \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --output fashion_app/build/native-alignment/preview.json
+
+      - name: Render synthetic P9 and P10 mesh comparisons (CPU only)
+        working-directory: .
+        run: |
+          python -m pip install --disable-pip-version-check numpy==2.4.6 Pillow==13.0.0
+          python tools/render_p10_review.py fashion_app/app/build/p10-visual
+
+      - name: Record distribution readiness
+        id: distribution
+        if: github.event_name != 'pull_request'
+        env:
+          EXPECTED_CERTIFICATE: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          if [ -n "$ANDROID_DISTRIBUTION_KEYSTORE" ] && [ -n "$EXPECTED_CERTIFICATE" ]; then
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::APK publication blocked: original signing keystore and trusted certificate must be configured. Tests passing does NOT mean an installable update was published.'
+            echo 'APK publication BLOCKED: original signing key / certificate configuration missing. No update APK is published.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Verify Preview trusted signer and monotonic version before publishing
+        if: steps.distribution.outputs.ready == 'true'
+        working-directory: .
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APK_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk apk-artifact --distribution --preview
+
+      - name: Build separate device QA app and guarded instrumentation
+        if: success() && steps.distribution.outputs.ready == 'true'
+        run: bash gradlew :app:assembleDebug :app:assembleDebugAndroidTest -PfashionPreview=true -PfashionDeviceQa=true --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2
+
+      - name: Verify QA package and trusted signer (never a Preview update)
+        if: success() && steps.distribution.outputs.ready == 'true'
+        working-directory: .
+        env:
+          APK_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          python tools/apk_release.py verify fashion_app/app/build/outputs/apk/debug/app-debug.apk qa-artifact --preview --device-qa
+          python tools/native_alignment.py fashion_app/app/build/outputs/apk/debug/app-debug.apk \
+            --zipalign "$ANDROID_HOME/build-tools/36.0.0/zipalign" \
+            --output fashion_app/build/native-alignment/device-qa.json
+          python - <<'PY'
+          import hashlib, json, shutil
+          from pathlib import Path
+          from tools.apk_release import verify_instrumentation
+          target = Path('qa-artifact')
+          meta = json.loads((target / 'BUILD_INFO.json').read_text())
+          test = Path('fashion_app/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk')
+          verify_instrumentation(test, 'com.jeiu.fashionproject.preview.qa', meta['certificateSha256'])
+          destination = target / 'fashionai-device-qa-tests.apk'
+          shutil.copy2(test, destination)
+          with (target / 'SHA256SUMS.txt').open('a') as sums:
+              sums.write(hashlib.sha256(destination.read_bytes()).hexdigest() + '  ' + destination.name + '\n')
+          (target / 'QA_ONLY.txt').write_text('FashionAI QA P16: separate package/data, not a Preview update. Only opt-in P16DeviceQaTest; no live AI requests.\n')
+          PY
 
       - name: Upload APK
-        if: always()
+        if: success() && steps.distribution.outputs.ready == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: fashion-app-debug-apk
+          name: fashionai-preview-apk-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
           path: apk-artifact/
-          if-no-files-found: warn
+          if-no-files-found: error
+          # Keep the installable Preview through the November 16 presentation.
+          # These upload settings affect new artifacts only; never delete prior runs here.
           retention-days: 30
           compression-level: 0
+
+      - name: Upload opt-in Preview instrumentation harness
+        if: success() && steps.distribution.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fashionai-preview-instrumentation-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
+          path: fashion_app/build/preview-instrumentation/app-debug-androidTest.apk
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload validation metadata (contains no APK or signing key)
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: validation-info-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
+          path: |
+            fashion_app/build/validation-apk/BUILD_INFO.txt
+            fashion_app/build/validation-apk/BUILD_INFO.json
+            fashion_app/build/validation-apk/SHA256SUMS.txt
+            apk-artifact/BUILD_INFO.txt
+            apk-artifact/BUILD_INFO.json
+            apk-artifact/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload separate device QA app and tests
+        if: success() && steps.distribution.outputs.ready == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fashionai-device-qa-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
+          path: qa-artifact/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/fashionai-signing/debug.keystore"
 
       - name: Upload test and lint reports
         if: always()
@@ -118,15 +296,35 @@ jobs:
         with:
           name: test-and-lint-reports
           path: |
+            fashion_app/build/primary-test-results/
+            fashion_app/build/primary-test-reports/
             fashion_app/app/build/test-results/testDebugUnitTest/
             fashion_app/app/build/reports/tests/
             fashion_app/app/build/reports/lint-results-debug.*
+            fashion_app/app/build/p9-visual/
+            fashion_app/app/build/p10-visual/
+            fashion_app/build/native-alignment/
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 7
 
   backend:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashionai_test
+          POSTGRES_USER: fashionai_test
+          POSTGRES_PASSWORD: local-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fashionai_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         shell: bash
@@ -139,11 +337,16 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install test dependencies (AI 모델 패키지 제외)
-        run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy
+        run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
+      - name: APK release safety tests
+        working-directory: tools
+        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
-        run: set -o pipefail; python -m unittest discover -s tests -v 2>&1 | tee "$RUNNER_TEMP/backend.log"
+          DB_AUTO_CREATE: 'false'
+          TEST_POSTGRES_URL: postgresql+psycopg2://fashionai_test:local-test-only@127.0.0.1:5432/fashionai_test
+        run: set -o pipefail; python -m pytest -q 2>&1 | tee "$RUNNER_TEMP/backend.log"
 
       - name: Show backend test errors as annotations (로그인 없이 볼 수 있게)
         if: failure()
@@ -155,6 +358,7 @@ jobs:
 
   # 팀원 PC 와 같은 방법(requirements.txt 전체 설치 → uvicorn)으로 서버가 실제로 켜지는지 확인
   server-start:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
     strategy:
       fail-fast: false
       matrix:
@@ -205,9 +409,20 @@ jobs:
           curl -s http://127.0.0.1:8001/api/health/database > "$RUNNER_TEMP/health.json"
           cat "$RUNNER_TEMP/health.json"; echo
           grep -q '"ready":false' "$RUNNER_TEMP/health.json"
+      - name: Independent local model server starts safely without GPU or weights
+        env:
+          LOCAL_VTON_HEALTH_FILE: ${{ runner.temp }}/local-vton-health.json
+        run: |
+          python -m uvicorn local_vton_server:app --host 127.0.0.1 --port 8010 --no-proxy-headers --no-access-log > "$RUNNER_TEMP/local-vton.log" 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8010/health > "$RUNNER_TEMP/local-vton-health.json"; then break; fi
+            sleep 1
+          done
+          python -c 'import json,os; d=json.load(open(os.environ["LOCAL_VTON_HEALTH_FILE"])); assert d["service"] == "FashionAI local VTON" and d["ready"] is False'
+
       - name: Show server / pip errors as annotations
         if: failure()
         run: |
-          { tail -40 "$RUNNER_TEMP/server.log" 2>/dev/null; grep -iE 'error|failed' "$RUNNER_TEMP/pip.log" 2>/dev/null | tail -20; } > "$RUNNER_TEMP/errors.txt" || true
+          { tail -40 "$RUNNER_TEMP/server.log" 2>/dev/null; tail -15 "$RUNNER_TEMP/local-vton.log" 2>/dev/null; grep -iE 'error|failed' "$RUNNER_TEMP/pip.log" 2>/dev/null | tail -20; } > "$RUNNER_TEMP/errors.txt" || true
           msg=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/errors.txt" | awk '{printf "%s%%0A", $0}')
           echo "::error title=Server start (${{ matrix.os }})::${msg}"

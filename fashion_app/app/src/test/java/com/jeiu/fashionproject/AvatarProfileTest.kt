@@ -1,0 +1,96 @@
+package com.jeiu.fashionproject
+
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
+import com.jeiu.fashionproject.data.AvatarProfile
+import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.BodyAvatarMesh
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.xmlpull.v1.XmlPullParser
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = Application::class)
+class AvatarProfileTest {
+    private val app get() = ApplicationProvider.getApplicationContext<Application>()
+    private val prefs get() = app.getSharedPreferences("avatar_visual_profile_v1", 0)
+
+    @Before @After fun reset() { prefs.edit().clear().commit(); AvatarProfileStore.load(app) }
+
+    @Test fun validInputsProduceExplicitVisualEstimateAndInvalidInputsAreRejected() {
+        val slim = AvatarProfile(170f, 55f).parameters()
+        val fuller = AvatarProfile(170f, 95f).parameters()
+        assertTrue(slim.isValid())
+        assertTrue(fuller.waistWidthCm > slim.waistWidthCm)
+        assertTrue(fuller.notes.any { it.contains("추정") })
+        assertFalse(AvatarProfile(99f, 65f).valid())
+        assertFalse(AvatarProfile(170f, Float.NaN).valid())
+        assertFalse(AvatarProfile(170f, 65f, thigh = 5f).valid())
+    }
+
+    @Test fun eachAdjustmentChangesTheRenderedMeshGeometry() {
+        val basic = AvatarProfile(170f, 65f)
+        val mesh = BodyAvatarMesh.build(basic.parameters(), thighScale = basic.thigh)
+        listOf(
+            basic.copy(shoulder = 1.2f), basic.copy(waist = 1.2f),
+            basic.copy(hip = 1.2f), basic.copy(thigh = 1.2f), basic.copy(leg = 1.2f)
+        ).forEach { adjusted ->
+            val changed = BodyAvatarMesh.build(adjusted.parameters(), thighScale = adjusted.thigh)
+            assertTrue("${adjusted} did not change mesh", mesh.indices.any { mesh[it] != changed[it] })
+        }
+    }
+
+    @Test fun savesAndReloadsOnlyTheAvatarProfile() {
+        val profile = AvatarProfile(172f, 70f, 1.1f, .9f, 1.2f, 1.05f, 1.1f)
+        assertTrue(AvatarProfileStore.save(app, profile))
+        AvatarProfileStore.load(app)
+        assertEquals(profile, AvatarProfileStore.current.value)
+        assertNull(AvatarProfileStore.issue.value)
+    }
+
+    @Test fun corruptedProfileRemainsOnDiskUntilExplicitClear() {
+        prefs.edit().putString("profile", "{broken").commit()
+        AvatarProfileStore.load(app)
+        assertNull(AvatarProfileStore.current.value)
+        assertNotNull(AvatarProfileStore.issue.value)
+        assertFalse(AvatarProfileStore.save(app, AvatarProfile(170f, 65f)))
+        assertEquals("{broken", prefs.getString("profile", null))
+        assertTrue(AvatarProfileStore.clear(app))
+        assertNull(prefs.getString("profile", null))
+    }
+
+    @Test fun avatarResetDoesNotTouchExistingManualBodyData() {
+        val manual = app.getSharedPreferences("manual_body_measurements", 0)
+        manual.edit().putString("preservation_marker", "existing-user-data").commit()
+        try {
+            assertTrue(AvatarProfileStore.save(app, AvatarProfile(170f, 65f)))
+            assertTrue(AvatarProfileStore.clear(app))
+            assertEquals("existing-user-data", manual.getString("preservation_marker", null))
+        } finally {
+            manual.edit().remove("preservation_marker").commit()
+        }
+    }
+
+    @Test fun avatarPreferencesAreExcludedFromCloudBackupAndDeviceTransfer() {
+        val parser = app.resources.getXml(R.xml.data_extraction_rules)
+        var section = ""
+        val excluded = mutableMapOf<String, MutableSet<String>>()
+        while (parser.eventType != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                if (parser.name == "cloud-backup" || parser.name == "device-transfer") section = parser.name
+                if (parser.name == "exclude") excluded.getOrPut(section) { mutableSetOf() }
+                    .add(parser.getAttributeValue(null, "path"))
+            }
+            parser.next()
+        }
+        listOf("cloud-backup", "device-transfer").forEach { target ->
+            assertTrue("$target missing avatar profile", "avatar_visual_profile_v1.xml" in excluded[target].orEmpty())
+            assertTrue("$target missing avatar overlay", "avatar_fitting_overlay_v1.xml" in excluded[target].orEmpty())
+        }
+    }
+}

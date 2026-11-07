@@ -20,7 +20,8 @@ class AuthStoreTest {
         assertNull(AuthStore.parseLogin("""{"accountKey":"../../etc","email":""}"""))
         assertNull(AuthStore.parseLogin("not json"))
         assertTrue(AuthStore.messageFor(-1, null).contains("서버"))
-        assertEquals("서버에 GOOGLE_CLIENT_ID 가 없어요", AuthStore.messageFor(503, """{"detail":"서버에 GOOGLE_CLIENT_ID 가 없어요"}"""))
+        assertEquals("서버의 로그인 설정이 아직 준비되지 않았어요.", AuthStore.messageFor(503, """{"detail":"서버에 GOOGLE_CLIENT_ID 가 없어요"}"""))
+        assertFalse(AuthStore.messageFor(503, """{"detail":"sensitive-server-diagnostic"}""").contains("sensitive-server-diagnostic"))
     }
 
     @Test fun providerAndBrowserRedirect() {

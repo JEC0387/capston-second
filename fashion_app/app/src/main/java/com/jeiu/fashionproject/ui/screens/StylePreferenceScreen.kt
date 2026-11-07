@@ -144,7 +144,7 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
             }
             Column {
                 Text("스타일 취향 학습", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                Text("마음에 드는 코디에 ♥ — 평가한 만큼 AI 코디 추천에 반영돼요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                Text("마음에 드는 코디에 ♥ — 평가한 취향을 규칙 기반 코디 추천에 반영해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
             }
         }
 

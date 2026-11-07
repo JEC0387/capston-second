@@ -23,38 +23,35 @@ object ProfileStore {
     private val _styles = MutableStateFlow<List<String>>(emptyList())
     /** 지금 선호 스타일 (고른 순서) — [load] 또는 저장 뒤부터 값이 들어 있다 */
     val styles: StateFlow<List<String>> = _styles
-    @Volatile private var loaded = false
 
-    /** 폰에 저장된 선호 스타일을 [styles]에 불러온다 (여러 번 불러도 처음 한 번만 읽음) */
+    /** 폰에 저장된 선호 스타일을 [styles]에 불러온다 (저장값을 수정하지 않음) */
     fun load(context: Context) {
-        if (loaded) return
         _styles.value = preferredStyles(context)
-        loaded = true
     }
 
-    /** 예전 버전의 스타일 이름(클래식 · 빈티지)은 새 이름(포멀 · 아메카지)으로 바꿔 읽는다 */
+    /** Keep stored labels intact; recommendation logic projects supported legacy aliases. */
     fun preferredStyles(context: Context): List<String> {
         val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_STYLES, null) ?: return emptyList()
         return runCatching {
             val arr = JSONArray(raw)
-            PreferredStyles.normalize(List(arr.length()) { arr.getString(it) })
+            // Read-only: legacy and unsupported labels remain available to restore/export.
+            List(arr.length()) { arr.getString(it) }
         }.getOrDefault(emptyList())
     }
 
     /** 백업 코드로 복원할 때 — 서버의 선호 스타일을 폰에만 써 둔다 */
     fun writeForRestore(context: Context, styles: List<String>) {
-        val valid = PreferredStyles.normalize(styles)
-        if (valid.isEmpty()) return
+        val valid = styles.filter { it.isNotBlank() }.distinct()
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_STYLES, JSONArray(valid).toString()).commit()
-        _styles.value = valid; loaded = true
+        _styles.value = valid
     }
 
     /** 선호 스타일 저장 (폰 + 서버). 고른 순서를 그대로 지킨다. */
     fun savePreferredStyles(context: Context, styles: List<String>) {
-        val valid = PreferredStyles.normalize(styles)
+        val valid = styles.filter { it.isNotBlank() }.distinct()
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString(KEY_STYLES, JSONArray(valid).toString()).apply()
-        _styles.value = valid; loaded = true
-        DbSync.pushPreferredStyles(valid)
+        _styles.value = valid
+        DbSync.pushPreferredStyles(PreferredStyles.normalize(valid))
     }
 }

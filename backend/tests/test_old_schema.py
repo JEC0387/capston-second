@@ -1,3 +1,4 @@
+from tests.support_auth import operator_get
 """마이그레이션(002 · 003 · 004)을 아직 적용하지 않은 예전 DB 에서도 기존 기능이 멈추지 않는지 (격리된 SQLite)."""
 import os
 os.environ['DATABASE_URL'] = ''
@@ -10,6 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 import main
 from database import Base, get_db, optional_db, reset_schema_cache
+from tests.support_auth import AuthHeaders
 
 NEW_TABLES = ('clothing_photos', 'recommendation_logs', 'saved_outfits', 'outfit_plans', 'product_interests', 'taste_events')
 NEW_COLUMNS = (('clothes', 'brand'), ('clothes', 'price'), ('users', 'gender'))
@@ -33,7 +35,7 @@ class OldSchemaTest(unittest.TestCase):
         main.app.dependency_overrides[get_db] = test_db
         main.app.dependency_overrides[optional_db] = test_db
         self.client = TestClient(main.app)
-        self.h = {'X-Device-Id': 'old-db'}
+        self.h = AuthHeaders(self.client)('old-db')
 
     def tearDown(self):
         self.client.close()
@@ -59,7 +61,7 @@ class OldSchemaTest(unittest.TestCase):
         r = self.client.post('/api/saved-outfits/sync', json={'outfits': [{'itemIds': ['c1']}]}, headers=self.h)
         self.assertEqual(503, r.status_code)
         # 전체 통계 · 내 데이터 지우기도 동작
-        s = self.client.get('/api/stats/overview').json()
+        s = operator_get(self.client, '/api/stats/overview').json()
         self.assertEqual((1, 1, 0, 0), (s['clothes'], s['wearLogs'], s['savedOutfits'], s['pricedClothes']))
         d = self.client.delete('/api/me', headers=self.h)
         self.assertEqual(200, d.status_code, d.text)

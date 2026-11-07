@@ -1,5 +1,7 @@
 package com.jeiu.fashionproject.data
 
+import com.jeiu.fashionproject.BuildConfig
+
 /**
  * 첫 실행 때 옷장에 넣어 두는 샘플 옷 12벌.
  *
@@ -13,7 +15,9 @@ package com.jeiu.fashionproject.data
  * 옷 정보 수정에서 사진 종류를 바꿀 수 있도록 원본·배경 제거·옷만 버전 주소도 함께 둔다.
  */
 object SampleWardrobe {
-    private const val RES = "android.resource://com.jeiu.fashionproject/drawable/"
+    // Preview has a different applicationId; packaged URIs must match the installed APK.
+    private val RES: String get() = "android.resource://${BuildConfig.APPLICATION_ID}/drawable/"
+    private const val OLD_RESOURCE_PREFIX = "android.resource://com.jeiu.fashionproject/drawable/"
 
     fun items(): List<WardrobeItem> = listOf(
         // 옷만 오려낸 사진 — 원본은 오려내기 전 쇼핑몰 사진
@@ -40,6 +44,27 @@ object SampleWardrobe {
 
     /** 옛날 버전의 샘플 사진 주소(외부 사이트) — 이 주소를 가진 샘플은 새 정보로 바꾼다. */
     fun isOutdated(item: WardrobeItem): Boolean = item.imageUri.startsWith("https://loremflickr.com")
+
+    /**
+     * Repair only known bundled sample drawables saved under the old package.
+     * Keep customized photos, names, favorites and deleted sample IDs untouched.
+     */
+    fun rebaseBundledUris(saved: WardrobeItem, bundled: WardrobeItem, packageName: String): WardrobeItem {
+        if (saved.id != bundled.id) return saved
+        val bundledNames = bundled.photoUris().map { it.substringAfterLast('/') }.toSet()
+        val currentPrefix = "android.resource://$packageName/drawable/"
+        fun rebase(uri: String?): String? {
+            if (uri == null || !uri.startsWith(OLD_RESOURCE_PREFIX)) return uri
+            val name = uri.removePrefix(OLD_RESOURCE_PREFIX)
+            return if (name in bundledNames) currentPrefix + name else uri
+        }
+        return saved.copy(
+            imageUri = rebase(saved.imageUri) ?: saved.imageUri,
+            originalUri = rebase(saved.originalUri),
+            cutoutUri = rebase(saved.cutoutUri),
+            garmentUri = rebase(saved.garmentUri)
+        )
+    }
 
     private fun sample(
         id: String,

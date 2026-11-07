@@ -1,6 +1,5 @@
 package com.jeiu.fashionproject.navigation
 
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -80,23 +79,6 @@ fun AppNavigation() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val showBottomBar = currentRoute in bottomNavRoutes
-    // 로그인하지 않았으면(구글 · 게스트 둘 다 아님) 로그인 화면부터
-    val startRoute = androidx.compose.runtime.remember {
-        com.jeiu.fashionproject.data.AuthStore.load(context)
-        if (com.jeiu.fashionproject.data.AuthStore.mode.value == com.jeiu.fashionproject.data.AuthStore.Mode.NONE ||
-            com.jeiu.fashionproject.data.AuthStore.redirect.value != null)   // 로그인 중에 앱이 다시 켜진 경우
-            Screen.Login.route
-        // 선호 스타일을 이미 골랐으면 매번 스타일 선택 화면을 거치지 않고 바로 홈 (바꾸기는 마이페이지에서)
-        else if (com.jeiu.fashionproject.data.ProfileStore.hasSelection(context)) Screen.Home.route
-        else Screen.Onboarding.route
-    }
-    val authScope = androidx.compose.runtime.rememberCoroutineScope()
-    // 브라우저 로그인에서 돌아왔는데 로그인 화면이 아니면 로그인 화면을 열어 마무리한다
-    val pendingRedirect by com.jeiu.fashionproject.data.AuthStore.redirect.collectAsState()
-    androidx.compose.runtime.LaunchedEffect(pendingRedirect) {
-        if (pendingRedirect != null && navController.currentDestination?.route != Screen.Login.route &&
-            navController.currentDestination != null) navController.navigate(Screen.Login.route)
-    }
 
     Scaffold(
         bottomBar = {
@@ -136,21 +118,11 @@ fun AppNavigation() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = startRoute,
+            startDestination = Screen.Onboarding.route,
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Login.route) {
-                // 마이페이지(게스트)에서 들어왔으면 돌아가고, 앱 첫 화면이면 온보딩으로
-                val fromInside = navController.previousBackStackEntry != null
-                com.jeiu.fashionproject.ui.screens.LoginScreen(onDone = {
-                    if (fromInside) navController.popBackStack()
-                    else navController.navigate(
-                        if (com.jeiu.fashionproject.data.ProfileStore.hasSelection(context)) Screen.Home.route
-                        else Screen.Onboarding.route
-                    ) {
-                        popUpTo(Screen.Login.route) { inclusive = true }
-                    }
-                }, allowGuest = !fromInside)
+                LoginScreen(onDone = { navController.popBackStack() }, allowGuest = true)
             }
             composable(Screen.Onboarding.route) {
                 OnboardingScreen(onStart = {
@@ -163,7 +135,6 @@ fun AppNavigation() {
                 HomeScreen(
                     onOutfitRecommendClick = { navController.navigate(Screen.OutfitRecommend.route()) },
                     onForecastClick = { navController.navigate(Screen.OutfitRecommend.route(tab = 1)) },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route()) },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     onShopClick = { preset ->
                         // 홈에서 보던 목록을 쇼핑 탭에서 이어서 전체로 보여준다 (쇼핑 탭이 성별을 앞에 붙임)
@@ -187,8 +158,9 @@ fun AppNavigation() {
             }
             composable(Screen.Wardrobe.route) {
                 WardrobeScreen(
+                    gender = gender,
                     onOutfitRecommend = { scope -> navController.navigate(Screen.OutfitRecommend.route(scope = scope.name)) },
-                    onProductDetail = { navController.navigate(Screen.ProductDetail.route()) },
+                    onProductDetail = { id -> navController.navigate(Screen.ProductDetail.route(id)) },
                     onShop = { navController.navigate(Screen.Shop.route) },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
                     onEditClothing = { id -> navController.navigate(Screen.AddClothing.route(id)) },
@@ -196,8 +168,7 @@ fun AppNavigation() {
                     onWearLog = { navController.navigate(Screen.WearLog.route()) },
                     onWearCalendar = { navController.navigate(Screen.WearCalendar.route) },
                     onMissingItem = { navController.navigate(Screen.MissingItem.route) },
-                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) },
-                    gender = gender
+                    onMusinsaCloset = { navController.navigate(Screen.MusinsaCloset.route) }
                 )
             }
             composable(Screen.MusinsaCloset.route) {
@@ -237,19 +208,20 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.MissingItem.route) {
-                MissingItemScreen(onBack = { navController.popBackStack() }, gender = gender)
+                MissingItemScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.StylePreference.route) {
                 StylePreferenceScreen(onBack = { navController.popBackStack() }, gender = gender)
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route()) },
                     weatherViewModel = weatherViewModel,
                     gender = gender)
             }
-            composable(Screen.VirtualFitting.route) {
-                VirtualFittingScreen(onBack = { navController.popBackStack() })
+            composable(Screen.VirtualFitting.route+"?avatar={avatar}",arguments=listOf(navArgument("avatar"){type=NavType.BoolType;defaultValue=false})) {entry->
+                VirtualFittingScreen(onBack = { navController.popBackStack() },
+                    startAvatar=entry.arguments?.getBoolean("avatar") ?: false,
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) })
             }
             composable(
                 Screen.OutfitRecommend.route,
@@ -257,6 +229,7 @@ fun AppNavigation() {
                     navArgument("scope") { type = NavType.StringType; defaultValue = "OWNED" })
             ) { entry ->
                 OutfitRecommendScreen(
+                    gender = gender,
                     initialTab = entry.arguments?.getInt("tab") ?: 0,
                     initialScope = com.jeiu.fashionproject.recommend.ClothingScope.entries.firstOrNull {
                         it.name == entry.arguments?.getString("scope")
@@ -264,11 +237,32 @@ fun AppNavigation() {
                     onShop = { navController.navigate(Screen.Shop.route) },
                     onBack = { navController.popBackStack() },
                     onAddClothing = { navController.navigate(Screen.AddClothing.route()) },
-                    weatherViewModel = weatherViewModel,
-                    gender = gender
+                    weatherViewModel = weatherViewModel
                 )
             }
             composable(Screen.BodyAnalysis.route) {
+                BodyMethodSelectionScreen(
+                    onBack = { navController.popBackStack() },
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) },
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) },
+                    onSizeComparison = { navController.navigate(Screen.BodySizeComparison.route) },
+                    onHistory = { navController.navigate(Screen.BodyHistory.route) }
+                )
+            }
+            composable(Screen.BodySizeComparison.route) {
+                BodySizeComparisonScreen(
+                    onBack = { navController.popBackStack() },
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
+                )
+            }
+            composable(Screen.BodyAnalysisAvatar.route) {
+                BodyAvatarSetupScreen(
+                    onBack = { navController.popBackStack() },
+                    onFitting={navController.navigate(Screen.VirtualFitting.route+"?avatar=true")},
+                    onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
+                )
+            }
+            composable(Screen.BodyAnalysisPhoto.route) {
                 BodyAnalysisScreen(
                     onBack = { navController.popBackStack() },
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
@@ -294,19 +288,18 @@ fun AppNavigation() {
                     gender = gender
                 )
             }
-            composable(
-                Screen.ProductDetail.route,
-                arguments = listOf(navArgument("id") { type = NavType.StringType; nullable = true; defaultValue = null })
+            composable(Screen.ProductDetail.route,
+                arguments = listOf(navArgument("productId") { type = NavType.StringType; nullable = true; defaultValue = null })
             ) { entry ->
                 ProductDetailScreen(
+                    productId = entry.arguments?.getString("productId"),
                     onBack = { navController.popBackStack() },
-                    productId = entry.arguments?.getString("id"),
-                    gender = gender,
-                    onProduct = { id -> navController.navigate(Screen.ProductDetail.route(id)) }
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) }
                 )
             }
             composable(Screen.MyPage.route) {
                 MyPageScreen(
+                    onLogin = { navController.navigate(Screen.Login.route) },
                     bodyTypeKo = analyzedBodyTypeKo,
                     gender = gender,
                     onGenderSelected = { userPreferencesViewModel.setGender(context, it) },
@@ -317,14 +310,9 @@ fun AppNavigation() {
                     onVirtualFitting = { navController.navigate(Screen.VirtualFitting.route) },
                     onBodyHistory = { navController.navigate(Screen.BodyHistory.route) },
                     onOutfitBook = { navController.navigate(Screen.OutfitBook.route()) },
-                    onLogin = { navController.navigate(Screen.Login.route) },
-                    onLogout = {
-                        // 보내지 못한 기록을 서버로 보낸 뒤 이 폰의 기록을 지우고 로그인 화면으로 다시 시작
-                        authScope.launch {
-                            val synced = com.jeiu.fashionproject.data.AuthStore.signOut(context)
-                            if (!synced) android.widget.Toast.makeText(context,
-                                "서버에 연결되지 않아 일부 기록을 보내지 못했어요", android.widget.Toast.LENGTH_LONG).show()
-                            com.jeiu.fashionproject.data.BackupRestore.restartApp(context)
+                    onReturnToStart = {
+                        navController.navigate(Screen.Onboarding.route) {
+                            popUpTo(0) { inclusive = true }
                         }
                     }
                 )
@@ -345,12 +333,16 @@ fun AppNavigation() {
                 StyleAnalysisScreen(onBack = { navController.popBackStack() })
             }
             composable(Screen.StyleSuggestion.route) {
+                val wardrobe by com.jeiu.fashionproject.data.WardrobeStore.items.collectAsState()
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    com.jeiu.fashionproject.data.WardrobeStore.load(context)
+                }
                 StyleSuggestionScreen(
-                    analysis = (bodyAnalysisState as? BodyAnalysisUiState.Success)?.result,
-                    onBack = { navController.popBackStack() },
-                    onProductClick = { navController.navigate(Screen.ProductDetail.route()) },
+                    analysisState = bodyAnalysisState,
                     gender = gender,
-                    onBodyAnalysis = { navController.navigate(Screen.BodyAnalysis.route) }
+                    wardrobe = wardrobe,
+                    onBack = { navController.popBackStack() },
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) }
                 )
             }
         }

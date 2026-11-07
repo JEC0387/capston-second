@@ -22,6 +22,7 @@ object ClosetPhotoRules {
 
     /** 옷(w×h)을 캔버스 가운데에 긴 변이 [FILL]이 되게 놓는 자리. 그림자 자리를 위해 살짝 위로 */
     fun layout(w: Int, h: Int, canvas: Int = CANVAS, fill: Float = FILL): Placement {
+        require(w > 0 && h > 0 && canvas > 0 && fill.isFinite() && fill > 0f && fill <= 1f)
         val scale = canvas * fill / maxOf(w, h)
         val sw = w * scale; val sh = h * scale
         return Placement((canvas - sw) / 2f, (canvas - sh) / 2f - canvas * 0.015f, sw, sh)
@@ -39,7 +40,7 @@ object ClosetPhotoRules {
      * 테두리 색이 고르지 않거나, 지운 뒤 남는 옷 영역이 너무 작거나 크면 null (이 방법으로는 못 지움).
      */
     fun plainBackgroundMask(px: IntArray, w: Int, h: Int): BooleanArray? {
-        if (w < 8 || h < 8 || px.size != w * h) return null
+        if (w < 8 || h < 8 || w.toLong() * h != px.size.toLong()) return null
         // ① 테두리(2px) 평균 색과 흩어진 정도
         val border = ArrayList<Int>()
         for (x in 0 until w) for (y in listOf(0, 1, h - 2, h - 1)) border += px[y * w + x]

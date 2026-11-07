@@ -24,8 +24,12 @@ import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.ui.components.TasteReportCard
 import com.jeiu.fashionproject.ui.components.BackupRestoreDialog
+import com.jeiu.fashionproject.ui.components.AccountAccessDialog
 import com.jeiu.fashionproject.ui.components.ServerAddressDialog
 import com.jeiu.fashionproject.data.ServerSettings
+import com.jeiu.fashionproject.data.AppBuildInfo
+import com.jeiu.fashionproject.data.DataAuth
+import com.jeiu.fashionproject.data.DbSync
 import com.jeiu.fashionproject.ui.components.RecommendationStatsCard
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.WearLogStore
@@ -47,12 +51,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.BodyRecords
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.ProfileStore
-import com.jeiu.fashionproject.data.AuthStore
-import com.jeiu.fashionproject.recommend.PreferredStyles
-import com.jeiu.fashionproject.ui.components.PreferredStyleChips
-import androidx.compose.runtime.mutableStateListOf
 import com.jeiu.fashionproject.notify.WeatherAlertScheduler
 import com.jeiu.fashionproject.ui.components.PrivacyPolicyDialog
 import com.jeiu.fashionproject.ui.components.ServerStatusBadge
@@ -72,30 +73,25 @@ fun MyPageScreen(
     onVirtualFitting: () -> Unit = {},
     onBodyHistory: () -> Unit = {},
     onOutfitBook: () -> Unit = {},
-    onLogin: () -> Unit = {},      // 게스트 → 구글 로그인 화면
-    onLogout: () -> Unit = {}
+    onReturnToStart: () -> Unit = {},
+    onLogin: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val buildInfo = remember(context) { AppBuildInfo.installed(context) }
+    val manualBody by ManualBodyStore.current.collectAsState()
     val scope = rememberCoroutineScope()
     var showNotifDialog by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var showServerDialog by remember { mutableStateOf(false) }
     var showVersionDialog by remember { mutableStateOf(false) }
-    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showAccountDialog by remember { mutableStateOf(false) }
+    val authState by DataAuth.state.collectAsState()
+    val pendingCount by DbSync.pendingCount.collectAsState()
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var saveRecords by remember { mutableStateOf(PrivacyConsent.canSaveRecords(context)) }
     var weatherAlertOn by remember { mutableStateOf(WeatherAlertScheduler.isEnabled(context)) }
-    var showStyleDialog by remember { mutableStateOf(false) }
-    // 로그인 상태 (구글 계정 / 게스트)
-    AuthStore.load(context)
-    val authMode by AuthStore.mode.collectAsState()
-    val account by AuthStore.account.collectAsState()
-    val signedIn = authMode == AuthStore.Mode.SIGNED_IN
-    // 선호 스타일 — 저장하면 홈 · 코디 추천이 바로 다시 계산된다
-    ProfileStore.load(context)
-    val savedStyles by ProfileStore.styles.collectAsState()
 
     // 알림 권한 (안드로이드 13 이상은 허용을 받아야 알림을 보낼 수 있음)
     var pendingNotifAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -132,10 +128,13 @@ fun MyPageScreen(
         WearLogStore.load(context)
         WardrobeStore.load(context)
         ProductInterestStore.load(context)
+        ManualBodyStore.load(context)
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
-    val nickname = profile?.nickname?.takeIf { it.isNotBlank() && it != "나의 스타일" } ?: account?.name?.ifBlank { null } ?: "나의 스타일"
-    val email = if (signedIn) (account?.email ?: profile?.email.orEmpty()) else "로그인 없이 사용 중 · 기록은 이 폰에만 저장돼요"
+    val signedIn by com.jeiu.fashionproject.data.AuthStore.account.collectAsState()
+    val nickname = profile?.nickname ?: signedIn?.name?.takeIf { it.isNotBlank() } ?: "나의 스타일"
+    val email = signedIn?.let { a -> "${a.provider.label} 로그인" + (a.email.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") }
+        ?: profile?.email?.takeIf { it.isNotBlank() } ?: "로그인 안 함 · 로컬 게스트"
     // 서버에 연결되지 않으면 폰에 있는 기록으로 센다 (예전에는 고정 숫자 12 · 8 · 24 를 보여 줬음)
     val wardrobeItems by WardrobeStore.items.collectAsState()
     val interestIds by ProductInterestStore.ids.collectAsState()
@@ -172,18 +171,6 @@ fun MyPageScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(nickname, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 Text(email, style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                if (signedIn) {
-                    Box(
-                        Modifier.clip(RoundedCornerShape(12.dp)).background(CamelLight).padding(horizontal = 10.dp, vertical = 3.dp)
-                    ) { Text("${account?.provider?.label ?: "Google"} 계정으로 로그인됨", style = MaterialTheme.typography.labelSmall, color = Brown) }
-                } else {
-                    Button(
-                        onClick = onLogin,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
-                    ) { Text("로그인하고 기록 지키기", style = MaterialTheme.typography.labelLarge) }
-                }
                 ServerStatusBadge()
             }
             // 통계
@@ -281,27 +268,11 @@ fun MyPageScreen(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
                     Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
-                    Spacer(modifier = Modifier.weight(1f))
-                    TextButton(onClick = { showStyleDialog = true }) { Text("변경", color = Camel, fontWeight = FontWeight.SemiBold) }
                 }
-                // 폰에 저장된 선택 우선, 없으면 서버 프로필 (예전 이름은 새 이름으로)
-                val styles = if (ProfileStore.hasSelection(context)) savedStyles
-                    else PreferredStyles.normalize(profile?.preferredStyles.orEmpty())
+                // 폰에 저장된 선택 우선, 없으면 서버 프로필
+                val styles = if (ProfileStore.hasSelection(context)) ProfileStore.preferredStyles(context) else profile?.preferredStyles.orEmpty()
                 if (styles.isEmpty()) {
-                    Text("아직 고르지 않았어요 — [변경]을 눌러 골라 주세요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                } else {
-                    Text("고른 스타일에 맞는 코디를 먼저 추천해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                }
-                if (showStyleDialog) {
-                    PreferredStyleDialog(
-                        initial = styles,
-                        onDismiss = { showStyleDialog = false },
-                        onSave = { picked ->
-                            ProfileStore.savePreferredStyles(context, picked)
-                            showStyleDialog = false
-                            Toast.makeText(context, "선호 스타일을 저장했어요. 코디 추천에 바로 반영돼요.", Toast.LENGTH_SHORT).show()
-                        }
-                    )
+                    Text("아직 고르지 않았어요 (첫 화면에서 선택)", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -367,6 +338,9 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
             HorizontalDivider(color = LightGray)
+            MyMenuItem(icon = Icons.Filled.Edit, label = if (manualBody == null) "신체 치수 직접 입력" else "직접 입력 치수 · 키 ${manualBody!!.heightCm} cm",
+                onClick = onBodyAnalysis)
+            HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.DeleteOutline, label = "현재 세션 체형 데이터 삭제", onClick = {
                 BodyAnalysisSessionStore.clear()
                 Toast.makeText(context, "현재 세션의 측정값을 삭제했어요", Toast.LENGTH_SHORT).show()
@@ -420,10 +394,10 @@ fun MyPageScreen(
                 )
             }
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 1.0.0", onClick = { showVersionDialog = true })
+            MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
-            if (signedIn) MyMenuItem(icon = Icons.Filled.ExitToApp, label = "로그아웃", onClick = { showLogoutDialog = true })
-            else MyMenuItem(icon = Icons.Filled.AccountCircle, label = "로그인 (구글 · 카카오 · 페이스북 · Apple)", onClick = onLogin)
+            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "계정 · 게스트 이용", onClick = { showAccountDialog = true })
+            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -536,9 +510,14 @@ fun MyPageScreen(
             onDismissRequest = { showVersionDialog = false },
             title = { Text("앱 정보", fontWeight = FontWeight.Bold) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("FashionAI")
-                    Text("버전: 1.0.0", color = MediumGray)
+                    Text("버전: ${buildInfo.versionName} (${buildInfo.versionCode})", color = MediumGray)
+                    Text("빌드: ${buildInfo.buildNumber} · ${buildInfo.shortSha}", color = MediumGray)
+                    Text("브랜치: ${buildInfo.branch}", color = MediumGray)
+                    Text("패키지: ${buildInfo.packageName}", color = MediumGray)
+                    Text("서명 SHA-256: ${buildInfo.certificateSha256}", color = MediumGray)
+                    if (buildInfo.sourceDirty) Text("로컬 수정 빌드 · 배포본 아님", color = MediumGray)
                     Text("AI 기반 패션 스타일링 앱", color = MediumGray)
                 }
             },
@@ -587,19 +566,14 @@ fun MyPageScreen(
         )
     }
 
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            title = { Text("로그아웃", fontWeight = FontWeight.Bold) },
-            text = { Text("로그아웃하면 이 폰의 기록을 지우고 로그인 화면으로 돌아가요.\n옷장 · 착용 기록 · 취향은 계정에 저장돼 있어 다시 로그인하면 그대로 돌아와요.") },
-            confirmButton = {
-                TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
-                    Text("로그아웃", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) { Text("취소", color = MediumGray) }
-            }
+    if (showAccountDialog) {
+        AccountAccessDialog(
+            onDismiss = { showAccountDialog = false },
+            onBackupRestore = { showAccountDialog = false; showBackupDialog = true },
+            onReturnToStart = { showAccountDialog = false; onReturnToStart() },
+            preview = com.jeiu.fashionproject.BuildConfig.PREVIEW_BUILD,
+            authState = authState,
+            pendingCount = pendingCount
         )
     }
 }
@@ -620,32 +594,4 @@ private fun MyMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
     }
-}
-
-/** 마이페이지 [변경] — 선호 스타일 다시 고르기 (여러 개 선택, 모두 해제도 가능) */
-@Composable
-private fun PreferredStyleDialog(initial: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
-    val picked = remember { mutableStateListOf<String>().apply { addAll(initial) } }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("선호 스타일 변경", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "여러 개 고를 수 있어요. 고른 스타일에 맞는 코디를 홈과 코디 추천에서 먼저 보여 드려요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MediumGray
-                )
-                PreferredStyleChips(picked, perRow = 3) { style ->
-                    if (style in picked) picked.remove(style) else picked.add(style)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(picked.toList()) }) { Text("저장", color = Camel, fontWeight = FontWeight.Bold) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("취소", color = MediumGray) }
-        }
-    )
 }

@@ -28,12 +28,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.ClothingCategories
+import com.jeiu.fashionproject.data.StylePreferenceStore
 import com.jeiu.fashionproject.data.WardrobeStore
+import com.jeiu.fashionproject.data.BackendApi
+import com.jeiu.fashionproject.data.ClothingPhotoConsent
 import com.jeiu.fashionproject.recommend.StyleTagger
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.AddClothingUiState
@@ -73,6 +77,7 @@ fun AddClothingScreen(
     var priceInput by remember { mutableStateOf("") }
     // 수정 화면에서는 AI 결과로 입력값을 덮어쓰지 않다가, 사용자가 AI 후보를 직접 누를 때만 반영한다
     var applyAiOnce by remember { mutableStateOf(false) }
+    var photoApproval by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let { viewModel.tagImage(context, it) }
@@ -109,6 +114,14 @@ fun AddClothingScreen(
     // 옷만 오려내기가 끝나면 추천 사진 종류로 바꿔 보여준다
     LaunchedEffect(tagged?.originalUri, tagged?.defaultMode) {
         tagged?.let { imageMode = it.defaultMode }
+    }
+    photoApproval?.let { (photo, server) ->
+        ClothingPhotoUploadDialog(photo, server,
+            onCancel = { photoApproval = null },
+            onConfirm = { consent ->
+                photoApproval = null
+                viewModel.classifyWithConsent(context, consent)
+            })
     }
 
     Column(
@@ -150,7 +163,7 @@ fun AddClothingScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     CircularProgressIndicator(color = Camel)
-                    Text("배경을 지우고 옷을 분석하고 있어요…", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+                    Text("기기에서 배경과 색상을 확인하고 있어요…", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
                 }
             }
 
@@ -206,6 +219,16 @@ fun AddClothingScreen(
                     }
 
                     // AI 분류 결과 배지
+                    s.classificationUri?.let { photo ->
+                        Text("사진 선택만으로는 서버에 전송하지 않아요. 종류를 직접 선택하거나 별도로 서버 분류를 요청할 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                        OutlinedButton(enabled = !s.classifying && !s.garmentLoading,
+                            modifier = Modifier.testTag("requestClothingClassification"),
+                            onClick = { photoApproval = photo to BackendApi.BASE_URL }) {
+                            Text(if (s.classifying) "서버 분류 중…" else "서버 분류 · 전송 안내")
+                        }
+                    }
+                    s.classificationMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MediumGray) }
                     val aiFound = s.fromServer && s.candidates.isNotEmpty()
                     Card(
                         colors = CardDefaults.cardColors(containerColor = if (aiFound) CamelLight else LightGray),
@@ -230,7 +253,7 @@ fun AddClothingScreen(
                                         !s.analyzed -> "저장된 옷 정보를 고쳐요"
                                         aiFound -> "패션 AI 분류 완료"
                                         s.fromServer -> "AI가 옷을 찾지 못했어요 — 직접 골라주세요"
-                                        else -> "오프라인 — 종류를 직접 골라주세요"
+                                        else -> "기기 내 처리 — 종류를 직접 골라주세요"
                                     },
                                     style = MaterialTheme.typography.labelLarge, color = CharcoalBlack, fontWeight = FontWeight.SemiBold
                                 )
@@ -340,7 +363,7 @@ fun AddClothingScreen(
                     // 스타일 (옷 종류·색으로 자동, 수정 가능) — 코디 추천에 쓰인다
                     Label("스타일")
                     ChipRow {
-                        StyleTagger.STYLES.forEach { style ->
+                        com.jeiu.fashionproject.recommend.StyleTagger.STYLES.forEach { style ->
                             FilterChip(
                                 selected = (styleOverride ?: autoStyle) == style,
                                 // 자동으로 골라진 스타일을 다시 누르면 자동으로 되돌린다
@@ -381,9 +404,9 @@ fun AddClothingScreen(
                                 brandInput, price)
                             else viewModel.save(context, name, category, subCategory, detailType, season, styleOverride, imageMode,
                                 brandInput, price)
-                            onDone()
+                            if (viewModel.state.value is AddClothingUiState.Idle) onDone()
                         },
-                        enabled = !s.garmentLoading,
+                        enabled = !s.garmentLoading && !s.classifying,
                         colors = ButtonDefaults.buttonColors(containerColor = Camel),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().height(52.dp)
@@ -418,6 +441,20 @@ fun AddClothingScreen(
     }
 }
 
+/** Cancel is a pure dismissal: the selected image and all draft fields remain intact. */
+@Composable
+internal fun ClothingPhotoUploadDialog(photo: String, server: String, onCancel: () -> Unit,
+                                      onConfirm: (ClothingPhotoConsent) -> Unit) {
+    val destination = runCatching { java.net.URI(server).host }.getOrNull().orEmpty()
+    val validHttps = remember(photo, server) { ClothingPhotoConsent.confirm(photo, server) != null }
+    AlertDialog(onDismissRequest = onCancel,
+        title = { Text("이 사진을 서버로 전송할까요?") },
+        text = { Text("전송 대상: ${destination.ifBlank { "설정되지 않음" }}\n선택한 옷 사진을 종류 분류용으로 보냅니다. 서버 운영자의 사진 보관·삭제 정책을 확인한 경우에만 동의하세요. HTTPS와 별도 인증이 필요하며 평가용 앱은 서버 분류를 차단합니다. 취소해도 사진과 작성 내용은 유지됩니다.") },
+        confirmButton = { TextButton(enabled = validHttps, modifier = Modifier.testTag("confirmClothingUpload"),
+            onClick = { ClothingPhotoConsent.confirm(photo, server)?.let(onConfirm) }) { Text("확인하고 1회 전송") } },
+        dismissButton = { TextButton(modifier = Modifier.testTag("cancelClothingUpload"), onClick = onCancel) { Text("취소") } })
+}
+
 /** 등록 첫 화면 — 사진 선택 안내와 촬영 팁 */
 @Composable
 private fun PhotoPickIntro(onPick: () -> Unit) {
@@ -432,9 +469,9 @@ private fun PhotoPickIntro(onPick: () -> Unit) {
         ) {
             Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = Camel, modifier = Modifier.size(40.dp))
         }
-        Text("옷 사진을 올리면 AI가 자동으로 태깅해요", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
+        Text("옷 사진으로 내 옷장에 등록해요", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
         Text(
-            "배경을 자동으로 지우고, 패션 AI(DeepFashion2)와 색상 분석으로\n종류 · 색상 · 계절을 채워드립니다.",
+            "배경과 색상은 기기에서 확인하고, 종류와 계절은 직접 고를 수 있어요.\n서버 AI 분류는 사진 전송에 따로 동의한 경우에만 요청해요.",
             style = MaterialTheme.typography.bodyMedium, color = MediumGray
         )
         // 촬영 팁 — 누끼가 잘 되는 사진 찍는 법

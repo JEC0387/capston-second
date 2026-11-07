@@ -1,8 +1,5 @@
 package com.jeiu.fashionproject.ui.screens
 
-import com.jeiu.fashionproject.data.ProfileStore
-import com.jeiu.fashionproject.data.Gender
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -26,9 +23,12 @@ import com.jeiu.fashionproject.data.ShopCatalog
 import com.jeiu.fashionproject.recommend.OutfitSources
 import com.jeiu.fashionproject.recommend.ClothingScope
 import com.jeiu.fashionproject.data.DayForecast
+import com.jeiu.fashionproject.data.ProfileStore
+import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
 import com.jeiu.fashionproject.ui.components.rememberOutfitBookActions
@@ -70,18 +70,20 @@ fun OutfitRecommendScreen(
     initialTab: Int = 0,
     initialScope: ClothingScope = ClothingScope.OWNED,
     onShop: () -> Unit = {},
-    gender: Gender? = null   // 마이페이지 성별 — 남성이면 원피스 · 치마 등은 추천하지 않는다
+    gender: Gender? = null
 ) {
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
+    val manualBody by ManualBodyStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
-    LaunchedEffect(sessionMeasurements) {
+    LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
-        if (BodyProfileAnalyzer.fromMeasurements(sessionMeasurements) == null)
+        if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileAnalyzer.fromMeasurements(sessionMeasurements)
-        ?: savedBodyProfile.takeIf { PrivacyConsent.canSaveRecords(context) }
+    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
+        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
         ProductInterestStore.load(context)
@@ -123,8 +125,7 @@ fun OutfitRecommendScreen(
     // 👍👎를 눌러도 카드가 바로 바뀌지 않도록 취향 점수는 계산할 때의 값만 쓴다
     val scores by StylePreferenceStore.scores.collectAsState()
     val taste by TastePreferenceStore.scores.collectAsState()
-    // 온보딩 · 마이페이지에서 고른 선호 스타일
-    ProfileStore.load(context)
+    LaunchedEffect(Unit) { ProfileStore.load(context) }
     val preferredStyles by ProfileStore.styles.collectAsState()
     // [오늘 이거 입었어요]를 눌러도 오늘 코디 카드가 바뀌지 않도록, 오늘 코디는 오늘 착용 기록을 빼고 계산한다 (황상윤)
     val pastLogs = remember(wearLogs, today) { wearLogs.filter { it.date != today } }
@@ -136,8 +137,7 @@ fun OutfitRecommendScreen(
     }
     val recommendation: OutfitEngine.Result? = remember(candidateItems, scope, pastLogs, wearLogs, weatherInfo, tab, situation, travelDay, dayPlan, bodyProfile, preferredStyles, gender) {
         when (tab) {
-            0 -> OutfitEngine.recommend(candidateItems, weatherInfo, pastLogs, scores, taste = taste, bodyProfile = bodyProfile,
-                preferred = preferredStyles, gender = gender)
+            0 -> OutfitEngine.recommend(candidateItems, weatherInfo, pastLogs, scores, taste = taste, bodyProfile = bodyProfile, preferred = preferredStyles, gender = gender)
             1 -> dayPlan?.result
             else -> {
                 val day = if (situation == Situation.TRAVEL) travelDay else null

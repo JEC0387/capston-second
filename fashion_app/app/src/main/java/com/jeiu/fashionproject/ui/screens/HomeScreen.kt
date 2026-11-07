@@ -1,7 +1,5 @@
 package com.jeiu.fashionproject.ui.screens
 
-import com.jeiu.fashionproject.data.ProfileStore
-
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -32,6 +30,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -41,9 +40,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
 import com.jeiu.fashionproject.data.OutfitPlanStore
@@ -92,7 +93,6 @@ private val popularItems = listOf(
 fun HomeScreen(
     onOutfitRecommendClick: () -> Unit,
     onForecastClick: () -> Unit,
-    onProductClick: () -> Unit,
     onAddClothing: () -> Unit,
     onShopClick: (presetQuery: String?) -> Unit,
     weatherViewModel: WeatherViewModel,
@@ -102,14 +102,16 @@ fun HomeScreen(
     val weatherState by weatherViewModel.state.collectAsState()
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
+    val manualBody by ManualBodyStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
-    LaunchedEffect(sessionMeasurements) {
+    LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
-        if (BodyProfileAnalyzer.fromMeasurements(sessionMeasurements) == null)
+        if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileAnalyzer.fromMeasurements(sessionMeasurements)
-        ?: savedBodyProfile.takeIf { PrivacyConsent.canSaveRecords(context) }
+    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
+        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { weatherViewModel.fetchWeather() }
@@ -141,10 +143,8 @@ fun HomeScreen(
     // 👍👎·[오늘 이거 입었어요]를 눌러도 카드가 바로 바뀌지 않도록
     // 취향 점수는 계산할 때의 값만 쓰고, 오늘 착용 기록은 빼고 계산한다 (황상윤)
     val pastLogs = remember(wearLogs) { wearLogs.filter { it.date != WearDates.today() } }
-    // 온보딩 · 마이페이지에서 고른 선호 스타일 — 바꾸면 오늘의 코디가 바로 다시 계산된다
-    ProfileStore.load(context)
+    LaunchedEffect(Unit) { ProfileStore.load(context) }
     val preferredStyles by ProfileStore.styles.collectAsState()
-    // 스타일 취향 학습 · 👍👎 점수는 계산할 때의 값을 쓴다 (👍👎를 눌러도 카드가 바로 바뀌지 않게 — 다음에 홈에 올 때 반영)
     val recommendation = remember(wardrobe, pastLogs, weatherInfo, bodyProfile, preferredStyles, gender) {
         OutfitEngine.recommend(wardrobe, weatherInfo, pastLogs, StylePreferenceStore.scores.value,
             taste = TastePreferenceStore.scores.value, bodyProfile = bodyProfile, preferred = preferredStyles, gender = gender)
@@ -188,12 +188,12 @@ fun HomeScreen(
     // 내일 코디 (계획 4 — 3단계) — 예보에서 내일을 찾아 코디와 알림 문구를 만든다
     val forecastState by weatherViewModel.forecast.collectAsState()
     val forecastDays = (forecastState as? ForecastUiState.Success)?.days.orEmpty()
-    val tomorrowPlan = remember(wardrobe, wearLogs, forecastDays, weatherInfo, bodyProfile) {
+    val tomorrowPlan = remember(wardrobe, wearLogs, forecastDays, weatherInfo, bodyProfile, preferredStyles, gender) {
         val index = forecastDays.indexOfFirst { it.date == WearDates.daysAgo(-1) }
         if (index < 0) null
         else ForecastAlerts.plan(forecastDays, index, weatherInfo?.temp, wardrobe, wearLogs,
             StylePreferenceStore.scores.value, count = 1, taste = TastePreferenceStore.scores.value,
-            bodyProfile = bodyProfile)
+            bodyProfile = bodyProfile, preferred = preferredStyles, gender = gender)
     }
 
     Column(
@@ -210,10 +210,8 @@ fun HomeScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 로그인한 이름으로 인사 (게스트면 그냥 "안녕하세요")
-            val accountName = com.jeiu.fashionproject.data.AuthStore.account.collectAsState().value?.name?.takeIf { it.isNotBlank() }
             Column {
-                Text(accountName?.let { "${it}님, 안녕하세요" } ?: "안녕하세요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+                Text("안녕하세요", style = MaterialTheme.typography.bodyMedium, color = MediumGray)
                 Text(
                     "오늘의 스타일 찾기",
                     style = MaterialTheme.typography.headlineSmall,
@@ -240,66 +238,12 @@ fun HomeScreen(
                         .background(CamelLight),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(accountName?.take(1) ?: "나", style = MaterialTheme.typography.labelLarge, color = Brown)
+                    Text("나", style = MaterialTheme.typography.labelLarge, color = Brown)
                 }
             }
         }
 
-        // 날씨 카드
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .clickable(onClick = onOutfitRecommendClick),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Camel),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        val weatherIcon = when (val s = weatherState) {
-                            is WeatherUiState.Success -> if (s.info.isRainy() || s.info.isCloudy()) Icons.Filled.Cloud else Icons.Filled.WbSunny
-                            else -> Icons.Filled.WbSunny
-                        }
-                        Icon(weatherIcon, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
-                        Text(
-                            when (val s = weatherState) {
-                                is WeatherUiState.Success -> "${s.info.condition} · ${s.info.temp}°C · 습도 ${s.info.humidity}%"
-                                is WeatherUiState.Loading -> "날씨 불러오는 중..."
-                                is WeatherUiState.Error -> s.message
-                            },
-                            style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Text(
-                        when (val s = weatherState) {
-                            is WeatherUiState.Success -> s.info.advice()
-                            else -> "오늘 날씨에 맞는 코디를 추천해드려요"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = White.copy(alpha = 0.85f)
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(White.copy(alpha = 0.2f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text("AI 추천 보기", style = MaterialTheme.typography.labelLarge, color = White, fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
+        HomeWeatherCard(weatherState, onOutfitRecommendClick)
 
         Spacer(modifier = Modifier.height(24.dp))
 
@@ -550,4 +494,64 @@ private fun TomorrowOutfitSection(
             }
         }
     }
+}
+
+@Composable
+internal fun HomeWeatherCard(state: WeatherUiState, onClick: () -> Unit) {
+        // 날씨 카드
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .clickable(onClick = onClick),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Camel),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f).padding(end = 12.dp).testTag("homeWeatherSummary"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        val weatherIcon = when (val s = state) {
+                            is WeatherUiState.Success -> if (s.info.isRainy() || s.info.isCloudy()) Icons.Filled.Cloud else Icons.Filled.WbSunny
+                            else -> Icons.Filled.WbSunny
+                        }
+                        Icon(weatherIcon, contentDescription = null, tint = White, modifier = Modifier.size(18.dp))
+                        Text(
+                            when (val s = state) {
+                                is WeatherUiState.Success -> "${s.info.condition} · ${s.info.temp}°C · 습도 ${s.info.humidity}%"
+                                is WeatherUiState.Loading -> "날씨 불러오는 중..."
+                                is WeatherUiState.Error -> s.message
+                            },
+                            style = MaterialTheme.typography.titleMedium, color = White, fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Text(
+                        when (val s = state) {
+                            is WeatherUiState.Success -> s.info.advice()
+                            else -> "오늘 날씨에 맞는 코디를 추천해드려요"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = White.copy(alpha = 0.85f)
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(White.copy(alpha = 0.2f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text("AI 추천 보기", modifier = Modifier.widthIn(max = 96.dp).testTag("homeWeatherAction"), style = MaterialTheme.typography.labelLarge, color = White, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
 }

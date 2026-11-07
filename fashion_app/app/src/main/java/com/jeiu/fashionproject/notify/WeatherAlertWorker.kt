@@ -1,6 +1,5 @@
 package com.jeiu.fashionproject.notify
 
-import com.jeiu.fashionproject.ui.viewmodel.UserPreferencesViewModel
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -24,7 +23,6 @@ import com.jeiu.fashionproject.data.WearLogStore
 import com.jeiu.fashionproject.data.WeatherRepository
 import com.jeiu.fashionproject.recommend.ForecastAlerts
 import com.jeiu.fashionproject.recommend.OutfitEngine
-import com.jeiu.fashionproject.data.ProfileStore
 
 /**
  * 저녁 8시쯤 실행 — 내일 예보를 받아 홈 화면의 "내일 코디"와 같은 규칙으로 알림을 만든다.
@@ -74,9 +72,7 @@ class WeatherAlertWorker(context: Context, params: WorkerParameters) : Coroutine
             logs = WearLogStore.logs.value,
             styleScores = StylePreferenceStore.scores.value,
             count = 1,
-            taste = TastePreferenceStore.scores.value,
-            preferred = ProfileStore.preferredStyles(ctx),
-            gender = UserPreferencesViewModel.saved(ctx)
+            taste = TastePreferenceStore.scores.value
         )
 
         val day = plan.day

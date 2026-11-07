@@ -11,7 +11,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +28,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +43,11 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
 import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
+import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
+import com.jeiu.fashionproject.data.ManualBodyStore
+import com.jeiu.fashionproject.data.BodyDimensions
+import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.ui.components.MeasuredSizeCard
 import com.jeiu.fashionproject.ui.theme.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryFlow
 import com.jeiu.fashionproject.ui.viewmodel.BodyPhotoEntryRequest
@@ -66,6 +71,16 @@ fun BodyAnalysisScreen(
     val state by viewModel.state.collectAsState()
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
+    val manualMeasurements by ManualBodyStore.current.collectAsState()
+    var manualExpanded by rememberSaveable { mutableStateOf(false) }
+    var tipsExpanded by rememberSaveable { mutableStateOf(false) }
+    var detailsExpanded by rememberSaveable { mutableStateOf(false) }
+    var sizeExpanded by rememberSaveable { mutableStateOf(false) }
+    var styleExpanded by rememberSaveable { mutableStateOf(false) }
+    var avatarExpanded by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(manualMeasurements?.heightCm) {
+        if (heightInput.isBlank()) manualMeasurements?.let { viewModel.updateHeightInput(it.heightCm.toString()) }
+    }
 
     val entryFlow = remember { BodyPhotoEntryFlow() }
     var entryPrompt by remember { mutableStateOf<BodyPhotoEntryRequest?>(null) }
@@ -180,7 +195,8 @@ fun BodyAnalysisScreen(
         ) {
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
-                    Text("1. 키 입력 (필수)", color = Brown, fontWeight = FontWeight.SemiBold)
+                    Text("먼저 키를 확인해주세요", color = CharcoalBlack,
+                        style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
                         value = heightInput,
                         onValueChange = viewModel::updateHeightInput,
@@ -196,89 +212,12 @@ fun BodyAnalysisScreen(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth().testTag("bodyHeightInput")
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp)
-                            .clip(RoundedCornerShape(20.dp))
-                            .border(1.5.dp, LightGray, RoundedCornerShape(20.dp))
-                            .background(White)
-                            .testTag("bodyGalleryPicker").clickable { requestPhoto(BodyPhotoSource.GALLERY) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(72.dp)
-                                    .clip(RoundedCornerShape(36.dp))
-                                    .background(CamelLight),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Filled.CameraAlt,
-                                    contentDescription = null,
-                                    tint = Camel,
-                                    modifier = Modifier.size(32.dp)
-                                )
-                            }
-                            Text(
-                                "전신 사진을 업로드하세요",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = CharcoalBlack,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                "정면에서 찍은 전신 사진이 가장 정확해요",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MediumGray
-                            )
-                        }
-                    }
-
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = CamelLight),
-                        elevation = CardDefaults.cardElevation(0.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                "촬영 팁",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = Brown,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            listOf(
-                                "정면을 향해 서주세요",
-                                "몸 전체가 나오도록 찍어주세요",
-                                "밝은 곳에서 촬영해주세요",
-                                "몸에 붙는 옷을 입으면 더 정확해요"
-                            ).forEach {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(4.dp)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(Camel)
-                                    )
-                                    Text(it, style = MaterialTheme.typography.bodySmall, color = Brown)
-                                }
-                            }
-                        }
-                    }
+                    Text("정면 전신 사진을 준비해주세요.", style = MaterialTheme.typography.bodySmall,
+                        color = MediumGray)
 
                     Button(
                         onClick = { requestPhoto(BodyPhotoSource.CAMERA) },
-                        modifier = Modifier.testTag("bodyCameraButton").fillMaxWidth().height(52.dp),
+                        modifier = Modifier.testTag("bodyCameraButton").fillMaxWidth().heightIn(min = 52.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Camel, contentColor = White)
                     ) {
@@ -293,7 +232,7 @@ fun BodyAnalysisScreen(
 
                     OutlinedButton(
                         onClick = { requestPhoto(BodyPhotoSource.GALLERY) },
-                        modifier = Modifier.testTag("bodyGalleryButton").fillMaxWidth().height(48.dp),
+                        modifier = Modifier.testTag("bodyGalleryButton").fillMaxWidth().heightIn(min = 48.dp),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Camel),
                         border = ButtonDefaults.outlinedButtonBorder.copy(width = 1.dp)
@@ -306,8 +245,36 @@ fun BodyAnalysisScreen(
                         )
                     }
 
+                    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = CamelLight)) {
+                        Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("촬영 팁", modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleMedium, color = Brown)
+                                TextButton(onClick = { tipsExpanded = !tipsExpanded },
+                                    modifier = Modifier.testTag("bodyTipsToggle")) {
+                                    Text(if (tipsExpanded) "접기" else "자세히 보기")
+                                }
+                            }
+                            Text("정면 · 전신 · 밝은 곳", style = MaterialTheme.typography.bodySmall, color = Brown)
+                            if (tipsExpanded) Column(Modifier.testTag("bodyTipsDetails"),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("정면을 향해 서주세요", "머리부터 발끝까지 나오게 해주세요",
+                                    "밝은 곳에서 촬영해주세요", "몸에 붙는 옷을 입으면 윤곽 확인에 도움이 돼요").forEach {
+                                    Text("• $it", style = MaterialTheme.typography.bodySmall, color = BrownDark)
+                                }
+                            }
+                        }
+                    }
+
                     entryError?.let { Text(it, color = Brown, modifier = Modifier.testTag("bodyEntryError")) }
                     PrivacyNote()
+                    OutlinedButton(onClick = { manualExpanded = !manualExpanded },
+                        modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
+                        Text(if (manualExpanded) "신체 치수 직접 입력 닫기" else "신체 치수 직접 입력")
+                    }
+                    if (manualExpanded) ManualBodyEntryCard(photo = null,
+                        onUseHeight = viewModel::updateHeightInput)
                     TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
                         Text("지난 측정 기록 · 변화 그래프 보기", color = Brown)
                     }
@@ -354,10 +321,14 @@ fun BodyAnalysisScreen(
                         AsyncImage(
                             model = s.imageUri,
                             contentDescription = "분석한 사진",
-                            contentScale = ContentScale.Crop,
+                            contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize()
                         )
+                        com.jeiu.fashionproject.ui.components.BodyMeasurementOverlay(result.measurements?.guides,Modifier.fillMaxSize())
                     }
+
+                    if(result.measurements?.guides!=null) Text("측정 위치: 청록 어깨 · 노랑 허리 · 보라 골반. 선은 대표 위치, cm는 주변 여러 행의 안정적인 중앙값이에요.",
+                        color=MediumGray,style=MaterialTheme.typography.bodySmall)
 
                     // 분석 결과
                     Card(
@@ -397,8 +368,12 @@ fun BodyAnalysisScreen(
                                 )
                             }
 
+                            OutlinedButton(onClick = { detailsExpanded = !detailsExpanded },
+                                modifier = Modifier.testTag("bodyDetailsExpand")) {
+                                Text(if (detailsExpanded) "상세 비율 접기" else "상세 비율 보기")
+                            }
+                            if (detailsExpanded) {
                             HorizontalDivider(color = LightGray)
-
                             Text(
                                 "신체 비율 추정 (정면 너비, 둘레 아님)",
                                 style = MaterialTheme.typography.titleMedium,
@@ -436,6 +411,7 @@ fun BodyAnalysisScreen(
                                     )
                                 }
                             }
+                            }
                         }
                     }
 
@@ -449,36 +425,55 @@ fun BodyAnalysisScreen(
                                 color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
                             val cm = result.measurements
                             if (cm != null) {
-                                listOf(
+                                val mainMeasurements = listOf(
                                     "입력 키" to cm.heightCm,
                                     "어깨 너비" to cm.shoulderWidthCm,
                                     "허리 너비" to cm.waistWidthCm,
-                                    "엉덩이 너비" to cm.hipWidthCm,
+                                    "엉덩이 너비" to cm.hipWidthCm
+                                )
+                                val extraMeasurements = listOf(
                                     "다리 길이 (힙~발목)" to cm.legLengthCm,
                                     "상체 길이 (어깨~힙)" to cm.torsoLengthCm
-                                ).forEach { (label, value) ->
+                                )
+                                (mainMeasurements + if (detailsExpanded) extraMeasurements else emptyList()).forEach { (label, value) ->
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(label, color = CharcoalBlack, style = MaterialTheme.typography.bodyMedium)
+                                        Text(label, color = CharcoalBlack, style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f))
                                         Text(formatMeasurement(value, 1, " cm"), color = Camel)
                                     }
                                 }
-                                Text("정면 사진과 입력 키로 환산한 추정값이에요. 허리·엉덩이는 둘레가 아닌 너비이며, 옷·자세·카메라 각도에 따라 실측과 차이가 있어요.",
+                                Text("정면 사진의 너비를 키로 환산한 추정값이에요. 허리·엉덩이는 실제 둘레가 아니에요.",
                                     color = MediumGray, style = MaterialTheme.typography.bodySmall)
+                                if (detailsExpanded) Text("가슴 둘레·팔 길이·앞뒤 깊이는 측정하지 않았어요. 옷·자세·카메라 각도와 원근 왜곡 때문에 실측과 차이가 있어요.",
+                                    color=MediumGray,style=MaterialTheme.typography.bodySmall)
                             } else {
                                 Text(result.measurementIssue ?: "cm 측정을 완료하지 못했어요. 다시 촬영해주세요.",
                                     color = MediumGray, style = MaterialTheme.typography.bodyMedium)
                                 OutlinedButton(onClick = { viewModel.reset() }) { Text("다시 시도하기") }
                             }
-                            HorizontalDivider(color = LightGray)
-                            Text("어깨/엉덩이 비율  ${formatMeasurement(result.shoulderToHip, 2)}", color = CharcoalBlack)
-                            Text("허리/엉덩이 비율  ${formatMeasurement(result.waistToHip, 2)}", color = CharcoalBlack)
+                            if (detailsExpanded) {
+                                HorizontalDivider(color = LightGray)
+                                Text("어깨/엉덩이 비율  ${formatMeasurement(result.shoulderToHip, 2)}", color = CharcoalBlack)
+                                Text("허리/엉덩이 비율  ${formatMeasurement(result.waistToHip, 2)}", color = CharcoalBlack)
+                            }
                         }
                     }
 
-                    result.measurements?.let { BodySizeRecommendationCard(it) }
+                    if (BodyAnalysisSessionStore.isValid(result.measurements)) {
+                        Button(onClick = { avatarExpanded = true },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("bodyAvatarFromPhoto")) {
+                            Text("이 치수로 3D 모델 만들기")
+                        }
+                        if (avatarExpanded) {
+                            TextButton(onClick = { avatarExpanded = false }) { Text("3D 설정 닫기") }
+                            com.jeiu.fashionproject.ui.components.AvatarSetupCard(
+                                photo = result.measurements, autoImportPhoto = true)
+                        }
+                    } else Text("유효한 cm 측정값이 없어 이 사진으로 3D 모델을 만들 수 없어요.",
+                        style = MaterialTheme.typography.bodySmall, color = Brown)
 
                     // 체형 특징
-                    Card(
+                    if (detailsExpanded) Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = CamelLight),
@@ -512,8 +507,26 @@ fun BodyAnalysisScreen(
                         }
                     }
 
-                    // 스타일 추천
-                    Card(
+                    OutlinedButton(onClick = { sizeExpanded = !sizeExpanded },
+                        modifier = Modifier.fillMaxWidth().testTag("bodySizeExpand")) {
+                        Text(if (sizeExpanded) "의류 사이즈 비교 접기" else "의류 사이즈 비교")
+                    }
+                    if (sizeExpanded) result.measurements?.let {
+                        BodySizeRecommendationCard(it)
+                        MeasuredSizeCard(BodyDimensions.resolve(manualMeasurements, it))
+                    }
+                    OutlinedButton(onClick = { manualExpanded = !manualExpanded },
+                        modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
+                        Text(if (manualExpanded) "신체 치수 직접 입력 닫기" else "신체 치수 직접 입력")
+                    }
+                    if (manualExpanded) ManualBodyEntryCard(photo = result.measurements,
+                        onUseHeight = viewModel::updateHeightInput)
+
+                    OutlinedButton(onClick = { styleExpanded = !styleExpanded },
+                        modifier = Modifier.fillMaxWidth().testTag("bodyStyleExpand")) {
+                        Text(if (styleExpanded) "스타일 설명 접기" else "스타일 설명 보기")
+                    }
+                    if (styleExpanded) Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = White),

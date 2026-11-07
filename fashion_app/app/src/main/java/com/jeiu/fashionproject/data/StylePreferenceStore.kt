@@ -22,6 +22,7 @@ object StylePreferenceStore {
 
     val styles = PreferredStyles.OPTIONS
     private val legacyKeys = listOf("클래식", "빈티지")
+    private const val CANONICAL_SCORES = "canonical_scores_v1"
 
     private val _scores = MutableStateFlow(styles.associateWith { 0 })
     val scores: StateFlow<Map<String, Int>> = _scores
@@ -32,8 +33,7 @@ object StylePreferenceStore {
     fun load(context: Context) {
         // 1) 로컬값 먼저 표시 (즉시 반응)
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        _scores.value = PreferredStyles.canonicalScores(
-            (styles + legacyKeys).associateWith { p.getInt("score_$it", 0) })
+        _scores.value = readLocalScores(context)
         _ratedCount.value = p.getInt("rated_count", 0)
 
         // 2) 서버가 켜져 있으면 서버값으로 덮어쓰기
@@ -68,7 +68,8 @@ object StylePreferenceStore {
     private fun persist(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         _scores.value.forEach { (k, v) -> p.putInt("score_$k", v) }
-        legacyKeys.forEach { p.remove("score_$it") }   // 새 이름으로 합쳤으니 예전 칸은 지운다
+        // Retain legacy/unknown keys for backup compatibility; the marker prevents double counting.
+        p.putBoolean(CANONICAL_SCORES, true)
         p.putInt("rated_count", _ratedCount.value).apply()
     }
 
@@ -77,7 +78,15 @@ object StylePreferenceStore {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear()
         val merged = PreferredStyles.canonicalScores(scores)
         styles.forEach { p.putInt("score_$it", merged[it] ?: 0) }
-        p.putInt("rated_count", ratedCount).commit()
+        // Explicit restore owns this store. Retain source score keys as well as its canonical projection.
+        scores.filterKeys { it !in styles }.forEach { (key, value) -> p.putInt("score_$key", value) }
+        p.putBoolean(CANONICAL_SCORES, true).putInt("rated_count", ratedCount).commit()
+    }
+
+    internal fun readLocalScores(context: Context): Map<String, Int> {
+        val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val keys = if (p.getBoolean(CANONICAL_SCORES, false)) styles else styles + legacyKeys
+        return PreferredStyles.canonicalScores(keys.associateWith { p.getInt("score_$it", 0) })
     }
 
     /** 현재 점수 기준 선호 스타일 순위 */
