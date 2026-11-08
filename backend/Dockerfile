@@ -1,7 +1,8 @@
 # Railway 배포용 서버 상자 설명서
 # 내 PC 에서 시험:  docker build -t fashion-backend .
 #                  docker run --rm -p 8000:8000 --env-file .env fashion-backend
-FROM python:3.10-slim
+# Genlook and the shared outfit service use asyncio.timeout (Python >= 3.11).
+FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -19,8 +20,8 @@ RUN apt-get update \
 RUN pip install --upgrade pip \
     && pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY requirements.txt requirements-genlook.txt ./
+RUN pip install -r requirements.txt -r requirements-genlook.txt
 
 COPY . .
 
@@ -29,4 +30,6 @@ RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
     && python -c "import fashion_detection; fashion_detection._download_df2_model()"
 
 # Railway 가 정해 주는 PORT 번호로 켠다 (없으면 8000)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Exactly one owner for the file-backed request/spend journals. Trust forwarded
+# headers only from the operator's verified proxy addresses (default loopback).
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log --forwarded-allow-ips \"${FASHION_TRUSTED_PROXY_IPS:-127.0.0.1}\""]

@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select, text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
 
 import main
@@ -16,6 +16,7 @@ from auth_api import issue_legacy_ticket
 from auth_limits import budget
 from database import Base, get_db
 from db_models import AuthCredential, AuthRateBucket, LegacyClaimTicket, User
+from migration_runner import local_test_connection_args
 from tests.test_auth_api import bearer, register
 
 
@@ -24,14 +25,17 @@ def postgres(monkeypatch):
     raw = os.getenv("TEST_POSTGRES_URL")
     if not raw:
         pytest.skip("TEST_POSTGRES_URL local PostgreSQL test service is not configured")
-    url = make_url(raw)
-    if url.host not in ("localhost", "127.0.0.1") or url.database != "fashionai_test":
-        pytest.fail("Refusing non-local or non-test PostgreSQL database")
+    # Driver query parameters can override URL host/dbname. Reuse the runner's
+    # fail-closed target parser, then pass only validated explicit fields.
+    target = local_test_connection_args(raw)
+    url = URL.create("postgresql+psycopg2", username=target["user"], password=target["password"],
+                     host=target["host"], port=target["port"], database=target["dbname"])
     schema = "auth_test_" + uuid4().hex
-    control = create_engine(url)
+    control = create_engine(url, connect_args={"connect_timeout": target["connect_timeout"]})
     with control.begin() as conn:
         conn.execute(text(f'CREATE SCHEMA "{schema}"'))
-    engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}"})
+    engine = create_engine(url, connect_args={"options": f"-csearch_path={schema}",
+                                             "connect_timeout": target["connect_timeout"]})
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     try:
         # Verify team-lineage auth follow-ups, including idempotent hardening DDL.
