@@ -34,3 +34,5 @@ Sources:
 The candidate is debug-signed, private installtest software, not a formal Release. Existing package, key, database schemas, private credentials, old APKs and all device data are preserved. APK audit and current test results are included in the separate P61 delivery directory.
 
 Current P61 installtest focused run: 151 passed, 0 failed, 0 skipped. Real Compose/Robolectric plus synthetic image and storage fixtures; not device or Genlook generation evidence. Initial obsolete legacy-button expectation and a stale compiled test-selector attempt are preserved in local first-attempt logs; final source was recompiled before the passing run.
+
+Normal-build auth regression: 24 final cases passed, 0 failed/skipped (23 initially passed; the fixed-position primary button test was corrected to assert visibility instead of scroll, then both entry cases passed). No application security assertion was relaxed. Original failed XML and final XML are retained locally. An operator-approved account must be dedicated to this sandbox; do not reuse another installed app's token/recovery code.
