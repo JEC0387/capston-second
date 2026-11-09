@@ -4,6 +4,12 @@ import android.app.Application
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.AuthStore
+import com.jeiu.fashionproject.data.BackendApi
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.RecordedRequest
+import org.junit.After
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Before
@@ -23,7 +29,22 @@ class P57AuthPreservationTest {
     private lateinit var before: Map<String, Map<String, *>>
     private lateinit var files: List<File>
 
+    private lateinit var providerServer: MockWebServer
+    private lateinit var previousServer: String
+
     @Before fun seedIsolatedRecords() {
+        previousServer = BackendApi.BASE_URL
+        providerServer = MockWebServer().apply {
+            dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse =
+                    if (request.path == "/api/auth/providers") MockResponse()
+                        .setHeader("Content-Type", "application/json")
+                        .setBody("{\"google\":false,\"kakao\":false}")
+                    else MockResponse().setResponseCode(404)
+            }
+            start()
+        }
+        BackendApi.BASE_URL = providerServer.url("/").toString().trimEnd('/')
         records.forEach { name ->
             app.getSharedPreferences(name, 0).edit().putString("p57_synthetic", "existing-$name").commit()
         }
@@ -35,6 +56,11 @@ class P57AuthPreservationTest {
         files.forEach { it.parentFile!!.mkdirs(); it.writeBytes(byteArrayOf(1, 3, 7, 9)) }
         before = records.associateWith { app.getSharedPreferences(it, 0).all.toMap() }
         AuthStore.consumeRedirect()
+    }
+
+    @After fun restoreServer() {
+        BackendApi.BASE_URL = previousServer
+        providerServer.shutdown()
     }
 
     private fun assertRecordsPreserved() {
@@ -55,7 +81,7 @@ class P57AuthPreservationTest {
 
     @Test fun unavailableProvidersAndCancelledCallbackCannotChangeAccountOrData() = runBlocking {
         AuthStore.continueAsGuest(app)
-        // The app may carry the public Google web client ID; the server switch still keeps every login off.
+        // A deterministic loopback provider fixture, never the live production switch.
         assertTrue(AuthStore.serverProviders().values.all { !it })
         assertTrue(AuthStore.signInWithGoogle(app) is AuthStore.Result.Failed)
         AuthStore.Provider.entries.forEach {

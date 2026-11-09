@@ -12,6 +12,10 @@ import okhttp3.tls.HeldCertificate
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Before
+import org.junit.After
+import org.robolectric.util.ReflectionHelpers
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -24,6 +28,51 @@ import javax.net.ssl.HttpsURLConnection
 @Config(sdk = [35], application = Application::class)
 class P57PhotoConsentTest {
     private val app get() = ApplicationProvider.getApplicationContext<Application>()
+
+    // Like P23DataPreservationTest, simulate a new process for each synthetic
+    // account. The real application must keep its once-per-process init guard.
+    private val nullableAuthFields = listOf("context", "vault", "recovery", "requestedRecovery",
+        "requestedRecoveryServer", "binding")
+    private val booleanAuthFields = listOf("storageLocked", "enabled", "restorePending", "legacyPending")
+    private lateinit var previousAuthFields: Map<String, Any?>
+    private lateinit var previousAuthPreferences: Map<String, *>
+    private var previousAuthState = "uninitialized"
+    private val authState: MutableStateFlow<String>
+        get() = ReflectionHelpers.getStaticField(DataAuth::class.java, "_state")
+
+    @Before fun isolateSyntheticAuthProcess() {
+        previousAuthFields = (nullableAuthFields + booleanAuthFields).associateWith { name ->
+            ReflectionHelpers.getStaticField<Any?>(DataAuth::class.java, name)
+        }
+        previousAuthPreferences = app.getSharedPreferences("data_auth", 0).all.toMap()
+        previousAuthState = DataAuth.state.value
+        nullableAuthFields.forEach { ReflectionHelpers.setStaticField(DataAuth::class.java, it, null) }
+        booleanAuthFields.forEach { ReflectionHelpers.setStaticField(DataAuth::class.java, it, false) }
+        authState.value = "uninitialized"
+    }
+
+    @After fun restorePreviousSyntheticAuthProcess() {
+        if (!::previousAuthFields.isInitialized) return
+        // Restore ciphertext too: a previous vault must not point at bytes written
+        // using this test's independent AES key in a reused Robolectric sandbox.
+        val editor = app.getSharedPreferences("data_auth", 0).edit().clear()
+        previousAuthPreferences.forEach { (key, value) ->
+            when (value) {
+                is String -> editor.putString(key, value)
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+                is Long -> editor.putLong(key, value)
+                is Float -> editor.putFloat(key, value)
+                is Set<*> -> editor.putStringSet(key, value.map { it as String }.toSet())
+                else -> error("Unsupported synthetic auth preference type")
+            }
+        }
+        check(editor.commit())
+        previousAuthFields.forEach { (name, value) ->
+            ReflectionHelpers.setStaticField(DataAuth::class.java, name, value)
+        }
+        authState.value = previousAuthState
+    }
 
     @Suppress("DEPRECATION")
     @Test fun legacyPaidEntryFailsBeforeReadingInvalidPhotoOrReportingProgress() = runBlocking {

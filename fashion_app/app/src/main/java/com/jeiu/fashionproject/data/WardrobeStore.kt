@@ -144,7 +144,10 @@ object WardrobeStore {
     private fun cleanUpOrphanPhotos(context: Context) {
         val dir = File(context.filesDir, "wardrobe")
         val used = _items.value.flatMap { it.photoUris() }
-            .mapNotNull { Uri.parse(it).takeIf { u -> u.scheme == "file" }?.path }.toSet()
+            .mapNotNull { Uri.parse(it).takeIf { u -> u.scheme == "file" }?.path }
+            // Compare filesystem paths on both sides, not URI paths against host paths.
+            // Android uses /data/...; Windows Robolectric encodes a drive as /C:\... .
+            .map { File(it).absolutePath }.toSet()
         val cutoff = System.currentTimeMillis() - 60 * 60 * 1000L
         dir.listFiles()?.forEach { f ->
             if (f.absolutePath !in used && f.lastModified() < cutoff) f.delete()

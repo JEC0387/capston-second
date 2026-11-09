@@ -279,6 +279,52 @@ class AuthStoreBearerTest {
         }
     }
 
+    @Test fun firstIdentityLinkPreservesGuestRecordsWithoutRestore() = runBlocking {
+        assertSameAccountLoginPreserved(isNew = true)
+    }
+
+    @Test fun returningIdentityOnSameAccountDoesNotTriggerRestore() = runBlocking {
+        assertSameAccountLoginPreserved(isNew = false)
+    }
+
+    private suspend fun assertSameAccountLoginPreserved(isNew: Boolean) {
+        withSyntheticBearer { server, token, vault ->
+            val records = app.getSharedPreferences("wardrobe_store", 0)
+            val queue = app.getSharedPreferences("db_sync", 0)
+            records.edit().putString("synthetic-guest-item", "keep-local-record").commit()
+            queue.edit().putString("pending", "same-account-pending").commit()
+            val beforeRecords = records.all.toMap()
+            val beforeQueue = queue.all.toMap()
+            val beforeVault = vault.read().toString()
+            server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
+                .setBody(JSONObject().put("switched", false).put("isNewAccount", isNew)
+                    .put("provider", "kakao").put("email", "synthetic@example.invalid")
+                    .put("name", "Synthetic same account").toString()))
+            val result = AuthStore.finishBrowserLogin(app,
+                Uri.parse("fashionai://login?code=abcdefghijklmnopqrstuvwxyz&provider=kakao"))
+            if (BuildConfig.PREVIEW_BUILD) {
+                assertTrue(result is AuthStore.Result.Failed)
+                assertEquals(0, server.requestCount)
+            } else {
+                assertTrue("First link and same-account login must not be blocked as a switch", result is AuthStore.Result.Success)
+                val success = result as AuthStore.Result.Success
+                assertEquals(isNew, success.isNewAccount)
+                assertFalse(success.restart)
+                assertEquals(AuthStore.Mode.SIGNED_IN, AuthStore.mode.value)
+                val request = server.takeRequest(3, TimeUnit.SECONDS)!!
+                assertEquals("/api/auth/exchange", request.path)
+                assertEquals("Bearer $token", request.getHeader("Authorization"))
+                assertEquals("No restore or automatic wardrobe upload for a same-account login", 1, server.requestCount)
+            }
+            assertEquals(beforeVault, vault.read().toString())
+            assertEquals(beforeRecords, records.all)
+            assertEquals(beforeQueue, queue.all)
+            assertEquals(token, DataAuth.accessToken)
+            assertTrue(DataAuth.canSync)
+            assertFalse(DataAuth.isRestorePending)
+        }
+    }
+
     private fun socialFailureResponses(server: MockWebServer, body: String, statusCode: Int) {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when (request.path) {
