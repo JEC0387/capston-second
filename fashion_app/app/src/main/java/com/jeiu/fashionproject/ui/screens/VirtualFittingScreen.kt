@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -441,6 +442,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         if (avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi || manual.showServerOutfitAi) manual.cancelPhotoDrops()
     }
     val controlsScroll = rememberScrollState()
+    var manualToolsExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedToolsExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(inputNotice) {
         if (inputNotice != null) controlsScroll.scrollTo(0)
     }
@@ -764,7 +767,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 TextButton(onClick = { askClearOverlay = true },
                     modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
             }
-        } else if (bodyPhoto != null) {
+        } else if (bodyPhoto != null && manualToolsExpanded) {
             TextButton(onClick = { autoFitNow() },
                 enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
                 Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
@@ -773,22 +776,14 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!avatarMode) TextButton(onClick = {
-                inputNotice = when {
-                    bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
-                    worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
-                    currentDeviceSelection == null -> "이 온디바이스 경로는 상의·하의·신발만 받아요. 원피스·아우터·액세서리를 제외하고 다시 선택해주세요."
-                    else -> null
-                }
-                if (inputNotice == null) {
-                    currentDeviceSelection?.let(manual::openOnDevice)
-                }
-            }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
-                Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (deviceModel.state.pending) "진행 중인 AI 착장 보기" else "마법봉 · AI 착장 사진 생성", color = Camel)
+            if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
+                colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
+                Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("AI로 입어보기")
             }
-            if (!avatarMode && !compact) Text("마법봉은 기기 내 생성형 모델의 준비 상태를 확인해요. 모델이 없으면 AI 생성은 실행되지 않아요.",
+            if (!avatarMode && !compact) Text("선택한 사진과 상의·하의·신발을 확인하고 전송에 동의한 뒤 시작해요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
@@ -957,7 +952,11 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 ManualPhotoSnapshot(it.toString(), photoGeneration, canvasSize,
                     worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha, body = body)
             }
-            ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
+            OutlinedButton(onClick = { manualToolsExpanded = !manualToolsExpanded },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).testTag("manualToolsToggle")) {
+                Text(if (manualToolsExpanded) "직접 배치 도구 접기" else "직접 옷 배치하기")
+            }
+            if (manualToolsExpanded) ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
             if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
                 manual.cancelPhotoDrops(); inputNotice = "의류 읽기를 취소했어요. 기존 배치는 그대로예요."
             }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropCancelLoading")) { Text("의류 읽기 취소") }
@@ -965,12 +964,15 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
             }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
         }
-        if (!avatarMode) TextButton(onClick = { manual.openServerOutfit(currentDeviceSelection) },
-            modifier = Modifier.padding(horizontal = 20.dp).testTag("openServerOutfitFromFitting")) {
-            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
-            Spacer(Modifier.width(6.dp))
-            Text("서버형 마법봉 · 3종 AI · 별도 배포 승인 필요", color = Camel)
+        TextButton(onClick = { advancedToolsExpanded = !advancedToolsExpanded },
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingAdvancedToggle")) {
+            Text(if (advancedToolsExpanded) "고급 기능 접기" else "고급·개발용 기능", color = MediumGray)
         }
+        if (advancedToolsExpanded) {
+        if (!avatarMode) TextButton(onClick = {
+            if (currentDeviceSelection != null) currentDeviceSelection?.let(manual::openOnDevice)
+            else inputNotice = "전신 사진과 상의·하의·신발을 먼저 선택해주세요."
+        }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openOnDeviceFromFitting")) { Text("온디바이스 모델 검사") }
         TextButton(onClick = { showLocalAi = true },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
             Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
@@ -989,6 +991,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             if (inputNotice == null) { aiSelection = selected; showAi = true }
         }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openExternalTryOnFromFitting")) {
             Text("외부 AI 서버 · 별도 설정·전송 동의 필요", color = Camel)
+        }
         }
         if(avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
@@ -1046,7 +1049,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
         // 크기 · 투명도 (고를 옷이 없으면 비활성)
-        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
+        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null && manualToolsExpanded) {
             val enabled = active != null && !inspectAvatar
             fun moveActive(dx: Float, dy: Float) {
                 val slot = activeSlot ?: return

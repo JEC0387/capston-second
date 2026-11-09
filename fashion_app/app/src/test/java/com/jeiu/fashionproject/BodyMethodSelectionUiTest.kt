@@ -70,13 +70,13 @@ class BodyMethodSelectionUiTest {
         compose.runOnIdle { assertEquals(1, photo) }
     }
 
-    @Test fun avatarSetupKeepsTheExistingModelAndPhotoEntryAvailable() {
+    @Test fun avatarSetupOpensLatestMeasurementFlowAndKeepsPhotoEntryAvailable() {
         var photo = 0
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { photo++ }) }
         compose.onNodeWithTag("avatarManualExpand").performScrollTo().performClick()
-        compose.onNodeWithText("3D 기본 모델").performScrollTo().performClick()
-        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
-        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithText("3D 기본 모델").assertDoesNotExist()
+        compose.onNodeWithTag("manualBodyAvatar").performScrollTo().performClick()
+        compose.onNodeWithTag("manualAvatarBack").assertExists().performScrollTo().performClick()
         compose.onNodeWithText("사진으로 체형 분석하기").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, photo) }
     }

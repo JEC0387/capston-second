@@ -69,9 +69,9 @@ class P48ServerEntryTest {
         compose.setContent { CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             MaterialTheme { VirtualFittingScreen(onBack = {}) }
         } }
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().performClick()
+        compose.onNodeWithTag("aiTryOnWand").performScrollTo().performClick()
         compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
         compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().assertExists()
+        compose.onNodeWithTag("aiTryOnWand").performScrollTo().assertExists()
     }
 }

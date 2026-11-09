@@ -1,6 +1,8 @@
 package com.jeiu.fashionproject.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -9,6 +11,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.jeiu.fashionproject.data.ManualBodyMeasurements
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.BodyDimensions
@@ -23,8 +27,16 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
     val current by ManualBodyStore.current.collectAsState()
     val saved by ManualBodyStore.saved.collectAsState()
     val storeIssue by ManualBodyStore.issue.collectAsState()
-    var defaultAvatar by remember { mutableStateOf(false) }
-    if (defaultAvatar) BodyAvatarDialog(BodyDimensions.resolve(null,null)) { defaultAvatar=false }
+    var showEditor by remember { mutableStateOf(false) }
+    if (showEditor) Dialog(onDismissRequest = { showEditor = false },
+        properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.systemBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                TextButton(onClick = { showEditor = false }, modifier = Modifier.testTag("manualAvatarBack")) { Text("치수 화면으로 돌아가기") }
+                AvatarSetupCard(autoImportManual = true)
+            }
+        }
+    }
     var editing by remember { mutableStateOf(false) }
     var saveOnDevice by remember(saved) { mutableStateOf(saved) }
     val fields = remember(current) {
@@ -57,11 +69,11 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = { editing = !editing }, modifier = Modifier.testTag("manualBodyEdit")) {
-                Text(if (editing) "입력 닫기" else if (current == null) "치수 입력하기" else "치수 수정하기")
+            OutlinedButton(onClick = { editing = !editing }, modifier = Modifier.fillMaxWidth().testTag("manualBodyEdit")) {
+                Text(if (editing) "입력 닫기" else "신체 치수 입력·수정")
             }
-                if (current == null && photo == null) TextButton(onClick={defaultAvatar=true}) { Text("3D 기본 모델") }
+            Button(onClick = { showEditor = true }, modifier = Modifier.fillMaxWidth().testTag("manualBodyAvatar")) {
+                Text("내 치수로 3D 모델 만들기")
             }
             if (editing) {
                 names.forEachIndexed { index, label ->

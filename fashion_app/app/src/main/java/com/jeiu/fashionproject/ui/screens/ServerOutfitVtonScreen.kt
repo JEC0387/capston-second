@@ -27,6 +27,8 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accountState by DataAuth.state.collectAsState()
+    var connectivity by remember { mutableStateOf<ServerSettings.Check?>(null) }
+    var checking by remember { mutableStateOf(false) }
     val state = model.state
     val inputsReady = model.inputReady(selection)
     var approved by remember(selection, state.config, state.configBinding, accountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
@@ -86,8 +88,8 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(onClick = onBack, modifier = Modifier.testTag("serverOutfitBack")) { Text("피팅으로 돌아가기") }
-            Text("서버 AI · 3종 착장", style = MaterialTheme.typography.headlineSmall)
-            Text("온디바이스 AI와 별도 모드예요. 운영 배포·모델 사용 권한·개인정보 처리 정책이 승인된 서버에서만 사용해요.")
+            Text("AI로 입어보기", style = MaterialTheme.typography.headlineSmall)
+            Text("사진과 선택한 세 가지 의류로 착장 이미지를 만들어요. 인증·전송 동의·서버 준비가 필요해요.")
             Text(when {
                 ServerOutfitQaConnection.supported -> "격리 QA에서는 승인된 개발 서버와 별도 인증을 직접 설정한 경우에만 연결해요. 운영 서버·공개 연구 데모·유료 AI로 자동 전환하지 않아요."
                 BuildConfig.PREVIEW_BUILD -> "현재 Preview에서는 운영 서버로 사진을 전송하지 않아요. 공개 연구 데모나 유료 AI로 자동 전환하지 않아요."
@@ -103,10 +105,27 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             if (selection == null) Text("먼저 피팅 화면에서 모델 사진과 상의·하의·신발을 선택해주세요.")
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
-            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving,
+            TextButton(onClick = {
+                checking = true
+                val base = BackendApi.BASE_URL
+                scope.launch {
+                    try {
+                        val result = ServerSettings.check(base)
+                        if (base == BackendApi.BASE_URL) connectivity = result
+                    } finally { checking = false }
+                }
+                model.refreshConfig()
+            }, enabled = !state.busy && !saving && !checking,
                 modifier = Modifier.testTag("serverOutfitCheck")) { Text("서버 준비 상태 확인") }
-            Text(if (state.config?.ready == true) "서버 설정 준비됨 · 실제 생성 품질 미검증" else "서버 미준비 · 사진 전송 전 확인 필요",
+            Text(if (state.config?.ready == true) "서버 설정 준비됨 · 실제 생성 품질 미검증" else "사진 전송 전 인증·생성 준비 확인 필요",
                 modifier = Modifier.testTag("serverOutfitReady"))
+            if (!ServerOutfitQaConnection.supported) {
+                OutfitReadiness.lines(connectivity, accountState, DataAuth.canSync,
+                    BuildConfig.SERVER_OUTFIT_APPROVED, state.config?.ready).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (BuildConfig.INSTALL_TEST_BUILD && !DataAuth.canSync) Text(
+                    "설치검증 앱은 기존 앱의 계정을 공유하지 않아요. 운영자에게 이 앱의 정상 시험 계정 연결·등록 허용 여부를 확인해주세요. 여기서는 계정을 생성하거나 기존 앱의 토큰을 복사하지 않아요.",
+                    modifier = Modifier.testTag("installtestAccountHelp"))
+            }
             state.config?.takeIf { it.ready }?.let {
                 val host = state.configHost ?: "승인된 HTTPS 서버 없음"
                 Text("사진 처리 서버: $host", style = MaterialTheme.typography.bodySmall)

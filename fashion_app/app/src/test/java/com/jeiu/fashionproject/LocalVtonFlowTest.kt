@@ -208,6 +208,7 @@ class LocalVtonFlowTest {
         WardrobeStore.load(app)
         val item=WardrobeStore.items.value.first {TryOnPlan.categoryFor(it.category)!=null}
         compose.setContent {VirtualFittingScreen(onBack={})}
+        compose.onNodeWithTag("fittingAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().performClick()
         compose.onNodeWithTag("localVtonTitle").assertIsDisplayed()
         compose.onNodeWithTag("localGarment-${item.id}").performScrollTo().performClick()

@@ -66,14 +66,17 @@ class PresentationFittingUiTest {
         compose.onNodeWithText("전신 사진 선택").performClick()
         compose.runOnIdle { registry.dispatchResult(requestCode, Uri.parse("content://invalid-test-provider/manual-photo")) }
         compose.onNodeWithTag("manualFittingControls").assertIsDisplayed()
+        compose.onNodeWithTag("manualScale").assertDoesNotExist()
+        compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         compose.onNodeWithText("크기").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("투명도").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("입어볼 옷 선택 · 종류별로 한 벌씩 배치해요").performScrollTo().assertIsDisplayed()
     }
-    @Test fun wandWithoutPhotoShowsInputNotice() {
+    @Test fun wandWithoutPhotoOpensServerReadinessWithoutGeneration() {
         compose.setContent { VirtualFittingScreen {} }
         compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("fittingInputNotice").assertTextContains("먼저 전신 사진을 선택해주세요.")
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
+        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
     }
     @Test fun wandWithoutClothesShowsNoticeAndAlignmentRetainsManualScaleControls() {
@@ -86,7 +89,9 @@ class PresentationFittingUiTest {
         compose.onNodeWithText("전신 사진 선택").performClick()
         compose.runOnIdle { registry.dispatchResult(requestCode, Uri.parse("content://invalid/manual")) }
         compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("fittingInputNotice").assertTextContains("먼저 옷장에서 입어볼 옷을 선택해주세요.")
+        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
+        compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         val id = com.jeiu.fashionproject.data.WardrobeStore.items.value.first().id
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
         compose.onNodeWithTag("manualGarment-$id").performClick()
@@ -109,7 +114,7 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
-    @Test fun photoMagicWandOpensOnDeviceFlowWithoutModelOrNetworkFallback() {
+    @Test fun photoMagicWandOpensServerFlowWithoutAutomaticUpload() {
         com.jeiu.fashionproject.data.TryOnSession.clear()
         var requestCode = 0
         val registry = object : ActivityResultRegistry() {
@@ -125,17 +130,19 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
         compose.onNodeWithTag("manualGarment-$id").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         compose.onNodeWithTag("manualAutoAlign").assertExists()
-        compose.onNodeWithTag("aiTryOnWand").assertTextContains("마법봉 · AI 착장 사진 생성", substring = true)
+        compose.onNodeWithTag("aiTryOnWand").assertTextContains("AI로 입어보기", substring = true)
         compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("onDeviceVtonScreen").assertExists()
-        compose.onNodeWithTag("deviceVtonReadiness").assertTextContains("모델 미준비", substring = true)
-        compose.onNodeWithTag("deviceVtonGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
+        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("deviceVtonResultLabel").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
-        compose.onNodeWithTag("deviceVtonBack").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
         compose.onNodeWithTag("manualAutoAlign").assertExists()
+        compose.onNodeWithTag("fittingAdvancedToggle").performScrollTo().performClick()
+        compose.onNodeWithTag("openOnDeviceFromFitting").performScrollTo().assertExists()
         compose.onNodeWithTag("openExternalTryOnFromFitting").performScrollTo().assertExists()
         compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().assertExists()
     }

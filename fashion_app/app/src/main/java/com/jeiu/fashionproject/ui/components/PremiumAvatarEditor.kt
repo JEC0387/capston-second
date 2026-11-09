@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,11 @@ import java.util.Locale
 @Composable
 fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:()->Unit,
     onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
+    var measuredProposal by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measurementBaseline by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measuredPart by remember { mutableStateOf<AvatarPart?>(null) }
     val initialBody=checkNotNull(initial.centimeters)
     val initialJson=remember(initialBody){initialBody.toJson().toString()}
     var json by rememberSaveable(initialJson) {mutableStateOf(initialJson)}
@@ -46,6 +52,18 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
     var askReset by remember {mutableStateOf(false)}
     var askLeave by remember {mutableStateOf(false)}
     var message by remember {mutableStateOf<String?>(null)}
+    measuredProposal?.let { proposed ->
+        AlertDialog(onDismissRequest = { measuredProposal = null },
+            title = { Text("원본 실측값에 별도로 저장할까요?") },
+            text = { Text("방금 직접 잰 값으로 입력한 ${measuredPart?.label}만 실측 기록에 저장해요. 체형 분석·사이즈 비교에도 사용돼요. 3D 표시 조절과 별개이며 취소하면 원본 실측값은 유지돼요.") },
+            confirmButton = { TextButton(onClick = {
+                if (ManualBodyStore.current.value == measurementBaseline && ManualBodyStore.update(context, proposed, true)) {
+                    message = "직접 잰 값을 실측 기록에 저장했어요."
+                } else message = "실측값이 바뀌었거나 저장하지 못했어요. 기존 기록을 유지했어요."
+                measuredProposal = null
+            }, modifier = Modifier.testTag("confirmMeasuredWriteback")) { Text("실측 기록에 저장") } },
+            dismissButton = { TextButton(onClick = { measuredProposal = null }, modifier = Modifier.testTag("cancelMeasuredWriteback")) { Text("3D 초안에만 유지") } })
+    }
     var details by rememberSaveable {mutableStateOf(false)}
     var lastSaved by rememberSaveable {mutableStateOf<String?>(null)}
     fun update(next:AvatarCentimeters) {json=next.toJson().toString();message=null}
@@ -58,7 +76,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             OutlinedTextField(text,{if(it.length<=8)text=it},label={Text("cm · 0.5 단위")},singleLine=true,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.testTag("rulerInputField"))
             Text("표시 범위 ${range.start}~${range.endInclusive} cm. 눈금과 같은 0.5cm 단위로 입력해요.")
-            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it});Text("줄자로 직접 잰 값이에요 (선택)")}
+            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it},modifier=Modifier.testTag("rulerMeasured"));Text("줄자로 직접 잰 값이에요 (선택)")}
             if(CmRulerMath.parse(text,range)==null)Text("유효한 범위의 0.5cm 단위 숫자를 입력해주세요.",color=Brown)
         }
     },confirmButton={TextButton(enabled=CmRulerMath.parse(text,range)!=null,onClick={
@@ -66,6 +84,11 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         if(next!=null) {
             update(if(measured)next.copy(values=next.values+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL)),
                 references=next.references+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL))) else next)
+            if (measured) {
+                measurementBaseline = ManualBodyStore.current.value
+                measuredPart = selected
+                measuredProposal = ManualAvatarMeasurements.proposed(measurementBaseline, body.heightCm, selected, value, System.currentTimeMillis())
+            }
             input=false
         }
     },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false}) {Text("취소")}})

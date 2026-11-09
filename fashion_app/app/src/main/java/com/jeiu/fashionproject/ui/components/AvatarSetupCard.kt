@@ -14,7 +14,8 @@ import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 
 @Composable
-fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false,onApplyToFitting:(()->Unit)?=null) {
+fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false,onApplyToFitting:(()->Unit)?=null,
+    autoImportManual: Boolean = false) {
     val context = LocalContext.current
     var storesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { AvatarProfileStore.load(context);ManualBodyStore.load(context);storesLoaded=true }
@@ -28,8 +29,8 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     var proposal by remember { mutableStateOf<AvatarProfile?>(null) }
     var initialImportHandled by rememberSaveable { mutableStateOf(false) }
     var draftEdited by rememberSaveable { mutableStateOf(false) }
-    var height by rememberSaveable { mutableStateOf("170") }
-    var weight by rememberSaveable { mutableStateOf("65") }
+    var height by rememberSaveable { mutableStateOf("") }
+    var weight by rememberSaveable { mutableStateOf("") }
     var cmEditingRaw by rememberSaveable {mutableStateOf<String?>(null)}
     var shoulder by rememberSaveable { mutableFloatStateOf(1f) }
     var waist by rememberSaveable { mutableFloatStateOf(1f) }
@@ -49,17 +50,25 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
         chest=profile.chest;torso=profile.torso;importedJson=AvatarProfileStore.encode(profile)
     }
     // Store hydration is not an instruction to replace an active, restored or newly typed draft.
-    LaunchedEffect(storesLoaded,saved) { if(storesLoaded && !draftEdited) saved?.let(::adopt) }
+    LaunchedEffect(storesLoaded,saved,manual) {
+        if(storesLoaded && !draftEdited) {
+            if (saved != null) adopt(saved!!)
+            else if (autoImportManual && manual != null) height = manual!!.heightCm.toString()
+        }
+    }
     val draft = AvatarProfile(height.toFloatOrNull() ?: Float.NaN, weight.toFloatOrNull() ?: Float.NaN,
         shoulder, waist, hip, thigh, leg,chest,torso,imported?.source ?: AvatarSource.BMI,imported?.applied.orEmpty(),imported?.centimeters)
+    // Weight is supplied by the user or their saved profile, never a fabricated 65 kg default.
+    val manualProposal = draft.takeIf { it.valid() }?.let { AvatarMeasurementImport.manual(manual, it) }
+    val photoProposal = draft.takeIf { it.valid() }?.let { AvatarMeasurementImport.photo(photo ?: sessionPhoto, it) }
     cmEditingRaw?.let {raw->AvatarProfileStore.decode(raw)?.let {base->
         PremiumAvatarEditor(base,saved,onDismiss={cmEditingRaw=null},onSave={profile->
             AvatarProfileStore.save(context,profile).also {ok->if(ok) {adopt(profile);draftEdited=false}}
         },onApplyToFitting=onApplyToFitting)
     }}
-    LaunchedEffect(autoImportPhoto, storesLoaded, photo, sessionPhoto, saved) {
+    LaunchedEffect(autoImportPhoto, storesLoaded, photoProposal) {
         if (autoImportPhoto && storesLoaded && !initialImportHandled) {
-            AvatarMeasurementImport.photo(photo ?: sessionPhoto, saved)?.let {
+            photoProposal?.let {
                 proposal = it
                 initialImportHandled = true
             }
@@ -75,7 +84,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
         text={Text("저장된 3D 표시 프로필과 보존해 둔 구버전 3D 복사본만 지워요. 직접 입력한 원본 치수와 사진 분석 기록은 유지해요.")},
         confirmButton={TextButton(onClick={
             if (AvatarProfileStore.clear(context)) {
-                height="170";weight="65";shoulder=1f;waist=1f;hip=1f;thigh=1f;leg=1f;chest=1f;torso=1f;importedJson=null;draftEdited=true
+                height="";weight="";shoulder=1f;waist=1f;hip=1f;thigh=1f;leg=1f;chest=1f;torso=1f;importedJson=null;draftEdited=true
                 message="3D 설정을 초기화했어요."
             } else message="3D 설정을 지우지 못했어요."
             askClear=false
@@ -105,6 +114,12 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                 modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
             if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
+            if (autoImportManual) {
+                Text(if (manual != null) "저장한 실측값을 가져와 비교해주세요. 빠진 부위는 실측 기반 추정이며 원본 치수와 별도로 표시해요."
+                    else "저장된 실측값이 없어요. 키·몸무게를 직접 입력하면 표시용 초안을 만들 수 있어요.")
+                if (manual != null) Button(onClick = { proposal = manualProposal }, enabled = manualProposal != null,
+                    modifier = Modifier.fillMaxWidth().testTag("manualAvatarImport")) { Text("저장한 실측값으로 변경 전후 비교") }
+            }
             Text("2단계 · 내 3D 체형",style=MaterialTheme.typography.titleMedium)
             Button(enabled=draft.valid()&&storesLoaded,onClick={
                 AvatarCentimeters.fromLegacy(draft,System.currentTimeMillis())?.let {cm->
@@ -125,14 +140,14 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
                 Text("키·몸무게 추정 사용")
             }
             Text("입력값으로 초기 비율을 추정해요.",style=MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick={proposal=AvatarMeasurementImport.photo(photo ?: sessionPhoto,saved)},
-                enabled=AvatarMeasurementImport.photo(photo ?: sessionPhoto,saved)!=null,
+            OutlinedButton(onClick={proposal=photoProposal},
+                enabled=photoProposal!=null,
                 modifier=Modifier.fillMaxWidth().testTag("avatarImportPhoto")) {
                 Text("이 사진 치수로 3D 모델 만들기")
             }
             Text("이번 세션의 유효한 사진 측정값을 비교한 뒤 반영해요.",style=MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick={proposal=AvatarMeasurementImport.manual(manual,saved)},
-                enabled=AvatarMeasurementImport.manual(manual,saved)!=null,
+            OutlinedButton(onClick={proposal=manualProposal},
+                enabled=manualProposal!=null,
                 modifier=Modifier.fillMaxWidth().testTag("avatarImportManual")) {
                 Text("직접 입력한 치수 사용")
             }

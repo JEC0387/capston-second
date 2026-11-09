@@ -43,6 +43,7 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
 import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
+import com.jeiu.fashionproject.ui.components.ManualBodySummary
 import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.BodyDimensions
@@ -72,6 +73,8 @@ fun BodyAnalysisScreen(
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
     val manualMeasurements by ManualBodyStore.current.collectAsState()
+    val manualSaved by ManualBodyStore.saved.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var manualExpanded by rememberSaveable { mutableStateOf(false) }
     var tipsExpanded by rememberSaveable { mutableStateOf(false) }
     var detailsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -193,6 +196,7 @@ fun BodyAnalysisScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            manualMeasurements?.let { ManualBodySummary(it, manualSaved) }
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
                     Text("먼저 키를 확인해주세요", color = CharcoalBlack,
