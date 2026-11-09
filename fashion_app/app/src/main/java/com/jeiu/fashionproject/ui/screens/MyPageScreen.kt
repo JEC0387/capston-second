@@ -511,7 +511,7 @@ fun MyPageScreen(
             title = { Text("앱 정보", fontWeight = FontWeight.Bold) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("FashionAI")
+                    Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name))
                     Text("버전: ${buildInfo.versionName} (${buildInfo.versionCode})", color = MediumGray)
                     Text("빌드: ${buildInfo.buildNumber} · ${buildInfo.shortSha}", color = MediumGray)
                     Text("브랜치: ${buildInfo.branch}", color = MediumGray)

@@ -62,7 +62,7 @@ android {
         targetSdk = 36
         versionCode = appVersionCode
         versionName = packagedVersionName
-        resValue("string", "build_app_name", if (deviceQaBuild) "FashionAI QA P16" else if (previewBuild) "FashionAI Preview" else "FashionAI")
+        resValue("string", "build_app_name", if (deviceQaBuild) "패션핏 QA" else if (previewBuild) "패션핏 Preview" else "패션핏")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 서버(FastAPI) 기본 주소 = Railway 에 올린 서버 (어디서든 접속 가능).
         // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는

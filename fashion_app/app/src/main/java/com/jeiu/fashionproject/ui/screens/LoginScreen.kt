@@ -100,7 +100,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
             Box(
                 Modifier.padding(20.dp).align(Alignment.TopStart).clip(RoundedCornerShape(8.dp))
                     .background(Camel).padding(horizontal = 12.dp, vertical = 6.dp)
-            ) { Text("STYLE AI", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            ) { Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name), color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }
 
         Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
