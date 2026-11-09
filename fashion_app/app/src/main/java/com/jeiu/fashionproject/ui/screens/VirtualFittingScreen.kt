@@ -746,6 +746,26 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
 
+        if (avatarMode) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { autoFitNow() },
+                    enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                    Text("위치 맞춤", color = Camel)
+                }
+                TextButton(onClick = {
+                    val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
+                        g.center.x / canvasSize.width, g.center.y / canvasSize.height,
+                        g.baseWidth / canvasSize.width, g.scale, g.rotation) }
+                    inputNotice = if (canvasSize.width > 0f && avatarProfile != null &&
+                        AvatarFittingStore.save(context, entries)) "아바타 옷 배치를 이 기기에 저장했어요."
+                        else "옷 배치를 저장하지 못했어요. 저장값 오류나 3D 설정을 확인해주세요."
+                }, enabled = avatarProfile != null && worn.isNotEmpty(),
+                    modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
+            }
+        }
+
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
             if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
@@ -959,23 +979,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
         if (avatarMode) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { autoFitNow() },
-                    enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
-                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                    Text("위치 맞춤", color = Camel)
-                }
-                TextButton(onClick = {
-                    val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
-                        g.center.x / canvasSize.width, g.center.y / canvasSize.height,
-                        g.baseWidth / canvasSize.width, g.scale, g.rotation) }
-                    inputNotice = if (canvasSize.width > 0f && avatarProfile != null &&
-                        AvatarFittingStore.save(context, entries)) "아바타 옷 배치를 이 기기에 저장했어요."
-                        else "옷 배치를 저장하지 못했어요. 저장값 오류나 3D 설정을 확인해주세요."
-                }, enabled = avatarProfile != null && worn.isNotEmpty(),
-                    modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
-            }
             avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
             overlayIssue?.let {
                 Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp))

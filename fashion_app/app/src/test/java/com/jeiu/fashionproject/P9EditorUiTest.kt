@@ -103,7 +103,7 @@ class P9EditorUiTest {
         compose.onNodeWithTag("rulerDirectInput").performScrollTo().performClick()
         compose.onNodeWithTag("rulerInputField").performTextReplacement("77.3")
         compose.onNodeWithTag("rulerInputConfirm").assertIsNotEnabled()
-        compose.onNodeWithText("취소").performClick()
+        compose.onNodeWithTag("rulerInputCancel").performClick()
         assertEquals(body[AvatarPart.WAIST],value())
     }
     @Test fun savedInstanceStateRestoresDraftAndSelectedPartWithoutWriting() {

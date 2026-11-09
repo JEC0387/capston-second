@@ -91,7 +91,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             }
             input=false
         }
-    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false}) {Text("취소")}})
+    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false},modifier=Modifier.testTag("rulerInputCancel")) {Text("취소")}})
     if(confirmSave) AvatarApplicationDialog(previous,candidate,onDismiss={confirmSave=false},commitOnApprove=true,onApprove={
         confirmSave=false
         val stamped=candidate.copy(centimeters=body.copy(updatedAt=maxOf(System.currentTimeMillis(),body.createdAt)))
