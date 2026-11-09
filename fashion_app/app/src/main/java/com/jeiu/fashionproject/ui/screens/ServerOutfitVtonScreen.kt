@@ -27,13 +27,17 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accountState by DataAuth.state.collectAsState()
+    val testAccountState by InstallTestAccount.state.collectAsState()
+    var linkingAccount by remember { mutableStateOf(false) }
+    val accountReady = if (BuildConfig.INSTALL_TEST_BUILD && InstallTestAccount.hasRecord)
+        testAccountState == "ready" && InstallTestAccount.sessionOrNull() != null else DataAuth.canSync
     var connectivity by remember { mutableStateOf<ServerSettings.Check?>(null) }
     var details by remember { mutableStateOf(false) }
     var policyDetails by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     val state = model.state
     val inputsReady = model.inputReady(selection)
-    var approved by remember(selection, state.config, state.configBinding, accountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
+    var approved by remember(selection, state.config, state.configBinding, accountState, testAccountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
     val thirdParty = state.config?.providerInfo
     val externalCancellation = state.ticket?.let(ServerOutfitVtonRepository::isGenlook)
         ?: (thirdParty?.remoteCancellationSupported == false)
@@ -101,12 +105,32 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             if (selection == null) Text("먼저 피팅 화면에서 모델 사진과 상의·하의·신발을 선택해주세요.")
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
-            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving,
+            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving && !linkingAccount,
                 modifier = Modifier.testTag("serverOutfitCheck")) { Text("연결 확인 · 다시 확인") }
-            Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!DataAuth.canSync && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
+            Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!accountReady && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
                 modifier = Modifier.testTag("serverOutfitReady"))
-            if (BuildConfig.INSTALL_TEST_BUILD && !DataAuth.canSync) Text("앱 관리자에게 설치검증 앱의 시험 계정 연결을 요청해주세요. Google·카카오 로그인 등록과는 별개예요.",
+            if (BuildConfig.INSTALL_TEST_BUILD && !accountReady) Text("앱 관리자에게 설치검증 앱의 시험 계정 연결을 요청해주세요. Google·카카오 로그인 등록과는 별개예요.",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("installtestAccountHelp"))
+            if (BuildConfig.INSTALL_TEST_BUILD && (!DataAuth.canSync || InstallTestAccount.hasRecord))
+                com.jeiu.fashionproject.ui.components.InstallTestAccountPanel(testAccountState, InstallTestAccount.hasRecord,
+                    linkingAccount || state.busy || saving,
+                    onEnroll = { consent, reference, server ->
+                        if (!linkingAccount) {
+                            linkingAccount = true
+                            scope.launch {
+                                try { InstallTestAccount.enroll(consent, reference, server); model.invalidateConnection() }
+                                finally { linkingAccount = false }
+                            }
+                        }
+                    }, onVerify = {
+                        if (!linkingAccount) {
+                            linkingAccount = true
+                            scope.launch {
+                                try { InstallTestAccount.verify(); model.invalidateConnection() }
+                                finally { linkingAccount = false }
+                            }
+                        }
+                    })
             TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) { Text(if(details) "연결 정보 접기" else "연결 상세 보기") }
             if (details && !ServerOutfitQaConnection.supported) {
                 TextButton(onClick={
@@ -119,7 +143,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 }, enabled=!checking && !state.busy, modifier=Modifier.testTag("serverOutfitDiagnostics")) {
                     Text(if(checking) "진단 중" else "서버 연결 진단")
                 }
-                OutfitReadiness.lines(connectivity, accountState, DataAuth.canSync,
+                OutfitReadiness.lines(connectivity, if (InstallTestAccount.hasRecord) testAccountState else accountState, accountReady,
                     BuildConfig.SERVER_OUTFIT_APPROVED, state.config?.ready).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
             if (details) state.config?.takeIf { it.ready }?.let {
@@ -159,7 +183,8 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 }
             }
             Button(onClick = { comparison = false; reopened = null; model.start(context, selection, approved) },
-                enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null && model.startAllowedByPreviousJob(),
+                enabled = inputsReady && approved && !state.busy && !saving && !linkingAccount &&
+                    (!InstallTestAccount.hasRecord || accountReady) && pendingSave == null && model.startAllowedByPreviousJob(),
                 modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("동의하고 AI로 입어보기") }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

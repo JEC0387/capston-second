@@ -16,6 +16,7 @@ class FashionApp : Application() {
         val recovered = RestoreJournal.recover(this)
         ServerSettings.load(this)   // 마이페이지에서 바꾼 서버 주소 (실제 폰은 PC 의 와이파이 IP)
         DataAuth.init(this)
+        com.jeiu.fashionproject.data.InstallTestAccount.init(this)
         if (recovered && DataAuth.completeRestore()) RestoreJournal.finish(this)
         DbSync.init(this)
         ServerConnection.start(this)

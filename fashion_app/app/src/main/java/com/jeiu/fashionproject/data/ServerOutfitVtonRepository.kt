@@ -87,6 +87,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
             return ServerOutfitQaConnection.sessionOrNull() ?: throw OutfitServerFailure("deployment_not_approved")
         if (!BuildConfig.SERVER_OUTFIT_APPROVED || BuildConfig.PREVIEW_BUILD)
             throw OutfitServerFailure("deployment_not_approved")
+        if (BuildConfig.INSTALL_TEST_BUILD && InstallTestAccount.hasRecord)
+            return InstallTestAccount.sessionOrNull() ?: throw OutfitServerFailure("authentication_required")
         val base = BackendApi.BASE_URL.trimEnd('/')
         if (!validBase(base) || !DataAuth.canSync) throw OutfitServerFailure("authentication_required")
         val token = DataAuth.authorizationFor(URL(base + PREFIX + "/config"))
