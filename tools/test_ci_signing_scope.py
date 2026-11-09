@@ -70,7 +70,7 @@ class CiSigningScopeTest(unittest.TestCase):
         self.assertLess(restore[0], passwords[0])
         self.assertLess(passwords[0], min(previews), "Preview must still receive the trusted signer")
         for index in (*restore, *passwords):
-            self.assertIn("        if: github.event_name != 'pull_request'\n", self.steps[index][1])
+            self.assertIn("        if: github.event_name != 'pull_request' && !inputs.validation_only\n", self.steps[index][1])
 
     def test_other_jobs_are_key_free_and_key_cleanup_remains_unconditional(self):
         for name, job in self.jobs.items():

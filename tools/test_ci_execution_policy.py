@@ -43,6 +43,27 @@ class CiExecutionPolicyTest(unittest.TestCase):
         for forbidden in ('secrets.', 'upload-artifact', 'gradlew', 'strategy:', 'pip install', 'apk_release.py prepare'):
             self.assertNotIn(forbidden, job)
 
+    def test_validation_only_keeps_checks_but_never_writes_billed_storage_or_reads_signers(self):
+        self.assertIn("      validation_only:\n", self.trigger)
+        self.assertIn("        type: boolean\n        default: false", self.trigger)
+        self.assertIn("cache: ${{ !inputs.validation_only && 'gradle' || '' }}", self.jobs['build'])
+        steps = re.split(r"(?m)^      - ", self.jobs['build'])[1:]
+        upload_steps = [step for step in steps if 'uses: actions/upload-artifact@' in step]
+        self.assertEqual(len(upload_steps), 5)
+        for step in upload_steps:
+            condition = re.search(r"(?m)^        if: (.+)$", step)
+            self.assertIsNotNone(condition)
+            self.assertIn('!inputs.validation_only', condition[1])
+        for step in steps:
+            if 'secrets.' in step:
+                self.assertIn("if: github.event_name != 'pull_request' && !inputs.validation_only", step)
+            if 'gradlew' in step or 'native_alignment.py' in step:
+                self.assertNotIn('!inputs.validation_only', step,
+                                 'No compile, regression, lint or alignment check may be disabled')
+        self.assertNotIn('actions/cache@', self.text)
+        for name in ('backend', 'server-start'):
+            self.assertNotIn('validation_only', self.jobs[name])
+
     def test_light_check_cannot_cancel_pr_or_full_release(self):
         group = re.search(r'(?m)^  group: (.+)$', self.text)[1]
         self.assertIn('github.ref', group)
