@@ -933,9 +933,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
-        // Frequently used edits stay visible; only the wardrobe/tools tray scrolls.
-        if (active != null) {
-            val enabled = !inspectAvatar
+        // Keep the avatar viewport stable before/after selecting clothes: its projection
+        // is not a simple canvas stretch. Photo mode retains ContentScale.Fit remapping.
+        if (active != null || avatarMode && avatarProfile != null) {
+            val enabled = active != null && !inspectAvatar
             fun setScale(v: Float) {
                 val slot = activeSlot ?: return
                 val g = worn[slot] ?: return
