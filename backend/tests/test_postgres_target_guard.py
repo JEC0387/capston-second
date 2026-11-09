@@ -51,3 +51,33 @@ def test_approved_local_target_is_rebuilt_from_checked_fields_not_raw_url(monkey
             next(fixture)
     finally:
         fixture.close()
+
+
+def test_ci_postgres_url_reaches_validated_local_fixture(monkeypatch):
+    # The workflow passes a libpq-style DSN to our strict target guard; SQLAlchemy's
+    # driver qualifier is added only AFTER validation, never accepted from input.
+    import re
+    from pathlib import Path
+    workflow = (Path(__file__).parents[2] / ".github/workflows/android-debug-apk.yml").read_text(encoding="utf-8")
+    values = re.findall(r"^\s+TEST_POSTGRES_URL:\s*(\S+)\s*$", workflow, re.MULTILINE)
+    assert len(values) == 1
+    monkeypatch.setenv("TEST_POSTGRES_URL", values[0])
+
+    class ReachedValidatedCiEngine(Exception):
+        pass
+
+    def inspect_engine(url, **kwargs):
+        assert url.drivername == "postgresql+psycopg2"
+        assert url.host == "127.0.0.1" and url.port == 5432
+        assert url.database == "fashionai_test" and url.username == "fashionai_test"
+        assert not url.query
+        assert kwargs["connect_args"]["connect_timeout"] == 5
+        raise ReachedValidatedCiEngine()
+
+    monkeypatch.setattr(postgres_tests, "create_engine", inspect_engine)
+    fixture = postgres_tests.postgres.__wrapped__(monkeypatch)
+    try:
+        with pytest.raises(ReachedValidatedCiEngine):
+            next(fixture)
+    finally:
+        fixture.close()

@@ -68,3 +68,22 @@
 디스크 정리는 별도 `integration-logs/cache-cleanup-deleted-files-20261109.csv`에 파일별 절대 경로와
 크기를 기록했다. 검증된 사용 종료 임시 파일만 총 3,592,042,224 bytes 정리했고,
 정리 직후 여유 4.39 GiB로 최소 목표를 충족했다. 프로젝트/사진/모델/APK/증거/DB/키/SDK/현재 Gradle은 보존했다.
+
+## 최종 CI #45 실패와 최소 수정
+
+- 실행: https://github.com/JEC0387/capston-second/actions/runs/42558042172
+- PR HEAD `4aab81516bb1bb56faa22376c52f7baf08a5f867`, 검사 merge ref
+  `f33db38a99b375e8d37c6e2038b1cad37c5c500f`.
+- Windows Python 3.11/3.12/3.13/3.14 및 Ubuntu 3.12 서버 시작 5개 job PASS.
+- Backend: 702 PASS / 33 SKIP / 3 ERROR / subtests 10 PASS.
+  PostgreSQL 3개가 접속 전에 `explicit_local_test_postgres_url_required`로 거절됐다.
+  Android build job은 backend 실패 의존성 때문에 SKIPPED이며 CI Android PASS가 아니다.
+- 원인: workflow의 `TEST_POSTGRES_URL`에는 SQLAlchemy driver qualifier가 있었지만
+  보안 target parser는 libpq `postgresql://` 입력만 허용한다. 파서를 완화하지 않고
+  workflow의 합성 localhost URL 한 줄만 `postgresql://`로 수정했다.
+- 실제 workflow 값을 fixture에 전달하는 회귀를 추가해 같은 오류로 RED를 확인했다.
+  수정 후 URL 경계/마이그레이션/CI·서명 회귀 **82 PASS**. 실제 DB 재실행 결과는 아니다.
+- 사용자가 승인한 전체 CI 1회는 이미 실행했으므로 추가 CI를 자동 시작하지 않는다.
+  이 설정 수정은 `[skip ci]`로 보존하며, 추가 CI 승인 후 새 최종 SHA를 검증해야 한다.
+  기존 runtime 코드는 변경되지 않아 primary 718/QA29/Lint 결과를 재사용한다.
+- CI 미통과 상태를 유지하고 Draft 해제/main 병합/운영 배포를 보류한다.
