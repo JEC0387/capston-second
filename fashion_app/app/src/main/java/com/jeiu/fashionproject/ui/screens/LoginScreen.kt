@@ -65,9 +65,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     }
 
     // 카카오 로그인(브라우저)에서 돌아왔을 때
-    val redirect by AuthStore.redirect.collectAsState()
-    LaunchedEffect(redirect) {
-        val uri = AuthStore.consumeRedirect() ?: return@LaunchedEffect
+    LoginRedirectEffect { uri ->
         busy = Provider.of(uri.getQueryParameter("provider")) ?: Provider.KAKAO
         error = null; hint = null
         handle(AuthStore.finishBrowserLogin(context, uri))
@@ -102,7 +100,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
             Box(
                 Modifier.padding(20.dp).align(Alignment.TopStart).clip(RoundedCornerShape(8.dp))
                     .background(Camel).padding(horizontal = 12.dp, vertical = 6.dp)
-            ) { Text("STYLE AI", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            ) { Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name), color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }
 
         Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

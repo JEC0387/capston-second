@@ -33,12 +33,21 @@ OnboardingScreen     → GET  /api/styles
 """
 import base64
 import io
+from pathlib import Path
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+
+# Match the standalone outfit entry: explicit file, deployment values win,
+# and dollar expressions in a secret are never expanded.
+load_dotenv(Path(__file__).with_name(".env"), override=False, interpolate=False)
+
 from database import initialize_database, database_status, optional_db
 from db_api import app as db_router, catalog_rows
 from auth_api import router as auth_router, current_user
 from auth_provider_gate import router as provider_router
 from tryon_proxy import create_router as tryon_router, close_service as close_tryon
+from outfit_vton_api import OutfitService, create_router as outfit_router, service_lifespan
+from outfit_vton_provider import configured_provider
 
 import cv2
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
@@ -59,6 +68,7 @@ from schemas import (
 
 MAX_ANALYSIS_UPLOAD = 10 * 1024 * 1024
 PHOTO_PROCESSING_CONSENT_HEADER = "X-Photo-Processing-Consent"
+outfit_service = OutfitService(provider=configured_provider())
 
 
 def _require_photo_consent(request: Request, expected: str):
@@ -101,10 +111,11 @@ async def lifespan(_):
     status = database_status()
     if status.get("missing"):
         print(f"[DB] 빠진 표 · 칸: {', '.join(status['missing'])} → 적용 이력·스키마 검토 필요: MIGRATION_PREFLIGHT.md")
-    try:
-        yield
-    finally:
-        await close_tryon()
+    async with service_lifespan(outfit_service):
+        try:
+            yield
+        finally:
+            await close_tryon()
 
 
 app = FastAPI(
@@ -431,21 +442,39 @@ def root():
     return {"service": "FashionProject API", "docs": "/docs"}
 
 
+@app.get("/health", include_in_schema=False)
+def liveness():
+    # Liveness is not a database/authentication/provider readiness statement.
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"status": "alive"}, headers={"Cache-Control": "no-store"})
+
+
 app.include_router(auth_router)
 app.include_router(provider_router)
 app.include_router(db_router)
 app.include_router(tryon_router())
+app.include_router(outfit_router(outfit_service))
+app.state.outfit_vton = outfit_service
 
 
 @app.middleware("http")
 async def private_response_cache_policy(request, call_next):
-    response = await call_next(request)
+    outfit_path = (request.url.path == "/api/outfit-vton" or
+                   request.url.path.startswith("/api/outfit-vton/"))
+    try:
+        response = await call_next(request)
+    except Exception:
+        if not outfit_path:
+            raise
+        from fastapi.responses import JSONResponse
+        response = JSONResponse({"detail": "service_unavailable"}, status_code=503)
     private = ("/api/auth", "/api/wardrobe", "/api/wear-logs", "/api/body-measurements",
                "/api/profile", "/api/style-preference", "/api/product-interests",
                "/api/taste-events", "/api/recommendations", "/api/saved-outfits",
                "/api/outfit-plans", "/api/me", "/api/backup")
     private += ("/api/stats",)
     private += ("/api/clothing/classify", "/api/object-detection")
+    private += ("/api/outfit-vton",)
     if any(request.url.path == p or request.url.path.startswith(p + "/") for p in private):
         response.headers["Cache-Control"] = "no-store"
         response.headers["Pragma"] = "no-cache"

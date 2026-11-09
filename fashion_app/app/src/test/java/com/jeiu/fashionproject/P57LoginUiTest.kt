@@ -5,6 +5,12 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.ui.screens.LoginScreen
+import com.jeiu.fashionproject.data.BackendApi
+import com.jeiu.fashionproject.data.AuthStore
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.Before
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -16,6 +22,19 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], application = Application::class, qualifiers = "w600dp-h1000dp")
 class P57LoginUiTest {
     @get:Rule val compose = createComposeRule()
+    private val server = MockWebServer()
+    private lateinit var previousServer: String
+    @Before fun isolateProviderLookup() {
+        AuthStore.continueAsGuest(ApplicationProvider.getApplicationContext<Application>())
+        previousServer = BackendApi.BASE_URL
+        server.enqueue(MockResponse().setBody("""{"google":false,"kakao":false,"facebook":false,"apple":false}"""))
+        server.start()
+        BackendApi.BASE_URL = server.url("/").toString().trimEnd('/')
+    }
+    @After fun restoreProviderLookup() {
+        BackendApi.BASE_URL = previousServer
+        server.shutdown()
+    }
 
     @Test fun providerChooserNeverPromisesRestoreAndGuestPreservesLocalRecords() {
         val app = ApplicationProvider.getApplicationContext<Application>()
@@ -24,9 +43,10 @@ class P57LoginUiTest {
         val before = names.associateWith { app.getSharedPreferences(it, 0).all.toMap() }
         var entered = 0
         compose.setContent { LoginScreen(onDone = { entered++ }) }
-        // The server cannot be reached in tests, so no provider becomes available.
+        // A local fixture reports unconfigured providers; never contact Railway.
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("loginUnconfigured").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("loginUnconfigured").assertTextContains("아직 설정되지", substring = true)
+        compose.onNodeWithTag("loginUnconfigured").assertTextContains(
+            if (BuildConfig.PREVIEW_BUILD) "운영 계정 로그인을 사용하지" else "아직 설정되지", substring = true)
         listOf("google", "kakao").forEach {
             compose.onNodeWithTag("login_$it").performScrollTo().assertIsNotEnabled()
         }

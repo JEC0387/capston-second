@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject
 
+import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
@@ -17,7 +18,7 @@ import java.lang.reflect.Proxy
 
 /** Synthetic write faults; no device files, photos, server or claims about physical disk durability. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [35], application = Application::class)
 class P34ManualBodyPersistenceTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private val previous = ManualBodyMeasurements(170f, 40f, 90f, 80f, 95f, 75f, 50f, 1L)
@@ -25,6 +26,7 @@ class P34ManualBodyPersistenceTest {
     private lateinit var faulty: P34FaultingMeasurementContext
 
     @Before fun seedConfirmedMeasurement() {
+        assertEquals(Application::class.java, app.javaClass)
         ManualBodyStore.clear(app)
         assertTrue(ManualBodyStore.update(app, previous, true))
         faulty = P34FaultingMeasurementContext(app)

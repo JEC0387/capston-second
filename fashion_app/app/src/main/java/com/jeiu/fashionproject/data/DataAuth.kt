@@ -239,7 +239,31 @@ object DataAuth {
             val access = accessToken ?: return@withLock null
             val reply = call(path, body, access) ?: return@withLock null
             if (reply.server != BackendApi.BASE_URL) return@withLock null
-            if (reply.code == 401) markUnauthorized(access)
+            if (reply.code == 401) {
+                // A rejected/expired social identity is independent of this existing
+                // authenticated account. Only the server's explicit Bearer rejection
+                // disables synchronization; arbitrary remote diagnostics stay private.
+                val failureCode = runCatching {
+                    val detail = JSONObject(reply.body).opt("detail")
+                    when (detail) {
+                        is String -> detail
+                        is JSONObject -> detail.optString("code")
+                        else -> null
+                    }
+                }.getOrNull()
+                when (failureCode) {
+                    "authentication_required" -> markUnauthorized(access)
+                    "invalid_identity", "login_expired" -> Unit
+                    else -> {
+                        // Some HttpURLConnection implementations omit a streaming POST's
+                        // 401 body. Do not replay that POST or guess which credential failed.
+                        // One read-only status probe uses the original HTTPS origin/token.
+                        val status = call("/api/auth/status", JSONObject(), access, method = "GET", server = reply.server)
+                        if (status?.code == 401 && status.server == reply.server && reply.server == BackendApi.BASE_URL)
+                            markUnauthorized(access)
+                    }
+                }
+            }
             if (reply.code == 200) {
                 val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return@withLock null
                 if (json.optBoolean("switched")) {

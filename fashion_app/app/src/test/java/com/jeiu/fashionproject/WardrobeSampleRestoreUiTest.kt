@@ -58,6 +58,7 @@ class WardrobeSampleRestoreUiTest {
             colorName = "블랙", colorValue = 0xFF000000, imageUri = Uri.fromFile(photo).toString(),
             addedAt = 100L, favoritedAt = 200L, keptAt = 300L, brand = "내 브랜드", price = 12345)
         WardrobeStore.writeForRestore(context, listOf(personal))
+        assertEquals(photo.absolutePath, File(Uri.parse(personal.imageUri).path!!).absolutePath)
         val before = context.getSharedPreferences("wardrobe_store", 0).getString("items", null)
         assertFalse(WardrobeStore.addDemoSamplesIfEmpty(context))
         assertEquals(listOf(personal), WardrobeStore.items.value)
