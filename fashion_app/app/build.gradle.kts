@@ -19,9 +19,18 @@ val previewBuild = providers.gradleProperty("fashionPreview").orNull == "true"
 // Opt-in device QA has its own Android sandbox; never run storage fixtures in the user's Preview.
 val deviceQaBuild = providers.gradleProperty("fashionDeviceQa").orNull == "true"
 require(!deviceQaBuild || previewBuild) { "Device QA must retain Preview network isolation" }
+// Fourth, locally signed app: never an update to primary, Preview or device QA.
+val installTestBuild = providers.gradleProperty("fashionInstallTest").orNull == "true"
+require(!installTestBuild || (!previewBuild && !deviceQaBuild)) {
+    "Install test cannot be combined with Preview/QA"
+}
+require(!installTestBuild || !providers.environmentVariable("ANDROID_DISTRIBUTION_KEYSTORE").isPresent) {
+    "Install test must use its independent debug key, never a distribution key"
+}
+val loginRedirectScheme = if (installTestBuild) "fashionfit-installtest" else "fashionai"
 // Separate deployment approval; Preview/QA cannot enable production photo uploads.
 val outfitServerApproved = !previewBuild && providers.gradleProperty("fashionOutfitServerApproved").orNull == "true"
-val packagedVersionName = appVersionName + if (deviceQaBuild) "-qa" else if (previewBuild) "-preview" else ""
+val packagedVersionName = appVersionName + if (installTestBuild) "-installtest" else if (deviceQaBuild) "-qa" else if (previewBuild) "-preview" else ""
 require(appVersionName.matches(Regex("[A-Za-z0-9._-]+")))
 // GitHub ZIP 다운로드처럼 .git 이 없거나 git 이 없는 PC 에서도 빌드되게 한다.
 // 그때는 SHA 를 0 으로, 상태를 dirty 로 기록하므로 그 APK 는 배포(release)용으로 인정되지 않는다.
@@ -44,7 +53,7 @@ fun quoted(value: String) = "\"" + value.replace("\\", "\\\\").replace("\"", "\\
 
 val identityDir = layout.buildDirectory.dir("generated/assets/buildIdentity")
 val generateBuildIdentity by tasks.registering {
-    val identity = """{"versionCode":$appVersionCode,"versionName":${quoted(packagedVersionName)},"gitSha":${quoted(sourceSha)},"branch":${quoted(sourceBranch)},"buildNumber":${quoted(buildNumber)},"sourceDirty":$sourceDirty,"preview":$previewBuild,"deviceQa":$deviceQaBuild}"""
+    val identity = """{"versionCode":$appVersionCode,"versionName":${quoted(packagedVersionName)},"gitSha":${quoted(sourceSha)},"branch":${quoted(sourceBranch)},"buildNumber":${quoted(buildNumber)},"sourceDirty":$sourceDirty,"preview":$previewBuild,"deviceQa":$deviceQaBuild,"installTest":$installTestBuild}"""
     inputs.property("identity", identity)
     outputs.dir(identityDir)
     doLast {
@@ -57,12 +66,13 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.jeiu.fashionproject" + if (deviceQaBuild) ".preview.qa" else if (previewBuild) ".preview" else ""
+        applicationId = "com.jeiu.fashionproject" + if (installTestBuild) ".installtest" else if (deviceQaBuild) ".preview.qa" else if (previewBuild) ".preview" else ""
         minSdk = 24
         targetSdk = 36
         versionCode = appVersionCode
         versionName = packagedVersionName
-        resValue("string", "build_app_name", if (deviceQaBuild) "패션핏 QA" else if (previewBuild) "패션핏 Preview" else "패션핏")
+        resValue("string", "build_app_name", if (installTestBuild) "패션핏 설치검증" else if (deviceQaBuild) "패션핏 QA" else if (previewBuild) "패션핏 Preview" else "패션핏")
+        manifestPlaceholders["fashionLoginScheme"] = loginRedirectScheme
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 서버(FastAPI) 기본 주소 = Railway 에 올린 서버 (어디서든 접속 가능).
         // 내 PC 서버로 개발할 때는 local.properties 에 SERVER_URL=http://10.0.2.2:8000 (에뮬레이터) 또는
@@ -79,13 +89,25 @@ android {
         buildConfigField("boolean", "SOURCE_DIRTY", sourceDirty.toString())
         buildConfigField("boolean", "PREVIEW_BUILD", previewBuild.toString())
         buildConfigField("boolean", "DEVICE_QA_BUILD", deviceQaBuild.toString())
+        buildConfigField("boolean", "INSTALL_TEST_BUILD", installTestBuild.toString())
+        buildConfigField("String", "LOGIN_REDIRECT_SCHEME", quoted(loginRedirectScheme))
         buildConfigField("boolean", "SERVER_OUTFIT_APPROVED", outfitServerApproved.toString())
 
 
     }
 
+    if (installTestBuild) {
+        signingConfigs.create("installTestDebug") {
+            storeFile = rootProject.file(".installtest-signing/installtest-debug.p12")
+            storePassword = "android"
+            keyAlias = "installtestdebugkey"
+            keyPassword = "android"
+            storeType = "PKCS12"
+        }
+    }
     buildTypes {
         debug {
+            if (installTestBuild) signingConfig = signingConfigs.getByName("installTestDebug")
             // Only explicit signing material may be used for a distributed CI APK.
             System.getenv("ANDROID_DISTRIBUTION_KEYSTORE")?.let { path ->
                 require(previewBuild) {
@@ -132,6 +154,12 @@ android {
     }
 }
 tasks.named("preBuild") { dependsOn(generateBuildIdentity) }
+// This opt-in target is a debug installation candidate, not a Release distribution.
+gradle.taskGraph.whenReady {
+    require(!installTestBuild || allTasks.none { it.project == project && it.name.contains("Release") }) {
+        "Install test supports debug tasks only; existing Release configuration is unchanged"
+    }
+}
 
 dependencies {
     implementation(libs.androidx.core.ktx)

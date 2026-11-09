@@ -16,6 +16,7 @@ class FashionFitBrandingTest {
 
     @Test fun manifestUsesDistinctLauncherNameAndPreservesPackage() {
         val expected = when {
+            BuildConfig.INSTALL_TEST_BUILD -> "패션핏 설치검증"
             BuildConfig.DEVICE_QA_BUILD -> "패션핏 QA"
             BuildConfig.PREVIEW_BUILD -> "패션핏 Preview"
             else -> "패션핏"
