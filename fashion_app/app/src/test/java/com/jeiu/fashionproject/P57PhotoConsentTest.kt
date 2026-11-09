@@ -41,6 +41,8 @@ class P57PhotoConsentTest {
         get() = ReflectionHelpers.getStaticField(DataAuth::class.java, "_state")
 
     @Before fun isolateSyntheticAuthProcess() {
+        assertFalse("Storage fixtures must not leak a live server-reconnect worker into photo tests",
+            ReflectionHelpers.getStaticField<Boolean>(ServerConnection::class.java, "started"))
         previousAuthFields = (nullableAuthFields + booleanAuthFields).associateWith { name ->
             ReflectionHelpers.getStaticField<Any?>(DataAuth::class.java, name)
         }
@@ -155,7 +157,10 @@ class P57PhotoConsentTest {
                 assertEquals(ClothingPhotoConsent.CLASSIFY, request.getHeader("X-Photo-Processing-Consent"))
                 assertTrue(request.body.readByteArray().asList().windowed(4).any { it == listOf<Byte>(1, 2, 3, 4) })
                 assertTrue(runCatching { BackendApi.classifyClothing(app, uri, consent = consent) }.isFailure)
-                assertEquals(1, server.requestCount)
+                // Keep the one-request invariant. If another request arrives,
+                // record only its method/path, never headers, tokens or image bytes.
+                val unexpected = if (server.requestCount != 1) server.takeRequest(2, TimeUnit.SECONDS) else null
+                assertEquals("Unexpected request: ${unexpected?.method} ${unexpected?.requestUrl?.encodedPath}", 1, server.requestCount)
             }
             val wrongPurpose = ClothingPhotoConsent.confirm(uri.toString(), BackendApi.BASE_URL)!!
             assertTrue(runCatching { BackendApi.detectObjects(app, uri, consent = wrongPurpose) }.isFailure)

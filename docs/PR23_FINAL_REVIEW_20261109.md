@@ -87,3 +87,44 @@
   이 설정 수정은 `[skip ci]`로 보존하며, 추가 CI 승인 후 새 최종 SHA를 검증해야 한다.
   기존 runtime 코드는 변경되지 않아 primary 718/QA29/Lint 결과를 재사용한다.
 - CI 미통과 상태를 유지하고 Draft 해제/main 병합/운영 배포를 보류한다.
+
+## 추가 승인 CI #46 — 실패 상태 보존
+
+- 사용자의 추가 1회 승인으로 `b120c13df833554fd81981cdec6ecada5617ad68`에서
+  https://github.com/JEC0387/capston-second/actions/runs/42559250033 을 실행했다.
+  `4111da6`의 PostgreSQL URL 수정은 포함되며 이후 앱 실행 코드 변경은 없다.
+- 공개 저장소의 표준 runner에서 manual `full / validation_only=true`를 사용했다.
+  전체 검사 명령은 유지하고 Artifact 업로드, Gradle 캐시 쓰기, 배포 서명 secret 로드를
+  하지 않았다. 실제 Artifact 0개. 계정 전체 사용량/청구 잔액은 조회하지 못했다.
+- Backend **706 PASS / 0 FAIL / 0 ERROR / 33 SKIP**, subtests 10 PASS.
+  PostgreSQL 16의 동시 요청 제한·일회용 복구 티켓·사진/기록 복구 및 계정 격리 3개도 통과했다.
+  Windows 3.11/3.12/3.13/3.14와 Ubuntu 3.12 서버 시작 5개 job PASS.
+- Android P23 집중 검사와 기본 APK 컴파일/assemble PASS. 전체 단위 검사
+  **717 PASS / 1 FAIL / 2 SKIP**. `P57PhotoConsentTest`의
+  `productionRequiresBearerAndPurposeHeaderWhilePreviewSendsNothing`에서
+  총 요청 수 `expected 1 / actual 2`로 실패했다. 이후 계측 컴파일/Lint/Preview/정렬은
+  SKIPPED이며 이전 로컬 결과를 이번 CI의 성공으로 대체하지 않는다.
+- CI 로그에는 추가 요청의 경로가 없어, 실제 중복 업로드인지 테스트 간 백그라운드
+  요청 간섭인지 아직 확정할 수 없다. 동일 동의의 재사용 거절 assertion 자체는 통과한 뒤
+  총 요청 수 assertion에서 실패했다. 기대값을 유지하고 추가 요청의 method/path만
+  실패 메시지에 포함하도록 진단을 보강했다. 인증 헤더·사진 본문은 기록하지 않는다.
+- 자동 CI 재실행은 하지 않았다. PR Draft 유지, 팀 리뷰/병합 준비 완료로 판정하지 않는다.
+  main 병합·운영 배포·기기 설치·Genlook 호출은 수행하지 않았다.
+- 로컬 사진 동의/인증 21개는 PASS하여 단독 재현되지 않았다. 이후 저장 fixture 2개가
+  실제 `FashionApp.onCreate`를 실행함을 새 assertion으로 재현했다(7개 모두
+  expected `android.app.Application`, actual `FashionApp` 실패). 이 경로는 DbSync와
+  ServerConnection의 주기적 네트워크 작업을 시작하며 저장 단위 검사의 범위를 벗어난다.
+- `ManualBodyMeasurementsTest`, `P34ManualBodyPersistenceTest`에 테스트 전용 Application을
+  명시했다. 사진 동의 검사에는 ServerConnection 미시작 assertion을 추가하고 기존
+  요청 수 1회/인증/동의/원본 바이트 검증은 유지했다. 실제 CI의 두 번째 요청 경로는
+  로그에 없어 이 fixture 결함과의 인과관계 전체를 CI에서 확인한 것으로 주장하지 않는다.
+- 로컬 진단 run08은 SDK 환경변수 누락으로 테스트 시작 전 실패했다. 잘못 복사된 이전
+  XML에는 `NOT_THIS_RUN.txt`를 남겼고 집계하지 않는다. run09는 640MiB Gradle heap의
+  GC thrashing으로 중단됐으며 테스트 결과가 아니다. run10은 명령 전용 1024MiB heap,
+  단일 worker로 실행해 21 PASS. 전역 JVM/시스템 설정은 바꾸지 않았다.
+- fixture 수정 후 로컬 전체 run12: **718 PASS / 0 FAIL / 0 ERROR / 2 SKIP**,
+  128 classes / 720 tests, BUILD SUCCESSFUL(9분 57초). 저장 fixture 7개, 사진 동의 4개 및
+  재접속 worker 미시작 assertion을 포함한다. 기존 두 live/loopback skip만 유지됐다.
+  이 로컬 결과는 Ubuntu CI 재검증 성공을 뜻하지 않는다. 이번 추가 CI 승인 1회는
+  소진됐으므로 자동 재실행 없이 `[skip ci]`로 테스트 환경 수정과 기록만 보존한다.
+  앱 실행 코드는 그대로이며 APK 재제작/설치·Lint 반복은 수행하지 않았다.
