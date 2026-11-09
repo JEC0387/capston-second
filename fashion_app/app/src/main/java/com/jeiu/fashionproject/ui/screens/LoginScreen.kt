@@ -65,9 +65,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     }
 
     // 카카오 로그인(브라우저)에서 돌아왔을 때
-    val redirect by AuthStore.redirect.collectAsState()
-    LaunchedEffect(redirect) {
-        val uri = AuthStore.consumeRedirect() ?: return@LaunchedEffect
+    LoginRedirectEffect { uri ->
         busy = Provider.of(uri.getQueryParameter("provider")) ?: Provider.KAKAO
         error = null; hint = null
         handle(AuthStore.finishBrowserLogin(context, uri))

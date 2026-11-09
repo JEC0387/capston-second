@@ -1,5 +1,10 @@
 # P57 team integration candidate
 
+**Subsequent user-authorized work, 2026-11-09:** see [Genlook restore and login integration](GENLOOK_RESTORE_20261109.md).
+That candidate starts from newer team main with the Google/Kakao Bearer bridge and reapplies the closure fixes below.
+The closure and earlier provider/Draft statements here are historical; P54's real Genlook/S25+ success remains valid,
+and is not replaced by a new-model/GPU requirement. Operating deployment is currently held for the Railway administrator.
+
 **Closure at the user's request, 2026-11-09 KST:** release-blocker source fixes below are locally verified and saved; no new feature work, operating deployment, device operation or generation was performed. During final remote inspection, PR #19 was already reported **closed/merged** (API timestamp `2026-11-07T03:39:16Z`), and team main was `9e94e0e5bd1c70eec08e596ac5dd30622957153e`. This work did not change main or merge the PR. These new fixes are preserved on the existing local/personal-backup candidate branch only; they have **not** been incorporated into that newer team main or a new PR. Earlier Draft/main-state statements below describe their historical verification time.
 
 ### Release-blocker fixes saved at closure

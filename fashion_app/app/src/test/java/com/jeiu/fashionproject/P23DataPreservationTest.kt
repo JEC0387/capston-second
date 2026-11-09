@@ -88,7 +88,9 @@ class P23DataPreservationTest {
             assertFalse("Rejected recovery must not install a replacement journal",RestoreJournal.hasPending(context))
         }
 
-        val certificate=HeldCertificate.Builder().addSubjectAlternativeName("localhost").build()
+        // Windows may advertise numeric loopback. Keep hostname verification on.
+        val certificate=HeldCertificate.Builder().addSubjectAlternativeName("localhost")
+            .addSubjectAlternativeName("127.0.0.1").addSubjectAlternativeName("::1").build()
         val server=MockWebServer().apply {
             useHttps(HandshakeCertificates.Builder().heldCertificate(certificate).build().sslSocketFactory(),false)
             start()
@@ -106,6 +108,15 @@ class P23DataPreservationTest {
             HttpsURLConnection.setDefaultSSLSocketFactory(HandshakeCertificates.Builder()
                 .addTrustedCertificate(certificate.certificate).build().sslSocketFactory())
             BackendApi.BASE_URL=destination
+            // A TLS fixture failure must not masquerade as a successful rejection test.
+            server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            val probe=server.url("/__tls_probe").toUrl().openConnection() as HttpsURLConnection
+            try {
+                probe.connectTimeout=5_000; probe.readTimeout=5_000
+                assertEquals("Local TLS fixture must be reachable",200,probe.responseCode)
+                probe.inputStream.close()
+            } finally { probe.disconnect() }
+            assertEquals("/__tls_probe",server.takeRequest(3,TimeUnit.SECONDS)?.path)
             assertTrue(vault.write(JSONObject().put("token",originalToken).put("origin",destination)
                 .put("recovery",originalRecovery).put("enabled",true)))
             DataAuth.initialize(context,vault)
@@ -113,14 +124,14 @@ class P23DataPreservationTest {
             assertTrue("Synthetic account starts enabled",DataAuth.canSync)
 
             assertSame(BackupRestore.Result.InvalidCode,BackupRestore.restore(context,"cancelled-invalid-input"))
-            assertEquals(0,server.requestCount)
+            assertEquals(1,server.requestCount) // Only the credential-free TLS probe.
             assertPreserved()
 
             if (BuildConfig.PREVIEW_BUILD) {
                 assertFalse(DbSync.isEnabled)
                 assertSame(BackupRestore.Result.Offline,BackupRestore.restore(context,requestedRecovery))
                 assertNull(BackendApi.getJson("/api/backup/snapshot"))
-                assertEquals("Preview must not send auth or personal records even to a configured endpoint",0,server.requestCount)
+                assertEquals("Preview must not send auth or personal records beyond the fixture TLS probe",1,server.requestCount)
                 assertPreserved()
                 return@runBlocking
             }

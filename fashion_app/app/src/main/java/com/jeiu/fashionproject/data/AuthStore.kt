@@ -53,7 +53,9 @@ object AuthStore {
     private const val KEY_BEARER = "bearer_v2"
     const val REDIRECT_SCHEME = "fashionai"
     const val REDIRECT_HOST = "login"
-    const val UNAVAILABLE = "소셜 로그인과 안전한 계정 연결이 아직 설정되지 않았어요. 기존 기록은 유지하며 로컬 게스트로 이용할 수 있어요."
+    val UNAVAILABLE: String get() = if (BuildConfig.PREVIEW_BUILD)
+        "QA·Preview에서는 운영 계정 로그인을 사용하지 않아요. 기존 기록은 유지하며 로컬 게스트로 이용할 수 있어요."
+    else "소셜 로그인과 안전한 계정 연결이 아직 설정되지 않았어요. 기존 기록은 유지하며 로컬 게스트로 이용할 수 있어요."
     private val _mode = MutableStateFlow(Mode.NONE)
     val mode: StateFlow<Mode> = _mode
     private val _account = MutableStateFlow<Account?>(null)
@@ -97,11 +99,14 @@ object AuthStore {
      * value means local persistence, NOT successful server synchronization. */
     suspend fun signOut(context: Context): Boolean = saveLocalMode(context, Mode.NONE)
 
-    fun isGoogleConfigured(): Boolean = BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
+    fun isGoogleConfigured(): Boolean = !BuildConfig.PREVIEW_BUILD && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
     /** Server switches (google · kakao). Unknown or offline → everything off. Facebook · Apple are always off. */
     suspend fun serverProviders(): Map<String, Boolean> {
         val off = Provider.entries.associate { it.key to false }
+        // Preview/QA must not advertise a login which DataAuth deliberately blocks.
+        // Check before reading the production provider endpoint or opening an account chooser.
+        if (BuildConfig.PREVIEW_BUILD) return off
         val body = BackendApi.getJson("/api/auth/providers") ?: return off
         val json = runCatching { JSONObject(body) }.getOrNull() ?: return off
         return Provider.entries.associate { it.key to (it in ENABLED_PROVIDERS && json.optBoolean(it.key, false)) }
@@ -188,9 +193,10 @@ object AuthStore {
             is BackupRestore.Result.Done, BackupRestore.Result.RestartRequired ->
                 Result.Success(account, restart = true, isNewAccount = false)
             BackupRestore.Result.NotFound -> {
-                // That account has no server records yet: keep this phone's records and resume sync.
-                DataAuth.completeRestore()
-                Result.Success(account, restart = false, isNewAccount = isNew)
+                // The old local records and pending uploads still belong to the previous
+                // account. An empty new account is not consent to transfer them. Keep the
+                // durable restore barrier until an explicit account/data decision is made.
+                Result.Failed("선택한 계정에 복원할 기록이 없어요. 이 기기의 기록과 전송 대기열은 유지하며 동기화를 보류했어요. 계정 전환이나 기록 이전을 별도로 확인해 주세요.")
             }
             else -> Result.Failed("로그인은 됐지만 계정 기록을 받아 오지 못했어요. 마이페이지 > 백업에서 '복원 이어하기'를 눌러 주세요.")
         }

@@ -67,6 +67,7 @@ private val bottomNavRoutes = setOf(
 @Composable
 fun AppNavigation() {
     val navController = rememberNavController()
+    LoginRedirectNavigation(navController)
     val context = LocalContext.current
     val weatherViewModel: WeatherViewModel = viewModel()
     val bodyAnalysisViewModel: BodyAnalysisViewModel = viewModel()
