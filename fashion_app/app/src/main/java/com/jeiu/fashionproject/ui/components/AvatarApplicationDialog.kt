@@ -28,7 +28,10 @@ fun AvatarApplicationDialog(previous: AvatarProfile?,candidate: AvatarProfile,on
     val contentHeight=(LocalConfiguration.current.screenHeightDp.dp * .42f).coerceAtMost(360.dp)
     AlertDialog(onDismissRequest=onDismiss,title={Text("3D 변경 확인")},text={
         Column(Modifier.heightIn(max=contentHeight).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            Text(comparison("키",previous?.heightCm,candidate.heightCm))
+            var changed = 0
+            if (previous == null || number(previous.heightCm) != number(candidate.heightCm)) {
+                Text(comparison("키",previous?.heightCm,candidate.heightCm)); changed++
+            }
             val parts=listOf(AvatarPart.SHOULDER,AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP)
             val oldWidths=listOf(initial.shoulderCm,initial.chestWidthCm,initial.waistWidthCm,initial.hipWidthCm)
             val widths=listOf(after.shoulderCm,after.chestWidthCm,after.waistWidthCm,after.hipWidthCm)
@@ -37,9 +40,13 @@ fun AvatarApplicationDialog(previous: AvatarProfile?,candidate: AvatarProfile,on
                 // Never compare a legacy front width with a circumference.
                 val useCm=cm!=null && (previous==null || previous.centimeters!=null)
                 val label=if(useCm) "${part.label} ${part.unit}" else "${part.label} 표시 너비"
-                Text(comparison(label,if(previous==null)null else if(useCm)previous.centimeters!![part] else oldWidths[index],
-                    if(useCm)cm!![part] else widths[index]))
+                val old = if(previous==null)null else if(useCm)previous.centimeters!![part] else oldWidths[index]
+                val value = if(useCm)cm!![part] else widths[index]
+                if (old == null || number(old) != number(value)) {
+                    Text(comparison(label,old,value)); changed++
+                }
             }
+            if (changed == 0) Text("핵심 치수 변화 없음 · 다른 조절값은 상세 보기에서 확인하세요.", modifier=Modifier.testTag("avatarNoCoreChanges"))
             Text("3D 표시용 치수예요. 사진 너비는 실측 둘레와 달라요.",style=MaterialTheme.typography.bodySmall)
             TextButton(onClick={details=!details},modifier=Modifier.testTag("avatarComparisonDetails")) { Text(if(details)"상세 접기" else "상세 보기") }
             if(details) {

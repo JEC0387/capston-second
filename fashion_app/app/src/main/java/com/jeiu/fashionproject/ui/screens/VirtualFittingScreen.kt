@@ -717,7 +717,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             Column(modifier = Modifier.weight(1f)) {
                 Text("가상 피팅", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 if (!compact) Text(
-                    if (avatarMode) "저장한 3D 추정 형상 위에 옷 사진을 배치해요"
+                    if (avatarMode) "3D에 직접 배치해요 · AI 생성은 내 사진에서만 가능해요"
                     else when (poseStatus) {
                         PoseStatus.NONE -> "전신 사진을 고르면 옷을 몸에 자동으로 맞춰요"
                         PoseStatus.LOADING -> "몸 위치를 찾는 중…"
@@ -764,18 +764,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 }, enabled = avatarProfile != null && worn.isNotEmpty(),
                     modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
             }
-        }
-
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
-                colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
-                Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("AI로 입어보기")
-            }
-            if (!avatarMode && !compact) Text("선택한 사진과 상의·하의·신발을 확인하고 전송에 동의한 뒤 시작해요.",
-                color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
         // 피팅 캔버스
@@ -977,8 +965,84 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+            if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
+                colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
+                Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("AI로 입어보기")
+            }
+            if (!avatarMode && !compact) Text("선택한 사진과 상의·하의·신발을 확인하고 전송에 동의한 뒤 시작해요.",
+                color = MediumGray, style = MaterialTheme.typography.labelSmall)
+        }
+
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
+        // 입어볼 옷 선택 (종류별로 한 벌씩 함께 입을 수 있음)
+        Text(
+            "옷 선택 · 상의 / 하의 / 신발",
+            style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
+        )
+        if (!avatarMode) Text("카드를 길게 누른 뒤 사진에 놓으세요 · 클릭 선택도 가능해요",
+            style = MaterialTheme.typography.labelSmall, color = Brown, modifier = Modifier.padding(horizontal = 20.dp))
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(bottom = 20.dp).testTag("manualWardrobe")
+        ) {
+            items(wardrobeItems, key = { it.id }) { item ->
+                var cardOrigin by remember(item.id) { mutableStateOf(Offset.Zero) }
+                val isWorn = worn[slotOf(item)]?.item?.id == item.id
+                val cut = hasCutout(item)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(84.dp)
+                ) {
+                    Card(
+                        onClick = { toggle(item) },
+                        modifier = Modifier.testTag("manualGarment-${item.id}")
+                            .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
+                            .pointerInput(item.id, avatarMode, bodyPhoto, photoGeneration) {
+                                if (!avatarMode) detectDragGesturesAfterLongPress(
+                                    onDragStart = { local ->
+                                        if (manual.bodyPhoto != null && manual.photoDisplaySize != null) {
+                                            dragItem = item; dragGeneration = manual.photoGeneration
+                                            dragRootPoint = cardOrigin + local
+                                        } else inputNotice = "먼저 전신 사진을 선택하고 사진 표시를 기다려주세요."
+                                    },
+                                    onDrag = { change, amount ->
+                                        if (dragItem?.id == item.id) { change.consume(); dragRootPoint += amount }
+                                    },
+                                    onDragEnd = { val chosen = dragItem; dragItem = null; if (chosen != null) drop(chosen, dragRootPoint) },
+                                    onDragCancel = { dragItem = null }
+                                )
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        border = if (isWorn) BorderStroke(2.dp, Camel) else null,
+                        colors = CardDefaults.cardColors(containerColor = if (isWorn) CamelLight else White)
+                    ) {
+                        AsyncImage(
+                            model = fittingUri(item),
+                            contentDescription = item.name,
+                            modifier = Modifier
+                                .size(84.dp)
+                                .background(if (cut) CreamDark else LightGray)
+                                .padding(if (cut) 6.dp else 0.dp),
+                            contentScale = if (cut) ContentScale.Fit else ContentScale.Crop
+                        )
+                    }
+                    Text(
+                        item.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isWorn) Camel else MediumGray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
         if (avatarMode) {
             avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
             overlayIssue?.let {
@@ -986,7 +1050,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 TextButton(onClick = { askClearOverlay = true },
                     modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
             }
-        } else if (bodyPhoto != null && manualToolsExpanded) {
+        } else if (bodyPhoto != null) {
             TextButton(onClick = { autoFitNow() },
                 enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
                 Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
@@ -1004,7 +1068,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
             OutlinedButton(onClick = { manualToolsExpanded = !manualToolsExpanded },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).testTag("manualToolsToggle")) {
-                Text(if (manualToolsExpanded) "직접 배치 저장 닫기" else "직접 배치한 사진 저장")
+                Text(if (manualToolsExpanded) "직접 배치 저장 닫기" else "직접 배치 결과 저장")
             }
             if (manualToolsExpanded) ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
             if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
@@ -1131,70 +1195,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
-        // 입어볼 옷 선택 (종류별로 한 벌씩 함께 입을 수 있음)
-        Text(
-            "입어볼 옷 선택 · 종류별로 한 벌씩 배치해요",
-            style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-        )
-        if (!avatarMode) Text("카드를 길게 누른 뒤 사진에 놓으세요 · 클릭 선택도 가능해요",
-            style = MaterialTheme.typography.labelSmall, color = Brown, modifier = Modifier.padding(horizontal = 20.dp))
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.padding(bottom = 20.dp).testTag("manualWardrobe")
-        ) {
-            items(wardrobeItems, key = { it.id }) { item ->
-                var cardOrigin by remember(item.id) { mutableStateOf(Offset.Zero) }
-                val isWorn = worn[slotOf(item)]?.item?.id == item.id
-                val cut = hasCutout(item)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(84.dp)
-                ) {
-                    Card(
-                        onClick = { toggle(item) },
-                        modifier = Modifier.testTag("manualGarment-${item.id}")
-                            .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
-                            .pointerInput(item.id, avatarMode, bodyPhoto, photoGeneration) {
-                                if (!avatarMode) detectDragGesturesAfterLongPress(
-                                    onDragStart = { local ->
-                                        if (manual.bodyPhoto != null && manual.photoDisplaySize != null) {
-                                            dragItem = item; dragGeneration = manual.photoGeneration
-                                            dragRootPoint = cardOrigin + local
-                                        } else inputNotice = "먼저 전신 사진을 선택하고 사진 표시를 기다려주세요."
-                                    },
-                                    onDrag = { change, amount ->
-                                        if (dragItem?.id == item.id) { change.consume(); dragRootPoint += amount }
-                                    },
-                                    onDragEnd = { val chosen = dragItem; dragItem = null; if (chosen != null) drop(chosen, dragRootPoint) },
-                                    onDragCancel = { dragItem = null }
-                                )
-                            },
-                        shape = RoundedCornerShape(14.dp),
-                        border = if (isWorn) BorderStroke(2.dp, Camel) else null,
-                        colors = CardDefaults.cardColors(containerColor = if (isWorn) CamelLight else White)
-                    ) {
-                        AsyncImage(
-                            model = fittingUri(item),
-                            contentDescription = item.name,
-                            modifier = Modifier
-                                .size(84.dp)
-                                .background(if (cut) CreamDark else LightGray)
-                                .padding(if (cut) 6.dp else 0.dp),
-                            contentScale = if (cut) ContentScale.Fit else ContentScale.Crop
-                        )
-                    }
-                    Text(
-                        item.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isWorn) Camel else MediumGray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
+
         }
 
     }

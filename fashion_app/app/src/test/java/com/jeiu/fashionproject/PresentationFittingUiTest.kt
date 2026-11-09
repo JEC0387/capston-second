@@ -7,6 +7,8 @@ import androidx.activity.result.*
 import androidx.activity.result.contract.ActivityResultContract
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -59,7 +61,8 @@ class PresentationFittingUiTest {
         }
         val owner = object : ActivityResultRegistryOwner { override val activityResultRegistry = registry }
         compose.setContent {
-            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
+            CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner,
+                LocalDensity provides Density(LocalDensity.current.density, 1.5f)) {
                 Box(Modifier.height(360.dp)) { VirtualFittingScreen(onBack = {}) }
             }
         }
@@ -73,6 +76,9 @@ class PresentationFittingUiTest {
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("manualScale").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("manualAlpha").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("fittingCanvas").assertIsDisplayed()
+        Assert.assertTrue(compose.onNodeWithTag("fittingCanvas").fetchSemanticsNode().size.height > 0)
+        compose.onNodeWithTag("aiTryOnWand").assertIsDisplayed()
         compose.onNodeWithTag("manualScaleUp").assertIsDisplayed().performClick()
         compose.onNodeWithTag("manualScale").assert(SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
@@ -81,7 +87,7 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAlpha").assert(SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
             androidx.compose.ui.semantics.ProgressBarRangeInfo(.6f, .3f..1f)))
-        compose.onNodeWithText("입어볼 옷 선택 · 종류별로 한 벌씩 배치해요").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("옷 선택 · 상의 / 하의 / 신발").performScrollTo().assertIsDisplayed()
     }
     @Test fun wandWithoutPhotoOpensServerReadinessWithoutGeneration() {
         compose.setContent { VirtualFittingScreen {} }

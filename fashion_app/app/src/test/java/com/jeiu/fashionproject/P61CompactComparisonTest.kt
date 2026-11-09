@@ -43,4 +43,26 @@ class P61CompactComparisonTest {
         compose.onNodeWithText("가슴 표시 너비",substring=true).assertExists()
         compose.onNodeWithText("가슴 둘레",substring=true).assertDoesNotExist()
     }
+    @Test fun unchangedCoreDimensionsAreHiddenButDetailedReviewAndCancelRemainAvailable() {
+        val previous=AvatarProfile(174f,72f)
+        compose.setContent { AvatarApplicationDialog(previous,previous.copy(leg=1.1f),{}, {}) }
+        compose.onNodeWithTag("avatarNoCoreChanges").assertExists()
+        compose.onNodeWithText("키:",substring=true).assertDoesNotExist()
+        compose.onNodeWithTag("avatarComparisonDetails").performScrollTo().performClick()
+        compose.onNodeWithText("다리 표시 길이",substring=true).assertExists()
+        compose.onNodeWithTag("avatarApplyCancel").assertIsDisplayed()
+    }
+    @Test fun oneChangedCoreMeasurementShowsOnlyThatMeasurementWithoutSaving() {
+        val cm=AvatarCentimeters.fromLegacy(AvatarProfile(174f,72f),100L)!!
+        val old=AvatarProfile(174f,72f,centimeters=cm)
+        val next=old.copy(centimeters=cm.adjusted(AvatarPart.WAIST,cm[AvatarPart.WAIST]+1f)!!)
+        var saved=false
+        compose.setContent { AvatarApplicationDialog(old,next,{}, {saved=true},true) }
+        compose.onNodeWithText("허리 둘레:",substring=true).assertExists()
+        compose.onNodeWithText("가슴 둘레:",substring=true).assertDoesNotExist()
+        compose.onNodeWithText("키:",substring=true).assertDoesNotExist()
+        compose.onNodeWithTag("avatarApplyCancel").performClick()
+        compose.runOnIdle { assertFalse(saved) }
+    }
+
 }

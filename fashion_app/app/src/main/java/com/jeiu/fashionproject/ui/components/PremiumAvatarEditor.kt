@@ -115,9 +115,9 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=::leave) {Icon(Icons.AutoMirrored.Filled.ArrowBack,contentDescription="3D 조절 닫기")}
-                    Text("3D 체형 조절",style=MaterialTheme.typography.titleLarge,color=Brown)
+                    Text("내 체형 수정",style=MaterialTheme.typography.titleLarge,color=Brown)
                 }
-                Column(Modifier.weight(if(compact).45f else .58f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
+                Column(Modifier.weight(if(compact).45f else .65f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
                     BodyAvatarViewport(body.parameters(),1f,Modifier.weight(1f).fillMaxWidth().testTag("cmAvatarViewport"),
                         resetKey=cameraReset,cameraYaw=yaw,onRotation={yaw=it},fitModel=true)
                     Row(horizontalArrangement=Arrangement.Center) {
@@ -131,7 +131,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         AvatarPart.entries.forEach {part->FilterChip(selected==part,{selectedName=part.name},label={Text(part.label)},
                             modifier=Modifier.testTag("cmPart-${part.name}"))}
                     }
-                Column(Modifier.weight(if(compact).55f else .42f).fillMaxWidth().verticalScroll(rememberScrollState())
+                Column(Modifier.weight(if(compact).55f else .35f).fillMaxWidth().verticalScroll(rememberScrollState())
                     .padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Text("${selected.label} ${selected.unit}",style=MaterialTheme.typography.titleMedium,color=Brown,
                         modifier=Modifier.testTag("cmPartLabel"))
@@ -171,7 +171,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal=16.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
                     TextButton(onClick=::leave, modifier=Modifier.testTag("cmEditorCancel")) {Text("취소")}
-                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.weight(1f).testTag("cmEditorSave")) {Text("적용")}
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.weight(1f).testTag("cmEditorSave")) {Text("이 체형으로 저장")}
                 }
             }
         }

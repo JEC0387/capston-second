@@ -107,6 +107,8 @@ class P51ServerPairedModeUiTest {
         compose.onNodeWithTag("serverOutfitResume").performScrollTo().performClick()
         await { vm.state.result != null && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitResultLabel").performScrollTo().assertTextEquals("이전 서버 작업 결과 · 새 생성 아님")
+        compose.onNodeWithTag("serverOutfitResultSource").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitDetails").performScrollTo().performClick()
         compose.onNodeWithTag("serverOutfitResultSource").performScrollTo().assertTextEquals(
             "출처: Genlook Try-On API · 3회 순차 생성 · 내부 모델 버전 미공개. 파일 검증과 착장 품질 합격은 달라요.")
         assertEquals(0, posts)

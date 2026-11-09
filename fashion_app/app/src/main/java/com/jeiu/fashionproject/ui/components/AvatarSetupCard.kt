@@ -123,7 +123,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
                     val cm = profile.centimeters ?: AvatarCentimeters.fromLegacy(profile,System.currentTimeMillis())
                     cm?.let { cmEditingRaw=AvatarProfileStore.encode(profile.copy(centimeters=it)) }
                 }
-            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text("3D 미리보기 · 조절")}
+            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text(if (saved != null) "내 체형 수정" else "최신 3D 미리보기")}
             OutlinedButton(onClick={advancedExpanded=!advancedExpanded},
                 modifier=Modifier.fillMaxWidth().testTag("avatarAdvancedToggle")) {
                 Text(if(advancedExpanded) "고급 설정 접기" else "다른 입력 방법 · 상세 보기")

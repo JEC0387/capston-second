@@ -106,7 +106,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
             TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving && !linkingAccount,
-                modifier = Modifier.testTag("serverOutfitCheck")) { Text("연결 확인 · 다시 확인") }
+                modifier = Modifier.testTag("serverOutfitCheck")) { Text(if (state.config?.ready == true) "연결 다시 확인" else "연결 확인") }
             Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!accountReady && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
                 modifier = Modifier.testTag("serverOutfitReady"))
             if (BuildConfig.INSTALL_TEST_BUILD && !accountReady) Text("앱 관리자에게 설치검증 앱의 시험 계정 연결을 요청해주세요. Google·카카오 로그인 등록과는 별개예요.",
@@ -227,7 +227,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("serverOutfitError")) }
             if (visible != null) Text(if (state.previous) "이전 서버 작업 결과 · 새 생성 아님" else "현재 서버 요청 결과 · 품질 검수 필요",
                 modifier = Modifier.testTag("serverOutfitResultLabel"))
-            if (visible != null) state.status?.source?.let {
+            if (visible != null && details) state.status?.source?.let {
                 val modeLabel = when (it.mode) {
                     "clothing-pair-then-shoes" -> "상의·하의 함께 → 신발, 2회 생성"
                     "sequential-3" -> "3회 순차 생성"
@@ -238,7 +238,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 Text("이 작업 예약 상한 ${it.creditsReserved}크레딧 · 실제 청구액은 공급자 사용 내역으로 확인해주세요.")
             }
             TextButton(onClick = { comparison = true; showOriginal = false }, enabled = visible != null,
-                modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본·서버 결과 비교") }
+                modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본과 비교") }
             TextButton(onClick = {
                 if (saving || pendingSave != null) return@TextButton
                 try {
@@ -247,12 +247,14 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 } catch (_: OutOfMemoryError) { pendingSave = null; message = "저장할 메모리가 부족해요." }
                 catch (_: Exception) { pendingSave = null; message = "저장 선택기를 열지 못했어요." }
             }, enabled = visible != null && !saving && pendingSave == null,
-                modifier = Modifier.testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "결과 PNG 저장") }
+                modifier = Modifier.testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "저장하기") }
             TextButton(onClick = {
                 picking = true
                 try { open.launch(arrayOf("image/png", "image/jpeg")) }
                 catch (_: Exception) { picking = false; message = "저장 파일 선택기를 열지 못했어요." }
             }, enabled = !picking && !reading, modifier = Modifier.testTag("serverOutfitOpen")) { Text("저장 이미지 열기") }
+            if (visible != null) TextButton(onClick = onBack, enabled = !saving && pendingSave == null,
+                modifier = Modifier.testTag("serverOutfitChangeClothes")) { Text("다른 옷 입어보기") }
             message?.let { Text(it, modifier = Modifier.testTag("serverOutfitMessage")) }
         }
     }
