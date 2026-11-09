@@ -93,9 +93,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text("내 3D 모델",style=MaterialTheme.typography.titleMedium)
-            Text(if(saved?.centimeters!=null)"저장된 cm 아바타 · 부위별 출처 구분" else if (saved != null) "저장된 3D 설정: ${saved!!.source.label}" else "아직 저장한 3D 설정이 없어요.",
+            Text(if(saved?.centimeters!=null)"저장된 3D 체형" else if (saved != null) "저장된 3D 설정: ${saved!!.source.label}" else "아직 저장한 3D 설정이 없어요.",
                 style=MaterialTheme.typography.bodySmall)
-            Text("1단계 · 키와 몸무게",style=MaterialTheme.typography.titleMedium)
+            Text("키와 몸무게",style=MaterialTheme.typography.titleMedium)
             if(draft.source!=AvatarSource.BMI || draft.centimeters!=null) {
                 TextButton(onClick={
                     importedJson=null;shoulder=1f;chest=1f;waist=1f;hip=1f;thigh=1f;leg=1f;torso=1f;draftEdited=true
@@ -114,21 +114,17 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                 modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
             if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
-            if (autoImportManual) {
-                Text(if (manual != null) "저장한 실측값을 가져와 비교해주세요. 빠진 부위는 실측 기반 추정이며 원본 치수와 별도로 표시해요."
-                    else "저장된 실측값이 없어요. 키·몸무게를 직접 입력하면 표시용 초안을 만들 수 있어요.")
-                if (manual != null) Button(onClick = { proposal = manualProposal }, enabled = manualProposal != null,
-                    modifier = Modifier.fillMaxWidth().testTag("manualAvatarImport")) { Text("저장한 실측값으로 변경 전후 비교") }
-            }
-            Text("2단계 · 내 3D 체형",style=MaterialTheme.typography.titleMedium)
-            Button(enabled=draft.valid()&&storesLoaded,onClick={
-                AvatarCentimeters.fromLegacy(draft,System.currentTimeMillis())?.let {cm->
-                    cmEditingRaw=AvatarProfileStore.encode(draft.copy(centimeters=cm))
+            if (autoImportManual && manual != null) Text("입력한 신체 치수로 미리봐요. 조절 후 적용할 수 있어요.", style=MaterialTheme.typography.bodySmall)
+            val previewDraft = if (autoImportManual && manual != null) manualProposal else draft.takeIf { it.valid() }
+            Button(enabled=previewDraft!=null&&storesLoaded,onClick={
+                previewDraft?.let { profile ->
+                    val cm = profile.centimeters ?: AvatarCentimeters.fromLegacy(profile,System.currentTimeMillis())
+                    cm?.let { cmEditingRaw=AvatarProfileStore.encode(profile.copy(centimeters=it)) }
                 }
-            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text(if(draft.centimeters!=null)"저장된 체형 조절" else "3D 생성 · 부위별 조절")}
+            },modifier=Modifier.fillMaxWidth().testTag("openCmAvatar")) {Text("3D 미리보기 · 조절")}
             OutlinedButton(onClick={advancedExpanded=!advancedExpanded},
                 modifier=Modifier.fillMaxWidth().testTag("avatarAdvancedToggle")) {
-                Text(if(advancedExpanded) "고급 설정 접기" else "고급 설정 · 사진 치수 및 실측값 불러오기")
+                Text(if(advancedExpanded) "고급 설정 접기" else "다른 입력 방법 · 상세 보기")
             }
             if(advancedExpanded) {
             OutlinedButton(onClick={showAvatar=true},enabled=draft.valid(),

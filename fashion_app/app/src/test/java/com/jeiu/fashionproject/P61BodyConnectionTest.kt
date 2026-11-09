@@ -40,12 +40,7 @@ class P61BodyConnectionTest {
         val prior = AvatarProfile(170f, 70f)
         assertTrue(ManualBodyStore.update(app, measured, true)); assertTrue(AvatarProfileStore.save(app, prior))
         compose.setContent { Column(Modifier.verticalScroll(rememberScrollState())) { AvatarSetupCard(autoImportManual = true) } }
-        compose.onNodeWithTag("manualAvatarImport").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarApplyCancel").performClick()
-        compose.runOnIdle { assertEquals(prior, AvatarProfileStore.current.value) }
-        compose.onNodeWithTag("manualAvatarImport").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarApplyApprove").performClick()
-        compose.onNodeWithTag("avatarHeight").assertTextContains("174.0")
+        compose.onNodeWithTag("manualAvatarImport").assertDoesNotExist()
         compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
         compose.onNodeWithTag("premiumAvatarEditor").assertExists()
         compose.onNodeWithContentDescription("3D 조절 닫기").performClick()

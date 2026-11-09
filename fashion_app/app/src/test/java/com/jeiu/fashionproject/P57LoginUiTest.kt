@@ -46,7 +46,10 @@ class P57LoginUiTest {
         // A local fixture reports unconfigured providers; never contact Railway.
         compose.waitUntil(10_000) { compose.onAllNodesWithTag("loginUnconfigured").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("loginUnconfigured").assertTextContains(
-            if (BuildConfig.PREVIEW_BUILD) "운영 계정 로그인을 사용하지" else "아직 설정되지", substring = true)
+            "Google·카카오 로그인을 아직 사용할 수 없어요", substring = true)
+        compose.onNodeWithTag("loginConfigurationReason").assertDoesNotExist()
+        compose.onNodeWithTag("loginDetails").performScrollTo().performClick()
+        compose.onNodeWithTag("loginConfigurationReason").performScrollTo().assertTextEquals(AuthStore.UNAVAILABLE)
         listOf("google", "kakao").forEach {
             compose.onNodeWithTag("login_$it").performScrollTo().assertIsNotEnabled()
         }

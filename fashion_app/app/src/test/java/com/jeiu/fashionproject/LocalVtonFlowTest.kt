@@ -207,9 +207,8 @@ class LocalVtonFlowTest {
         LocalVtonSession.clear() // No network request or generated image in this UI test.
         WardrobeStore.load(app)
         val item=WardrobeStore.items.value.first {TryOnPlan.categoryFor(it.category)!=null}
-        compose.setContent {VirtualFittingScreen(onBack={})}
-        compose.onNodeWithTag("fittingAdvancedToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().performClick()
+        // The developer feature remains testable directly, but has no public installtest entry.
+        compose.setContent {LocalVtonScreen(null, listOf(TryOnGarment(item.id,item.name,item.category,item.imageUri)), onBack={})}
         compose.onNodeWithTag("localVtonTitle").assertIsDisplayed()
         compose.onNodeWithTag("localGarment-${item.id}").performScrollTo().performClick()
         compose.onNodeWithTag("localVtonGenerate").assertIsNotEnabled()

@@ -72,8 +72,8 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
             OutlinedButton(onClick = { editing = !editing }, modifier = Modifier.fillMaxWidth().testTag("manualBodyEdit")) {
                 Text(if (editing) "입력 닫기" else "신체 치수 입력·수정")
             }
-            Button(onClick = { showEditor = true }, modifier = Modifier.fillMaxWidth().testTag("manualBodyAvatar")) {
-                Text("내 치수로 3D 모델 만들기")
+            if (!editing) Button(onClick = { showEditor = true }, modifier = Modifier.fillMaxWidth().testTag("manualBodyAvatar")) {
+                Text("3D 미리보기")
             }
             if (editing) {
                 names.forEachIndexed { index, label ->
@@ -106,9 +106,10 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                     else {
                         onUseHeight(fields[0])
                         editing = false
+                        showEditor = true
                         message = if (saveOnDevice) "입력값을 이 기기에 저장했어요." else "입력값을 이번 앱 실행에 적용했어요."
                     }
-                }, modifier = Modifier.fillMaxWidth().testTag("manualBodyApply")) { Text("입력값 적용") }
+                }, modifier = Modifier.fillMaxWidth().testTag("manualBodyApply")) { Text("적용하고 3D 미리보기") }
             }
             if (current != null) TextButton(onClick = {
                 message = if (ManualBodyStore.clear(context)) "직접 입력한 치수를 삭제했어요."

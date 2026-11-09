@@ -87,6 +87,7 @@ class P51ServerPairedModeUiTest {
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config != null && !vm.state.busy }
+        compose.onNodeWithTag("serverOutfitPolicyDetails").performScrollTo().performClick()
         compose.onNodeWithTag("serverOutfitGenerationMode").performScrollTo().assertTextEquals(
             "상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
         compose.onNodeWithTag("serverOutfitConsent").performScrollTo().performClick().assertIsOn()
@@ -99,7 +100,7 @@ class P51ServerPairedModeUiTest {
         compose.onNodeWithTag("serverOutfitGenerationMode").performScrollTo().assertTextEquals(
             "상의·하의 함께 → 신발, 2회 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
         compose.onNodeWithTag("serverOutfitCost").performScrollTo().assertTextEquals(
-            "요청당 최대 3크레딧을 예약해요. 실제 청구액·환불 확정이 아니며 자동 충전하지 않아요.")
+            "최대 3크레딧 · 자동 충전 없음. 실제 청구·환불은 사용 내역에서 확인해요.")
         compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료·후속 생성 중단")
 

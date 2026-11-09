@@ -702,7 +702,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Cream).onGloballyPositioned { screenOrigin = it.boundsInRoot().topLeft }) {
     val compact = maxHeight < 480.dp
-    val controlsMaxHeight = (maxHeight * if (compact) 0.3f else 0.4f).coerceAtMost(260.dp)
+    val controlsMaxHeight = (maxHeight * if (compact) 0.18f else 0.32f).coerceAtMost(260.dp)
     Column(modifier = Modifier.fillMaxSize()) {
         // 헤더
         Row(
@@ -743,37 +743,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }, label = { Text("내 3D 아바타") }, modifier = Modifier.testTag("fittingAvatarMode"))
         }
 
-        if (avatarMode) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { autoFitNow() },
-                    enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
-                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                    Text("3D 아바타 · 옷 위치 자동맞춤", color = Camel)
-                }
-                TextButton(onClick = {
-                    val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
-                        g.center.x / canvasSize.width, g.center.y / canvasSize.height,
-                        g.baseWidth / canvasSize.width, g.scale, g.rotation) }
-                    inputNotice = if (canvasSize.width > 0f && avatarProfile != null &&
-                        AvatarFittingStore.save(context, entries)) "아바타 옷 배치를 이 기기에 저장했어요."
-                        else "옷 배치를 저장하지 못했어요. 저장값 오류나 3D 설정을 확인해주세요."
-                }, enabled = avatarProfile != null && worn.isNotEmpty(),
-                    modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
-            }
-            avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
-            overlayIssue?.let {
-                Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp))
-                TextButton(onClick = { askClearOverlay = true },
-                    modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
-            }
-        } else if (bodyPhoto != null && manualToolsExpanded) {
-            TextButton(onClick = { autoFitNow() },
-                enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
-                Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                Text("2D · 옷 위치 자동맞춤", color = Camel)
-            }
-        }
 
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
             if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
@@ -942,8 +911,83 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
+        // Frequently used edits stay visible; only the wardrobe/tools tray scrolls.
+        if (active != null) {
+            val enabled = !inspectAvatar
+            fun setScale(v: Float) {
+                val slot = activeSlot ?: return
+                val g = worn[slot] ?: return
+                worn[slot] = g.copy(scale = v.coerceIn(MIN_SCALE, MAX_SCALE))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("크기", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(56.dp))
+                IconButton(onClick = { active?.let { setScale(it.scale - 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleDown")) {
+                    Text("−", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
+                }
+                Slider(
+                    value = active?.scale ?: 1f,
+                    onValueChange = { setScale(it) },
+                    enabled = enabled,
+                    valueRange = MIN_SCALE..MAX_SCALE,
+                    colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
+                    modifier = Modifier.weight(1f).testTag("manualScale")
+                )
+                IconButton(onClick = { active?.let { setScale(it.scale + 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleUp")) {
+                    Text("+", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("투명도", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(56.dp))
+                Slider(
+                    value = overlayAlpha,
+                    onValueChange = { overlayAlpha = it },
+                    valueRange = 0.3f..1f,
+                    colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
+                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp).testTag("manualAlpha")
+                )
+            }
+        }
+
         Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
             .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
+        if (avatarMode) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { autoFitNow() },
+                    enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
+                    Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                    Text("위치 맞춤", color = Camel)
+                }
+                TextButton(onClick = {
+                    val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
+                        g.center.x / canvasSize.width, g.center.y / canvasSize.height,
+                        g.baseWidth / canvasSize.width, g.scale, g.rotation) }
+                    inputNotice = if (canvasSize.width > 0f && avatarProfile != null &&
+                        AvatarFittingStore.save(context, entries)) "아바타 옷 배치를 이 기기에 저장했어요."
+                        else "옷 배치를 저장하지 못했어요. 저장값 오류나 3D 설정을 확인해주세요."
+                }, enabled = avatarProfile != null && worn.isNotEmpty(),
+                    modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
+            }
+            avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
+            overlayIssue?.let {
+                Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp))
+                TextButton(onClick = { askClearOverlay = true },
+                    modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
+            }
+        } else if (bodyPhoto != null && manualToolsExpanded) {
+            TextButton(onClick = { autoFitNow() },
+                enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
+                Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                Text("옷 위치 맞춤", color = Camel)
+            }
+        }
+
         // Status changes must not resize the avatar viewport and move an otherwise unchanged auto-fit.
         inputNotice?.let { Text(it, color = Brown,
             modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingInputNotice")) }
@@ -954,7 +998,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
             OutlinedButton(onClick = { manualToolsExpanded = !manualToolsExpanded },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).testTag("manualToolsToggle")) {
-                Text(if (manualToolsExpanded) "직접 배치 도구 접기" else "직접 옷 배치하기")
+                Text(if (manualToolsExpanded) "직접 배치 저장 닫기" else "직접 배치한 사진 저장")
             }
             if (manualToolsExpanded) ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
             if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
@@ -964,11 +1008,11 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
             }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
         }
-        TextButton(onClick = { advancedToolsExpanded = !advancedToolsExpanded },
+        if (com.jeiu.fashionproject.BuildConfig.DEBUG && !com.jeiu.fashionproject.BuildConfig.INSTALL_TEST_BUILD) TextButton(onClick = { advancedToolsExpanded = !advancedToolsExpanded },
             modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingAdvancedToggle")) {
             Text(if (advancedToolsExpanded) "고급 기능 접기" else "고급·개발용 기능", color = MediumGray)
         }
-        if (advancedToolsExpanded) {
+        if (advancedToolsExpanded && com.jeiu.fashionproject.BuildConfig.DEBUG && !com.jeiu.fashionproject.BuildConfig.INSTALL_TEST_BUILD) {
         if (!avatarMode) TextButton(onClick = {
             if (currentDeviceSelection != null) currentDeviceSelection?.let(manual::openOnDevice)
             else inputNotice = "전신 사진과 상의·하의·신발을 먼저 선택해주세요."
@@ -1078,44 +1122,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                         }
                     }
                 }
-            }
-            fun setScale(v: Float) {
-                val slot = activeSlot ?: return
-                val g = worn[slot] ?: return
-                worn[slot] = g.copy(scale = v.coerceIn(MIN_SCALE, MAX_SCALE))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("크기", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(40.dp))
-                IconButton(onClick = { active?.let { setScale(it.scale - 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleDown")) {
-                    Text("−", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
-                }
-                Slider(
-                    value = active?.scale ?: 1f,
-                    onValueChange = { setScale(it) },
-                    enabled = enabled,
-                    valueRange = MIN_SCALE..MAX_SCALE,
-                    colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
-                    modifier = Modifier.weight(1f).testTag("manualScale")
-                )
-                IconButton(onClick = { active?.let { setScale(it.scale + 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleUp")) {
-                    Text("+", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("투명도", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(40.dp))
-                Slider(
-                    value = overlayAlpha,
-                    onValueChange = { overlayAlpha = it },
-                    valueRange = 0.3f..1f,
-                    colors = SliderDefaults.colors(thumbColor = Camel, activeTrackColor = Camel),
-                    modifier = Modifier.weight(1f).padding(horizontal = 12.dp).testTag("manualAlpha")
-                )
             }
         }
 
