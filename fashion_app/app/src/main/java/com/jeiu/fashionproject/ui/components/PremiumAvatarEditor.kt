@@ -143,7 +143,6 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                     },{openInput()})
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
                     if(parsed==null)Text("초안 형식을 복원하지 못해 초기 미리보기를 사용해요. 저장된 원본은 유지했어요.")
-                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("3D 설정 저장")}
                     TextButton(onClick={details=!details},modifier=Modifier.testTag("cmEditorAdvancedToggle")) {
                         Text(if(details)"고급 설정 접기" else "고급 설정 · 복원 및 출처")
                     }
@@ -169,6 +168,10 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         body.references.forEach {(part,value)->if(body[part]!=value.cm)Text("${part.label} 원본 ${value.cm} cm는 표시 단위/범위 차이로 현재 ${body[part]} cm와 달라요.")}
                     }
                     Spacer(Modifier.height(12.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
+                    TextButton(onClick=::leave, modifier=Modifier.testTag("cmEditorCancel")) {Text("취소")}
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.weight(1f).testTag("cmEditorSave")) {Text("적용")}
                 }
             }
         }

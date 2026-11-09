@@ -43,10 +43,10 @@ class P9EditorUiTest {
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput {swipeLeft()}
         val final=value();assertTrue(final>77.5f)
         compose.onNodeWithTag("rulerCurrentValue").assertTextContains(String.format(Locale.KOREA,"%.1f cm",final))
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.runOnIdle {assertEquals(0,writes);assertEquals(previous,AvatarProfileStore.current.value)}
         compose.onNodeWithTag("avatarApplyCancel").performClick()
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.onNodeWithTag("avatarApplyApprove").performClick()
         compose.runOnIdle {assertEquals(1,writes);assertEquals(final,captured!!.centimeters!![AvatarPart.WAIST])}
     }
@@ -70,7 +70,7 @@ class P9EditorUiTest {
         assertEquals(shoulder,value())
         compose.onNodeWithTag("cmPart-CHEST").performScrollTo().performClick()
         assertEquals(chest,value())
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.onNodeWithTag("avatarApplyApprove").performClick()
         compose.runOnIdle {
             val saved=checkNotNull(captured?.centimeters)
@@ -121,9 +121,10 @@ class P9EditorUiTest {
             PremiumAvatarEditor(initial,null,{},onSave={false},onApplyToFitting={})
         }}
         compose.onNodeWithTag("cmAvatarViewport").assertIsDisplayed()
+        compose.onNodeWithTag("cmEditorCancel").assertIsDisplayed()
         compose.onNodeWithTag("cmPart-TORSO").performScrollTo().performClick()
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().assertIsDisplayed()
         compose.onNodeWithTag("cmApplyFitting").assertDoesNotExist()
         compose.onNodeWithText("초기 추정값 복원").assertDoesNotExist()
         compose.onNodeWithTag("cmEditorAdvancedToggle").performScrollTo().performClick()

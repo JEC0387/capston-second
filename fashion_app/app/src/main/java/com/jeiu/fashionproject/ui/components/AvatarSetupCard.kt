@@ -59,7 +59,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     val draft = AvatarProfile(height.toFloatOrNull() ?: Float.NaN, weight.toFloatOrNull() ?: Float.NaN,
         shoulder, waist, hip, thigh, leg,chest,torso,imported?.source ?: AvatarSource.BMI,imported?.applied.orEmpty(),imported?.centimeters)
     // Weight is supplied by the user or their saved profile, never a fabricated 65 kg default.
-    val manualProposal = draft.takeIf { it.valid() }?.let { AvatarMeasurementImport.manual(manual, it) }
+    val manualBase = if(autoImportManual && manual!=null)
+        AvatarProfile(manual!!.heightCm, weight.toFloatOrNull() ?: Float.NaN) else draft
+    val manualProposal = manualBase.takeIf { it.valid() }?.let { AvatarMeasurementImport.manual(manual, it) }
     val photoProposal = draft.takeIf { it.valid() }?.let { AvatarMeasurementImport.photo(photo ?: sessionPhoto, it) }
     cmEditingRaw?.let {raw->AvatarProfileStore.decode(raw)?.let {base->
         PremiumAvatarEditor(base,saved,onDismiss={cmEditingRaw=null},onSave={profile->
@@ -106,14 +108,14 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             Text("키·몸무게로 만든 추정 형상이에요. 실제 치수는 다음 화면에서 조절해요.",
                 style=MaterialTheme.typography.bodySmall)
             issue?.let { Text(it,color=MaterialTheme.colorScheme.error) }
-            OutlinedTextField(height,{height=it.take(8);draftEdited=true},label={Text("키 (cm)")},singleLine=true,enabled=storesLoaded,
+            OutlinedTextField(if(autoImportManual && manual!=null) manual!!.heightCm.toString() else height,{height=it.take(8);draftEdited=true},label={Text("키 (cm)")},singleLine=true,enabled=storesLoaded,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
-                readOnly=draft.source!=AvatarSource.BMI || draft.centimeters!=null,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
+                readOnly=(autoImportManual && manual!=null) || draft.source!=AvatarSource.BMI || draft.centimeters!=null,modifier=Modifier.fillMaxWidth().testTag("avatarHeight"))
             OutlinedTextField(weight,{weight=it.take(8);draftEdited=true},label={Text("몸무게 (kg)")},singleLine=true,enabled=storesLoaded,
-                readOnly=draft.centimeters!=null,
+                readOnly=!autoImportManual && draft.centimeters!=null,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),
                 modifier=Modifier.fillMaxWidth().testTag("avatarWeight"))
-            if (!draft.valid()) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
+            if (!(if(autoImportManual && manual!=null) manualProposal!=null else draft.valid())) Text("키 100~230cm, 몸무게 25~300kg을 확인해주세요.",color=MaterialTheme.colorScheme.error)
             if (autoImportManual && manual != null) Text("입력한 신체 치수로 미리봐요. 조절 후 적용할 수 있어요.", style=MaterialTheme.typography.bodySmall)
             val previewDraft = if (autoImportManual && manual != null) manualProposal else draft.takeIf { it.valid() }
             Button(enabled=previewDraft!=null&&storesLoaded,onClick={

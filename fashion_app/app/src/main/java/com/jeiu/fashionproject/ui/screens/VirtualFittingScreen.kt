@@ -481,6 +481,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 Offset(entry.centerX * canvasSize.width, entry.centerY * canvasSize.height),
                 entry.width * canvasSize.width, entry.scale, entry.rotation, image?.region)
         }
+        if (avatarMode && activeSlot !in manual.avatarWorn.keys)
+            activeSlot = manual.avatarWorn.keys.maxByOrNull { it.ordinal }
         restoredAvatar = true
     }
 

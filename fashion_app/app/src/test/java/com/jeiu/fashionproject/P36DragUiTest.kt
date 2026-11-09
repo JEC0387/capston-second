@@ -159,4 +159,26 @@ class P36DragUiTest {
         compose.onNodeWithTag("photoDropUndo").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(shoes,vm.worn[FitSlot.SHOES]);assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertTrue(vm.avatarWorn.isEmpty())}
     }
+    @Test fun pinnedSlidersOnlyScaleSelectedGarmentAndKeepOpacityAcrossSelection() {
+        drag("top-a"); compose.waitUntil(10000) {vm.worn[FitSlot.TOP]!=null}
+        drag("pants-a"); compose.waitUntil(10000) {vm.worn[FitSlot.BOTTOM]!=null}
+        val top=vm.worn.getValue(FitSlot.TOP)
+        val pants=vm.worn.getValue(FitSlot.BOTTOM)
+        compose.onNodeWithTag("manualScale").assertIsDisplayed()
+        compose.onNodeWithTag("manualScaleUp").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("manualAlpha").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.55f) }
+        compose.runOnIdle {
+            assertEquals(top,vm.worn[FitSlot.TOP])
+            assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])
+            assertEquals(.55f,vm.overlayAlpha,.001f)
+            vm.activeSlot=FitSlot.TOP
+        }
+        compose.onNodeWithTag("manualScaleDown").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(top.copy(scale=.9f),vm.worn[FitSlot.TOP])
+            assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])
+            assertEquals(.55f,vm.overlayAlpha,.001f)
+        }
+    }
+
 }

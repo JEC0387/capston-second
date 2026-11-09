@@ -101,17 +101,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             if (selection == null) Text("먼저 피팅 화면에서 모델 사진과 상의·하의·신발을 선택해주세요.")
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
-            TextButton(onClick = {
-                checking = true
-                val base = BackendApi.BASE_URL
-                scope.launch {
-                    try {
-                        val result = ServerSettings.check(base)
-                        if (base == BackendApi.BASE_URL) connectivity = result
-                    } finally { checking = false }
-                }
-                model.refreshConfig()
-            }, enabled = !state.busy && !saving && !checking,
+            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving,
                 modifier = Modifier.testTag("serverOutfitCheck")) { Text("연결 확인 · 다시 확인") }
             Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!DataAuth.canSync && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
                 modifier = Modifier.testTag("serverOutfitReady"))
@@ -119,6 +109,16 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("installtestAccountHelp"))
             TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) { Text(if(details) "연결 정보 접기" else "연결 상세 보기") }
             if (details && !ServerOutfitQaConnection.supported) {
+                TextButton(onClick={
+                    checking=true
+                    val base=BackendApi.BASE_URL
+                    scope.launch {
+                        try { val result=ServerSettings.check(base); if(base==BackendApi.BASE_URL) connectivity=result }
+                        finally { checking=false }
+                    }
+                }, enabled=!checking && !state.busy, modifier=Modifier.testTag("serverOutfitDiagnostics")) {
+                    Text(if(checking) "진단 중" else "서버 연결 진단")
+                }
                 OutfitReadiness.lines(connectivity, accountState, DataAuth.canSync,
                     BuildConfig.SERVER_OUTFIT_APPROVED, state.config?.ready).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
@@ -163,7 +163,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("동의하고 AI로 입어보기") }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("서버 작업: ${state.phase}. 화면 복귀로 새 생성 요청을 보내지 않아요.")
+                Text("착장 이미지를 준비하고 있어요. 화면으로 돌아와도 중복 요청하지 않아요.")
             }
             state.status?.takeIf { it.status == "running" && state.phase in setOf("running", "waiting") }?.providerProgress?.let { progress ->
                 val stage = when (progress.mode) {
