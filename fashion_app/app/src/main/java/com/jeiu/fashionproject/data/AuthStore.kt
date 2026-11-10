@@ -51,9 +51,11 @@ object AuthStore {
     private const val PREFS = "auth"
     /** Marks a SIGNED_IN state written by the Bearer bridge (older SIGNED_IN values are not trusted). */
     private const val KEY_BEARER = "bearer_v2"
-    const val REDIRECT_SCHEME = "fashionai"
+    const val REDIRECT_SCHEME = BuildConfig.LOGIN_REDIRECT_SCHEME
     const val REDIRECT_HOST = "login"
-    val UNAVAILABLE: String get() = if (BuildConfig.PREVIEW_BUILD)
+    val UNAVAILABLE: String get() = if (BuildConfig.INSTALL_TEST_BUILD)
+        "설치검증 앱의 패키지·인증서와 로그인 콜백이 아직 등록되지 않았어요. 로컬 게스트로 이용할 수 있어요."
+    else if (BuildConfig.PREVIEW_BUILD)
         "QA·Preview에서는 운영 계정 로그인을 사용하지 않아요. 기존 기록은 유지하며 로컬 게스트로 이용할 수 있어요."
     else "소셜 로그인과 안전한 계정 연결이 아직 설정되지 않았어요. 기존 기록은 유지하며 로컬 게스트로 이용할 수 있어요."
     private val _mode = MutableStateFlow(Mode.NONE)
@@ -99,14 +101,14 @@ object AuthStore {
      * value means local persistence, NOT successful server synchronization. */
     suspend fun signOut(context: Context): Boolean = saveLocalMode(context, Mode.NONE)
 
-    fun isGoogleConfigured(): Boolean = !BuildConfig.PREVIEW_BUILD && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
+    fun isGoogleConfigured(): Boolean = !BuildConfig.INSTALL_TEST_BUILD && !BuildConfig.PREVIEW_BUILD && BuildConfig.GOOGLE_WEB_CLIENT_ID.isNotBlank()
 
     /** Server switches (google · kakao). Unknown or offline → everything off. Facebook · Apple are always off. */
     suspend fun serverProviders(): Map<String, Boolean> {
         val off = Provider.entries.associate { it.key to false }
         // Preview/QA must not advertise a login which DataAuth deliberately blocks.
         // Check before reading the production provider endpoint or opening an account chooser.
-        if (BuildConfig.PREVIEW_BUILD) return off
+        if (BuildConfig.INSTALL_TEST_BUILD || BuildConfig.PREVIEW_BUILD) return off
         val body = BackendApi.getJson("/api/auth/providers") ?: return off
         val json = runCatching { JSONObject(body) }.getOrNull() ?: return off
         return Provider.entries.associate { it.key to (it in ENABLED_PROVIDERS && json.optBoolean(it.key, false)) }
@@ -157,6 +159,7 @@ object AuthStore {
     }
 
     fun handleRedirect(uri: Uri?) {
+        if (BuildConfig.INSTALL_TEST_BUILD) return
         if (uri != null && uri.toString().length <= 4096 && uri.scheme == REDIRECT_SCHEME &&
             uri.host == REDIRECT_HOST && uri.userInfo == null && uri.port == -1 &&
             uri.path.isNullOrEmpty() && uri.fragment == null) _redirect.value = uri
@@ -164,6 +167,7 @@ object AuthStore {
     fun consumeRedirect(): Uri? = _redirect.value.also { _redirect.value = null }
 
     suspend fun finishBrowserLogin(context: Context, uri: Uri): Result {
+        if (BuildConfig.INSTALL_TEST_BUILD) return Result.Failed(UNAVAILABLE)
         if (uri.toString().length > 4096 || uri.scheme != REDIRECT_SCHEME || uri.host != REDIRECT_HOST || uri.userInfo != null ||
             uri.port != -1 || !uri.path.isNullOrEmpty() || uri.fragment != null) return Result.Failed(UNAVAILABLE)
         if (uri.getQueryParameter("error") == "cancelled") return Result.Cancelled

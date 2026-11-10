@@ -43,7 +43,10 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.ui.components.BodyPhotoConsentDialog
 import com.jeiu.fashionproject.ui.components.BodySizeRecommendationCard
+import com.jeiu.fashionproject.ui.components.ManualBodySummary
 import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
+import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.ui.components.AvatarSetupCard
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.BodyDimensions
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
@@ -72,6 +75,12 @@ fun BodyAnalysisScreen(
     val heightInput by viewModel.heightInput.collectAsState()
     val validHeight = BodyMeasurementCalculator.parseHeight(heightInput) != null
     val manualMeasurements by ManualBodyStore.current.collectAsState()
+    val manualSaved by ManualBodyStore.saved.collectAsState()
+    val savedAvatar by AvatarProfileStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context); AvatarProfileStore.load(context) }
+    var photoExpanded by rememberSaveable { mutableStateOf(false) }
+    var savedExpanded by rememberSaveable { mutableStateOf(false) }
+    var extrasExpanded by rememberSaveable { mutableStateOf(false) }
     var manualExpanded by rememberSaveable { mutableStateOf(false) }
     var tipsExpanded by rememberSaveable { mutableStateOf(false) }
     var detailsExpanded by rememberSaveable { mutableStateOf(false) }
@@ -193,8 +202,26 @@ fun BodyAnalysisScreen(
                 .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (manualMeasurements != null || savedAvatar != null) {
+                TextButton(onClick = { savedExpanded = !savedExpanded }, modifier = Modifier.testTag("bodySavedToggle")) {
+                    Text(if (savedExpanded) "내 체형 접기" else "내 체형 확인하기")
+                }
+                if (savedExpanded) {
+                    manualMeasurements?.let { ManualBodySummary(it, manualSaved) }
+                    if (savedAvatar != null) AvatarSetupCard(autoImportManual = manualMeasurements != null)
+                }
+            }
             when (val s = state) {
                 is BodyAnalysisUiState.Idle -> {
+                    Button(onClick = { photoExpanded = !photoExpanded }, modifier = Modifier.fillMaxWidth().testTag("bodyPhotoExpand"),
+                        colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
+                        Text(if (photoExpanded) "사진 분석 닫기" else "사진으로 분석하기")
+                    }
+                    OutlinedButton(onClick = { manualExpanded = !manualExpanded }, modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
+                        Text(if (manualExpanded) "치수 입력 닫기" else "신체 치수 직접 입력")
+                    }
+                    if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = viewModel::updateHeightInput)
+                    if (photoExpanded) {
                     Text("먼저 키를 확인해주세요", color = CharcoalBlack,
                         style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     OutlinedTextField(
@@ -203,8 +230,8 @@ fun BodyAnalysisScreen(
                         label = { Text("키 (cm)") },
                         placeholder = { Text("예: 170 또는 170.5") },
                         supportingText = { Text(
-                            if (validHeight) "입력한 키로 cm를 환산해요. 아래 촬영 또는 사진 선택을 눌러주세요."
-                            else "키는 cm 환산에 필요해요. 100~230 cm를 입력해주세요. 버튼을 먼저 누르면 키 입력 안내가 나와요.",
+                            if (validHeight) "입력한 키를 기준으로 사진을 분석해요."
+                            else "키 100~230 cm를 입력해주세요.",
                             modifier = Modifier.testTag("bodyHeightHelp")) },
                         isError = heightInput.isNotEmpty() && !validHeight,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
@@ -269,14 +296,13 @@ fun BodyAnalysisScreen(
 
                     entryError?.let { Text(it, color = Brown, modifier = Modifier.testTag("bodyEntryError")) }
                     PrivacyNote()
-                    OutlinedButton(onClick = { manualExpanded = !manualExpanded },
-                        modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
-                        Text(if (manualExpanded) "신체 치수 직접 입력 닫기" else "신체 치수 직접 입력")
                     }
-                    if (manualExpanded) ManualBodyEntryCard(photo = null,
-                        onUseHeight = viewModel::updateHeightInput)
-                    TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) {
-                        Text("지난 측정 기록 · 변화 그래프 보기", color = Brown)
+                    TextButton(onClick = { extrasExpanded = !extrasExpanded }, modifier = Modifier.testTag("bodyExtrasToggle")) {
+                        Text(if (extrasExpanded) "보조 메뉴 닫기" else "사이즈 비교 · 분석 기록")
+                    }
+                    if (extrasExpanded) {
+                        manualMeasurements?.let { MeasuredSizeCard(BodyDimensions.resolve(it, null)) }
+                        TextButton(onClick = onHistory, modifier = Modifier.fillMaxWidth()) { Text("분석 기록 보기", color = Brown) }
                     }
                 }
 

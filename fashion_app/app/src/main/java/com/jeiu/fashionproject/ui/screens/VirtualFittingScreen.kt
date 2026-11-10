@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,7 +92,7 @@ import kotlin.math.roundToInt
 /** 옷을 입히는 자리. 번호가 작을수록 아래에 그려진다. */
 internal enum class FitSlot { BOTTOM, SHOES, TOP, OUTER, ACCESSORY }
 
-private fun slotOf(item: WardrobeItem) = when (item.category) {
+internal fun slotOf(item: WardrobeItem) = when (item.category) {
     "상의", "원피스" -> FitSlot.TOP
     "아우터" -> FitSlot.OUTER
     "하의" -> FitSlot.BOTTOM
@@ -428,6 +429,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var activeSlot by manual::activeSlot
     var overlayAlpha by manual::overlayAlpha
     var inputNotice by remember { mutableStateOf<String?>(null) }
+    val avatarCapture = remember { com.jeiu.fashionproject.ui.components.AvatarFrameCapture() }
     var avatarCameraReset by remember { mutableIntStateOf(0) }
     var inspectAvatar by remember { mutableStateOf(false) }
     var fittingHelp by remember { mutableStateOf(false) }
@@ -441,6 +443,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         if (avatarMode || manual.showAi || manual.showLocalAi || manual.showOnDeviceAi || manual.showServerOutfitAi) manual.cancelPhotoDrops()
     }
     val controlsScroll = rememberScrollState()
+    var manualToolsExpanded by rememberSaveable { mutableStateOf(false) }
+    var advancedToolsExpanded by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(inputNotice) {
         if (inputNotice != null) controlsScroll.scrollTo(0)
     }
@@ -478,6 +482,8 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 Offset(entry.centerX * canvasSize.width, entry.centerY * canvasSize.height),
                 entry.width * canvasSize.width, entry.scale, entry.rotation, image?.region)
         }
+        if (avatarMode && activeSlot !in manual.avatarWorn.keys)
+            activeSlot = manual.avatarWorn.keys.maxByOrNull { it.ordinal }
         restoredAvatar = true
     }
 
@@ -699,7 +705,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Cream).onGloballyPositioned { screenOrigin = it.boundsInRoot().topLeft }) {
     val compact = maxHeight < 480.dp
-    val controlsMaxHeight = (maxHeight * if (compact) 0.3f else 0.4f).coerceAtMost(260.dp)
+    val controlsMaxHeight = (maxHeight * if (compact) 0.18f else 0.32f).coerceAtMost(260.dp)
     Column(modifier = Modifier.fillMaxSize()) {
         // 헤더
         Row(
@@ -712,7 +718,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             Column(modifier = Modifier.weight(1f)) {
                 Text("가상 피팅", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 if (!compact) Text(
-                    if (avatarMode) "저장한 3D 추정 형상 위에 옷 사진을 배치해요"
+                    if (avatarMode) "3D에 직접 배치해요 · AI 생성은 내 사진에서만 가능해요"
                     else when (poseStatus) {
                         PoseStatus.NONE -> "전신 사진을 고르면 옷을 몸에 자동으로 맞춰요"
                         PoseStatus.LOADING -> "몸 위치를 찾는 중…"
@@ -740,13 +746,14 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }, label = { Text("내 3D 아바타") }, modifier = Modifier.testTag("fittingAvatarMode"))
         }
 
+
         if (avatarMode) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { autoFitNow() },
                     enabled = avatarProfile != null && worn.isNotEmpty(), modifier = Modifier.testTag("avatarAutoFit")) {
                     Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                    Text("3D 아바타 · 옷 위치 자동맞춤", color = Camel)
+                    Text("위치 맞춤", color = Camel)
                 }
                 TextButton(onClick = {
                     val entries = worn.values.map { g -> AvatarOverlay(g.item.id,
@@ -758,38 +765,6 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 }, enabled = avatarProfile != null && worn.isNotEmpty(),
                     modifier = Modifier.testTag("avatarSaveFitting")) { Text("배치 저장") }
             }
-            avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
-            overlayIssue?.let {
-                Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp))
-                TextButton(onClick = { askClearOverlay = true },
-                    modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
-            }
-        } else if (bodyPhoto != null) {
-            TextButton(onClick = { autoFitNow() },
-                enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
-                Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
-                Text("2D · 옷 위치 자동맞춤", color = Camel)
-            }
-        }
-
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!avatarMode) TextButton(onClick = {
-                inputNotice = when {
-                    bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
-                    worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
-                    currentDeviceSelection == null -> "이 온디바이스 경로는 상의·하의·신발만 받아요. 원피스·아우터·액세서리를 제외하고 다시 선택해주세요."
-                    else -> null
-                }
-                if (inputNotice == null) {
-                    currentDeviceSelection?.let(manual::openOnDevice)
-                }
-            }, modifier = Modifier.testTag("aiTryOnWand"), contentPadding = PaddingValues(vertical = 2.dp)) {
-                Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (deviceModel.state.pending) "진행 중인 AI 착장 보기" else "마법봉 · AI 착장 사진 생성", color = Camel)
-            }
-            if (!avatarMode && !compact) Text("마법봉은 기기 내 생성형 모델의 준비 상태를 확인해요. 모델이 없으면 AI 생성은 실행되지 않아요.",
-                color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 
         // 피팅 캔버스
@@ -851,7 +826,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     avatarProfile?.let { profile ->
                         BodyAvatarViewport(profile.parameters(), profile.thigh,
                             Modifier.fillMaxSize().testTag("fittingAvatarViewport"),
-                            resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty())
+                            resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty(), capture=avatarCapture)
                     }
                 } else {
                     val displayedPhoto = bodyPhoto
@@ -947,135 +922,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
-        Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
-            .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
-        // Status changes must not resize the avatar viewport and move an otherwise unchanged auto-fit.
-        inputNotice?.let { Text(it, color = Brown,
-            modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingInputNotice")) }
-        if (!avatarMode) {
-            val exportInput = bodyPhoto?.takeIf { manual.photoDisplaySize != null && canvasSize.isUsableFittingSize() && worn.isNotEmpty() }?.let {
-                ManualPhotoSnapshot(it.toString(), photoGeneration, canvasSize,
-                    worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha, body = body)
-            }
-            ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
-            if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
-                manual.cancelPhotoDrops(); inputNotice = "의류 읽기를 취소했어요. 기존 배치는 그대로예요."
-            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropCancelLoading")) { Text("의류 읽기 취소") }
-            if (manual.photoDropUndo != null) TextButton(onClick = {
-                if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
-            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
-        }
-        if (!avatarMode) TextButton(onClick = { manual.openServerOutfit(currentDeviceSelection) },
-            modifier = Modifier.padding(horizontal = 20.dp).testTag("openServerOutfitFromFitting")) {
-            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
-            Spacer(Modifier.width(6.dp))
-            Text("서버형 마법봉 · 3종 AI · 별도 배포 승인 필요", color = Camel)
-        }
-        TextButton(onClick = { showLocalAi = true },
-            modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
-            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
-            Spacer(Modifier.width(6.dp))
-            Text("자체 AI로 입어보기 · 옷장에서 한 벌 선택", color = Camel)
-        }
-        if (!avatarMode) TextButton(onClick = {
-            val selected = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
-                g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }
-            inputNotice = when {
-                aiModel.state.pending -> null
-                bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
-                worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
-                else -> TryOnPlan.build(selected).issue
-            }
-            if (inputNotice == null) { aiSelection = selected; showAi = true }
-        }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openExternalTryOnFromFitting")) {
-            Text("외부 AI 서버 · 별도 설정·전송 동의 필요", color = Camel)
-        }
-        if(avatarMode) {
-            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
-                TextButton(onClick={inspectAvatar=!inspectAvatar;if(!inspectAvatar)avatarCameraReset++},modifier=Modifier.testTag("fittingInspectModel")) {
-                    Text(if(inspectAvatar) "옷 조작으로 돌아가기" else "모델 회전 확인")
-                }
-                if(undoAvatar!=null)TextButton(onClick={
-                    manual.avatarWorn.clear();manual.avatarWorn.putAll(undoAvatar!!);undoAvatar=null
-                    inputNotice="자동 정렬 전 배치로 되돌렸어요. 저장값은 별도로 유지돼요."
-                },modifier=Modifier.testTag("avatarUndoFit")) {Text("자동 정렬 되돌리기")}
-            }
-            Text(if(inspectAvatar) "모델 확인 중 · 옷은 숨겼어요. 저장된 배치는 유지돼요." else "정면 2D 의류 합성 · 옷 조작 중 모델 회전은 잠겨 있어요.",
-                modifier=Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall,color=Brown)
-        }
-            TextButton(onClick={fittingHelp=!fittingHelp}) {Text(if(fittingHelp) "조작 안내 접기" else "조작 안내")}
-            if (fittingHelp) Text(if (avatarMode) "옷을 올리면 모델은 정면으로 고정돼요. 옷 사진을 드래그하거나 아래 이동 버튼으로 조절하세요. 3D 의복 시뮬레이션은 아니에요."
-                else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
-                color = Brown, style = MaterialTheme.typography.bodySmall)
-        if (avatarMode && compact) Text("의류 이미지 오버레이 · 3D 의복 시뮬레이션 아님",
-            modifier = Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.labelSmall,
-            color = Brown)
-        // 입은 옷 — 누르면 그 옷을 조절, X로 벗기
-        // (전신 사진을 고른 뒤에는 조절 영역 높이를 고정해, 옷을 입혀도 사진 위치가 바뀌지 않게 한다)
-        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("조절할 옷", style = MaterialTheme.typography.labelMedium, color = MediumGray)
-                if (worn.isEmpty()) {
-                    Text("아래에서 옷을 고르면 여기에 나와요", style = MaterialTheme.typography.labelMedium, color = MediumGray)
-                }
-                worn.entries.sortedBy { it.key.ordinal }.forEach { (slot, g) ->
-                    InputChip(
-                        selected = slot == activeSlot,
-                        onClick = { activeSlot = slot },
-                        label = { Text(g.item.name, maxLines = 1) },
-                        trailingIcon = {
-                            Icon(
-                                Icons.Filled.Close, contentDescription = "벗기",
-                                modifier = Modifier.size(16.dp).clickable { toggle(g.item) }
-                            )
-                        },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = Camel, selectedLabelColor = White, selectedTrailingIconColor = White
-                        )
-                    )
-                }
-            }
-        }
-
-        // 크기 · 투명도 (고를 옷이 없으면 비활성)
-        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
+        // Keep the avatar viewport stable before/after selecting clothes: its projection
+        // is not a simple canvas stretch. Photo mode retains ContentScale.Fit remapping.
+        if (active != null || avatarMode && avatarProfile != null) {
             val enabled = active != null && !inspectAvatar
-            fun moveActive(dx: Float, dy: Float) {
-                val slot = activeSlot ?: return
-                val current = worn[slot] ?: return
-                if (canvasSize.width <= 0f || canvasSize.height <= 0f) return
-                val x = (current.center.x + dx * canvasSize.width).coerceIn(-canvasSize.width, canvasSize.width * 2f)
-                val y = (current.center.y + dy * canvasSize.height).coerceIn(-canvasSize.height, canvasSize.height * 2f)
-                worn[slot] = current.copy(center = Offset(x, y))
-                inputNotice = null
-            }
-            if (avatarMode) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("위치", color = MediumGray, style = MaterialTheme.typography.bodySmall)
-                    listOf(
-                        Triple("←", "fittingMoveLeft", -0.035f to 0f),
-                        Triple("↑", "fittingMoveUp", 0f to -0.035f),
-                        Triple("↓", "fittingMoveDown", 0f to 0.035f),
-                        Triple("→", "fittingMoveRight", 0.035f to 0f)
-                    ).forEach { (label, tag, step) ->
-                        IconButton(onClick = { moveActive(step.first, step.second) },
-                            enabled = enabled, modifier = Modifier.testTag(tag)) {
-                            Text(label, color = if (enabled) Brown else MediumGray,
-                                style = MaterialTheme.typography.titleLarge)
-                        }
-                    }
-                }
-            }
             fun setScale(v: Float) {
                 val slot = activeSlot ?: return
                 val g = worn[slot] ?: return
@@ -1085,7 +935,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("크기", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(40.dp))
+                Text("크기", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(56.dp))
                 IconButton(onClick = { active?.let { setScale(it.scale - 0.1f) } }, enabled = enabled, modifier = Modifier.testTag("manualScaleDown")) {
                     Text("−", style = MaterialTheme.typography.titleLarge, color = if (enabled) Brown else MediumGray)
                 }
@@ -1105,7 +955,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("투명도", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(40.dp))
+                Text("투명도", style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.width(56.dp))
                 Slider(
                     value = overlayAlpha,
                     onValueChange = { overlayAlpha = it },
@@ -1116,9 +966,23 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
+            if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
+                colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
+                Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("AI로 입어보기")
+            }
+            if (!avatarMode && !compact) Text("선택한 사진과 상의·하의·신발을 확인하고 전송에 동의한 뒤 시작해요.",
+                color = MediumGray, style = MaterialTheme.typography.labelSmall)
+        }
+
+        Column(Modifier.fillMaxWidth().heightIn(max = controlsMaxHeight)
+            .verticalScroll(controlsScroll).testTag("manualFittingControls")) {
         // 입어볼 옷 선택 (종류별로 한 벌씩 함께 입을 수 있음)
         Text(
-            "입어볼 옷 선택 · 종류별로 한 벌씩 배치해요",
+            "옷 선택 · 상의 / 하의 / 신발",
             style = MaterialTheme.typography.titleSmall, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
         )
@@ -1180,6 +1044,162 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 }
             }
         }
+        if (avatarMode) {
+            avatarIssue?.let { Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp)) }
+            overlayIssue?.let {
+                Text(it, color = HeartPink, modifier = Modifier.padding(horizontal = 20.dp))
+                TextButton(onClick = { askClearOverlay = true },
+                    modifier = Modifier.padding(horizontal = 20.dp)) { Text("저장된 배치만 초기화") }
+            }
+        } else if (bodyPhoto != null) {
+            TextButton(onClick = { autoFitNow() },
+                enabled = worn.isNotEmpty(), modifier = Modifier.padding(horizontal = 20.dp).testTag("manualAutoAlign")) {
+                Icon(Icons.Filled.CenterFocusStrong, contentDescription = null, tint = Camel)
+                Text("옷 위치 맞춤", color = Camel)
+            }
+        }
+
+        // Status changes must not resize the avatar viewport and move an otherwise unchanged auto-fit.
+        inputNotice?.let { Text(it, color = Brown,
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingInputNotice")) }
+        if (!avatarMode) {
+            val exportInput = bodyPhoto?.takeIf { manual.photoDisplaySize != null && canvasSize.isUsableFittingSize() && worn.isNotEmpty() }?.let {
+                ManualPhotoSnapshot(it.toString(), photoGeneration, canvasSize,
+                    worn.entries.sortedBy { entry -> entry.key.ordinal }.map { entry -> entry.value }, overlayAlpha, body = body)
+            }
+            OutlinedButton(onClick = { manualToolsExpanded = !manualToolsExpanded },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).testTag("manualToolsToggle")) {
+                Text(if (manualToolsExpanded) "직접 배치 저장 닫기" else "직접 배치 결과 저장")
+            }
+            if (manualToolsExpanded) ManualPhotoExportPanel(exportInput) { snapshot -> ManualPhotoExport.create(context.applicationContext, snapshot) }
+            if (manual.pendingPhotoDrops.isNotEmpty()) TextButton(onClick = {
+                manual.cancelPhotoDrops(); inputNotice = "의류 읽기를 취소했어요. 기존 배치는 그대로예요."
+            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropCancelLoading")) { Text("의류 읽기 취소") }
+            if (manual.photoDropUndo != null) TextButton(onClick = {
+                if (manual.undoPhotoDrop()) inputNotice = "마지막 드롭 전 의류 배치로 되돌렸어요. 옷장 기록은 바꾸지 않았어요."
+            }, modifier = Modifier.padding(horizontal = 20.dp).testTag("photoDropUndo")) { Text("마지막 드롭 되돌리기") }
+        }
+        if (com.jeiu.fashionproject.BuildConfig.DEBUG && !com.jeiu.fashionproject.BuildConfig.INSTALL_TEST_BUILD) TextButton(onClick = { advancedToolsExpanded = !advancedToolsExpanded },
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("fittingAdvancedToggle")) {
+            Text(if (advancedToolsExpanded) "고급 기능 접기" else "고급·개발용 기능", color = MediumGray)
+        }
+        if (advancedToolsExpanded && com.jeiu.fashionproject.BuildConfig.DEBUG && !com.jeiu.fashionproject.BuildConfig.INSTALL_TEST_BUILD) {
+        if (!avatarMode) TextButton(onClick = {
+            if (currentDeviceSelection != null) currentDeviceSelection?.let(manual::openOnDevice)
+            else inputNotice = "전신 사진과 상의·하의·신발을 먼저 선택해주세요."
+        }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openOnDeviceFromFitting")) { Text("온디바이스 모델 검사") }
+        TextButton(onClick = { showLocalAi = true },
+            modifier = Modifier.padding(horizontal = 20.dp).testTag("openLocalVtonFromFitting")) {
+            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = Camel)
+            Spacer(Modifier.width(6.dp))
+            Text("자체 AI로 입어보기 · 옷장에서 한 벌 선택", color = Camel)
+        }
+        if (!avatarMode) TextButton(onClick = {
+            val selected = worn.values.map { g -> TryOnGarment(g.item.id, g.item.name, g.item.category,
+                g.item.originalUri?.takeIf { it.isNotBlank() } ?: g.item.imageUri.ifBlank { g.item.garmentUri ?: g.item.cutoutUri.orEmpty() }) }
+            inputNotice = when {
+                aiModel.state.pending -> null
+                bodyPhoto == null -> "먼저 전신 사진을 선택해주세요."
+                worn.isEmpty() -> "먼저 옷장에서 입어볼 옷을 선택해주세요."
+                else -> TryOnPlan.build(selected).issue
+            }
+            if (inputNotice == null) { aiSelection = selected; showAi = true }
+        }, modifier = Modifier.padding(horizontal = 20.dp).testTag("openExternalTryOnFromFitting")) {
+            Text("외부 AI 서버 · 별도 설정·전송 동의 필요", color = Camel)
+        }
+        }
+        if(avatarMode) {
+            AvatarOutfitExportPanel(avatarProfile?.let { profile ->
+                AvatarOutfitSnapshot(profile, canvasSize, worn.values.toList(), overlayAlpha, inspectAvatar, avatarCameraReset)
+            }) { snapshot -> AvatarOutfitExport.create(context.applicationContext, snapshot, avatarCapture) }
+            Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
+                TextButton(onClick={inspectAvatar=!inspectAvatar;if(!inspectAvatar)avatarCameraReset++},modifier=Modifier.testTag("fittingInspectModel")) {
+                    Text(if(inspectAvatar) "옷 조작으로 돌아가기" else "모델 회전 확인")
+                }
+                if(undoAvatar!=null)TextButton(onClick={
+                    manual.avatarWorn.clear();manual.avatarWorn.putAll(undoAvatar!!);undoAvatar=null
+                    inputNotice="자동 정렬 전 배치로 되돌렸어요. 저장값은 별도로 유지돼요."
+                },modifier=Modifier.testTag("avatarUndoFit")) {Text("자동 정렬 되돌리기")}
+            }
+            Text(if(inspectAvatar) "모델 확인 중 · 옷은 숨겼어요. 저장된 배치는 유지돼요." else "정면 2D 의류 합성 · 옷 조작 중 모델 회전은 잠겨 있어요.",
+                modifier=Modifier.padding(horizontal=20.dp),style=MaterialTheme.typography.bodySmall,color=Brown)
+        }
+            TextButton(onClick={fittingHelp=!fittingHelp}) {Text(if(fittingHelp) "조작 안내 접기" else "조작 안내")}
+            if (fittingHelp) Text(if (avatarMode) "옷을 올리면 모델은 정면으로 고정돼요. 옷 사진을 드래그하거나 아래 이동 버튼으로 조절하세요. 3D 의복 시뮬레이션은 아니에요."
+                else "수동 배치 · 옷 사진을 드래그해 배치해요. 자동 정렬은 AI 합성이 아니에요.",
+                color = Brown, style = MaterialTheme.typography.bodySmall)
+        if (avatarMode && compact) Text("의류 이미지 오버레이 · 3D 의복 시뮬레이션 아님",
+            modifier = Modifier.padding(horizontal = 20.dp), style = MaterialTheme.typography.labelSmall,
+            color = Brown)
+        // 입은 옷 — 누르면 그 옷을 조절, X로 벗기
+        // (전신 사진을 고른 뒤에는 조절 영역 높이를 고정해, 옷을 입혀도 사진 위치가 바뀌지 않게 한다)
+        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("조절할 옷", style = MaterialTheme.typography.labelMedium, color = MediumGray)
+                if (worn.isEmpty()) {
+                    Text("아래에서 옷을 고르면 여기에 나와요", style = MaterialTheme.typography.labelMedium, color = MediumGray)
+                }
+                worn.entries.sortedBy { it.key.ordinal }.forEach { (slot, g) ->
+                    InputChip(
+                        selected = slot == activeSlot,
+                        onClick = { activeSlot = slot },
+                        label = { Text(g.item.name, maxLines = 1) },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Filled.Close, contentDescription = "벗기",
+                                modifier = Modifier.size(16.dp).clickable { toggle(g.item) }
+                            )
+                        },
+                        colors = InputChipDefaults.inputChipColors(
+                            selectedContainerColor = Camel, selectedLabelColor = White, selectedTrailingIconColor = White
+                        )
+                    )
+                }
+            }
+        }
+
+        // 크기 · 투명도 (고를 옷이 없으면 비활성)
+        if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null && manualToolsExpanded) {
+            val enabled = active != null && !inspectAvatar
+            fun moveActive(dx: Float, dy: Float) {
+                val slot = activeSlot ?: return
+                val current = worn[slot] ?: return
+                if (canvasSize.width <= 0f || canvasSize.height <= 0f) return
+                val x = (current.center.x + dx * canvasSize.width).coerceIn(-canvasSize.width, canvasSize.width * 2f)
+                val y = (current.center.y + dy * canvasSize.height).coerceIn(-canvasSize.height, canvasSize.height * 2f)
+                worn[slot] = current.copy(center = Offset(x, y))
+                inputNotice = null
+            }
+            if (avatarMode) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("위치", color = MediumGray, style = MaterialTheme.typography.bodySmall)
+                    listOf(
+                        Triple("←", "fittingMoveLeft", -0.035f to 0f),
+                        Triple("↑", "fittingMoveUp", 0f to -0.035f),
+                        Triple("↓", "fittingMoveDown", 0f to 0.035f),
+                        Triple("→", "fittingMoveRight", 0.035f to 0f)
+                    ).forEach { (label, tag, step) ->
+                        IconButton(onClick = { moveActive(step.first, step.second) },
+                            enabled = enabled, modifier = Modifier.testTag(tag)) {
+                            Text(label, color = if (enabled) Brown else MediumGray,
+                                style = MaterialTheme.typography.titleLarge)
+                        }
+                    }
+                }
+            }
+        }
+
+
         }
 
     }

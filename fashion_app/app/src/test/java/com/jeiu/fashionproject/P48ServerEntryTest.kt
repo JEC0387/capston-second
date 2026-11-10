@@ -11,7 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
-import com.jeiu.fashionproject.data.WardrobeItem
+import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.screens.*
 import org.junit.After
 import org.junit.Assert.*
@@ -63,15 +63,19 @@ class P48ServerEntryTest {
     }
 
     @Test fun defaultBuildCanOpenExplicitBlockedServerScreenAndReturnWithoutAnInput() {
-        // The ordinary Debug CI also runs this class. Approval defaults off in
-        // every build; Preview/QA additionally force it off in Gradle.
-        assertFalse(BuildConfig.SERVER_OUTFIT_APPROVED)
+        // Both default and opt-in builds must reject missing authentication before upload.
+        assertFalse(DataAuth.canSync)
+        assertNull(InstallTestAccount.sessionOrNull())
+        val expected = if (BuildConfig.SERVER_OUTFIT_APPROVED && !BuildConfig.PREVIEW_BUILD)
+            "authentication_required" else "deployment_not_approved"
+        assertEquals(expected, assertThrows(OutfitServerFailure::class.java) { ServerOutfitVtonRepository.session() }.code)
         compose.setContent { CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             MaterialTheme { VirtualFittingScreen(onBack = {}) }
         } }
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().performClick()
+        compose.onNodeWithTag("aiTryOnWand").assertIsDisplayed().performClick()
         compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
+        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().assertExists()
+        compose.onNodeWithTag("aiTryOnWand").assertIsDisplayed()
     }
 }

@@ -4,10 +4,11 @@ import android.content.Context
 import com.jeiu.fashionproject.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 
 /**
  * 서버(FastAPI) 주소 설정 — 마이페이지 > 서버 주소.
@@ -87,24 +88,23 @@ object ServerSettings {
 
     /** 이 주소로 서버 · DB 가 응답하는지 확인 (저장하지 않음) */
     suspend fun check(url: String): Check = withContext(Dispatchers.IO) {
-        val root = get("$url/") ?: return@withContext Check(reachable = false)
+        val root = get("$url/", rootClient) ?: return@withContext Check(reachable = false)
         // 다른 프로그램이 같은 주소에서 응답하는 경우를 걸러 낸다 (우리 서버는 / 에서 service 이름을 돌려줌)
         if (!root.contains("FashionProject")) return@withContext Check(reachable = false)
-        val health = get("$url/api/health/database")?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val health = get("$url/api/health/database", databaseClient)?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: return@withContext Check(reachable = true, dbStatus = "unknown")
         val missing = health.optJSONArray("missing")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty()
         Check(true, health.optBoolean("ready"), health.optString("status"), missing,
             health.optBoolean("syncReady"), health.optInt("authProtocol"))
     }
 
-    private fun get(url: String): String? = runCatching {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 3_000; readTimeout = 5_000; instanceFollowRedirects = false
-        }
-        try {
-            if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().use { it.readText() } else null
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
+    // Full-call deadlines include response bodies; no retry, redirects or UI-thread blocking.
+    internal val rootClient = SafeAccountHttp.client(8)
+    internal val databaseClient = SafeAccountHttp.client(25)
+
+    private suspend fun get(url: String, client: OkHttpClient): String? = try {
+        val reply = SafeAccountHttp.send(client, Request.Builder().url(url).get().build())
+        if (reply.code in 200..299) reply.body else null
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
 }

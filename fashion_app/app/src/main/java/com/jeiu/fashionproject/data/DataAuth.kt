@@ -150,12 +150,16 @@ object DataAuth {
         }.getOrNull()
     }
 
-    /** New installs register automatically when sync first needs the server. */
+    /** Install-test builds require explicit provisioning; background checks never create accounts. */
     suspend fun ensureReady(): Boolean = lock.withLock {
         if (!::context.isInitialized || storageLocked) return@withLock false
         if (token != null) {
             if (origin != BackendApi.BASE_URL) _state.value = "server_mismatch"
             return@withLock canSync
+        }
+        if (BuildConfig.INSTALL_TEST_BUILD) {
+            _state.value = "registration_required"
+            return@withLock false
         }
         val response = call("/api/auth/register", JSONObject().put("legacyPending", legacyPending))
         if (response?.code != 201 || response.server != BackendApi.BASE_URL) { _state.value = "offline_or_unconfigured"; return@withLock false }

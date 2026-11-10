@@ -27,9 +27,17 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accountState by DataAuth.state.collectAsState()
+    val testAccountState by InstallTestAccount.state.collectAsState()
+    var linkingAccount by remember { mutableStateOf(false) }
+    val accountReady = if (BuildConfig.INSTALL_TEST_BUILD && InstallTestAccount.hasRecord)
+        testAccountState == "ready" && InstallTestAccount.sessionOrNull() != null else DataAuth.canSync
+    var connectivity by remember { mutableStateOf<ServerSettings.Check?>(null) }
+    var details by remember { mutableStateOf(false) }
+    var policyDetails by remember { mutableStateOf(false) }
+    var checking by remember { mutableStateOf(false) }
     val state = model.state
     val inputsReady = model.inputReady(selection)
-    var approved by remember(selection, state.config, state.configBinding, accountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
+    var approved by remember(selection, state.config, state.configBinding, accountState, testAccountState, ServerOutfitQaConnection.revision) { mutableStateOf(false) }
     val thirdParty = state.config?.providerInfo
     val externalCancellation = state.ticket?.let(ServerOutfitVtonRepository::isGenlook)
         ?: (thirdParty?.remoteCancellationSupported == false)
@@ -86,15 +94,9 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(onClick = onBack, modifier = Modifier.testTag("serverOutfitBack")) { Text("피팅으로 돌아가기") }
-            Text("서버 AI · 3종 착장", style = MaterialTheme.typography.headlineSmall)
-            Text("온디바이스 AI와 별도 모드예요. 운영 배포·모델 사용 권한·개인정보 처리 정책이 승인된 서버에서만 사용해요.")
-            Text(when {
-                ServerOutfitQaConnection.supported -> "격리 QA에서는 승인된 개발 서버와 별도 인증을 직접 설정한 경우에만 연결해요. 운영 서버·공개 연구 데모·유료 AI로 자동 전환하지 않아요."
-                BuildConfig.PREVIEW_BUILD -> "현재 Preview에서는 운영 서버로 사진을 전송하지 않아요. 공개 연구 데모나 유료 AI로 자동 전환하지 않아요."
-                else -> "승인된 서버 설정과 사용자 동의가 필요해요. 공개 연구 데모나 다른 유료 AI로 자동 전환하지 않아요."
-            },
-                style = MaterialTheme.typography.bodySmall)
-            OutfitQaConnectionPanel(enabled = !state.busy && !saving, onChanged = model::invalidateConnection)
+            Text("AI로 입어보기", style = MaterialTheme.typography.headlineSmall)
+            Text("사진과 상의·하의·신발로 AI 착장을 만들어요.")
+            if (ServerOutfitQaConnection.supported) OutfitQaConnectionPanel(enabled = !state.busy && !saving, onChanged = model::invalidateConnection)
             DeviceGarmentRole.entries.forEach { role ->
                 val count = selection?.garments?.count { it.role == role } ?: 0
                 val label = when (role) { DeviceGarmentRole.TOP -> "상의"; DeviceGarmentRole.BOTTOM -> "하의"; DeviceGarmentRole.SHOES -> "신발" }
@@ -103,11 +105,48 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             if (selection == null) Text("먼저 피팅 화면에서 모델 사진과 상의·하의·신발을 선택해주세요.")
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
-            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving,
-                modifier = Modifier.testTag("serverOutfitCheck")) { Text("서버 준비 상태 확인") }
-            Text(if (state.config?.ready == true) "서버 설정 준비됨 · 실제 생성 품질 미검증" else "서버 미준비 · 사진 전송 전 확인 필요",
+            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving && !linkingAccount,
+                modifier = Modifier.testTag("serverOutfitCheck")) { Text(if (state.config?.ready == true) "연결 다시 확인" else "연결 확인") }
+            Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!accountReady && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
                 modifier = Modifier.testTag("serverOutfitReady"))
-            state.config?.takeIf { it.ready }?.let {
+            if (BuildConfig.INSTALL_TEST_BUILD && !accountReady) Text("앱 관리자에게 설치검증 앱의 시험 계정 연결을 요청해주세요. Google·카카오 로그인 등록과는 별개예요.",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("installtestAccountHelp"))
+            if (BuildConfig.INSTALL_TEST_BUILD && (!DataAuth.canSync || InstallTestAccount.hasRecord))
+                com.jeiu.fashionproject.ui.components.InstallTestAccountPanel(testAccountState, InstallTestAccount.hasRecord,
+                    linkingAccount || state.busy || saving,
+                    onEnroll = { consent, reference, server ->
+                        if (!linkingAccount) {
+                            linkingAccount = true
+                            scope.launch {
+                                try { InstallTestAccount.enroll(consent, reference, server); model.invalidateConnection() }
+                                finally { linkingAccount = false }
+                            }
+                        }
+                    }, onVerify = {
+                        if (!linkingAccount) {
+                            linkingAccount = true
+                            scope.launch {
+                                try { InstallTestAccount.verify(); model.invalidateConnection() }
+                                finally { linkingAccount = false }
+                            }
+                        }
+                    })
+            TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) { Text(if(details) "연결 정보 접기" else "연결 상세 보기") }
+            if (details && BuildConfig.DEBUG && !ServerOutfitQaConnection.supported) {
+                TextButton(onClick={
+                    checking=true
+                    val base=BackendApi.BASE_URL
+                    scope.launch {
+                        try { val result=ServerSettings.check(base); if(base==BackendApi.BASE_URL) connectivity=result }
+                        finally { checking=false }
+                    }
+                }, enabled=!checking && !state.busy, modifier=Modifier.testTag("serverOutfitDiagnostics")) {
+                    Text(if(checking) "진단 중" else "서버 연결 진단")
+                }
+                OutfitReadiness.lines(connectivity, if (InstallTestAccount.hasRecord) testAccountState else accountState, accountReady,
+                    BuildConfig.SERVER_OUTFIT_APPROVED, state.config?.ready).forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+            if (details) state.config?.takeIf { it.ready }?.let {
                 val host = state.configHost ?: "승인된 HTTPS 서버 없음"
                 Text("사진 처리 서버: $host", style = MaterialTheme.typography.bodySmall)
                 Text("처리 정책 ${it.policy} · 서버 결과 보관 ${it.retentionSeconds}초. 법정 기준이 아니라 승인된 서버 설정이에요.",
@@ -115,23 +154,24 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             }
             thirdParty?.let {
                 Text("외부 처리: Genlook · 스마트폰이 아닌 제3자 서버에서 실행", modifier = Modifier.testTag("serverOutfitProvider"))
-                Text(when (it.mode) {
+                if (policyDetails) Text(when (it.mode) {
                     "clothing-pair-then-shoes" -> "상의·하의 함께 → 신발, 2회 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요."
                     "sequential-3" -> "상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요."
                     else -> "생성 방식이 확인되지 않았어요. 서버 처리 조건을 다시 확인해주세요."
                 }, modifier = Modifier.testTag("serverOutfitGenerationMode"))
-                Text("요청당 최대 ${it.maxCreditsPerJob}크레딧을 예약해요. 실제 청구액·환불 확정이 아니며 자동 충전하지 않아요.",
+                Text("최대 ${it.maxCreditsPerJob}크레딧 · 자동 충전 없음. 실제 청구·환불은 사용 내역에서 확인해요.",
                     modifier = Modifier.testTag("serverOutfitCost"))
-                Text("Genlook 이미지 보관 설정 ${it.remoteRetentionDays}일 · 앱 서버 결과 보관 시간과 별도예요. 생성 기록·동의·백업 보관 및 삭제 제한은 아래 정책을 확인해주세요.",
+                Text("Genlook 이미지 보관 ${it.remoteRetentionDays}일 · 앱 서버 ${state.config?.retentionSeconds}초. 기록·백업·삭제 제한은 처리 정책을 확인해주세요.",
                     modifier = Modifier.testTag("serverOutfitExternalRetention"))
-                Text(it.notice, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("serverOutfitProviderNotice"))
-                Text("공개된 원격 생성 취소 기능이 없어 대기 종료는 외부 작업 취소·환불·삭제 완료를 보장하지 않아요.",
+                TextButton(onClick={policyDetails=!policyDetails}, modifier=Modifier.testTag("serverOutfitPolicyDetails")) { Text(if(policyDetails) "정책 접기" else "처리 정책 · 자세히") }
+                if(policyDetails) Text(it.notice, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("serverOutfitProviderNotice"))
+                Text("대기를 종료해도 이미 요청한 생성의 취소·환불·삭제는 보장되지 않아요.",
                     modifier = Modifier.testTag("serverOutfitCancellationLimits"))
             }
             Row {
                 Checkbox(approved, onCheckedChange = { approved = it }, enabled = !state.busy && state.config?.ready == true,
                     modifier = Modifier.testTag("serverOutfitConsent"))
-                Text(if (thirdParty != null) "선택한 인물·상의·하의·신발 4장의 이미지와 중간 생성 결과를 승인된 앱 서버를 통해 Genlook으로 전송하고 표시된 비용·보관 정책으로 처리하는 데 동의해요."
+                Text(if (thirdParty != null) "선택한 사진·의류 3종과 중간 결과의 Genlook 전송 및 표시된 비용·보관 정책에 동의해요."
                     else "선택한 인물·의류 3종을 표시된 정책의 서버로 전송하는 데 동의해요.",
                     Modifier.weight(1f).padding(top = 10.dp).testTag("serverOutfitConsentText"))
             }
@@ -143,11 +183,12 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 }
             }
             Button(onClick = { comparison = false; reopened = null; model.start(context, selection, approved) },
-                enabled = inputsReady && approved && !state.busy && !saving && pendingSave == null && model.startAllowedByPreviousJob(),
-                modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("선택한 3종으로 서버 AI 생성") }
+                enabled = inputsReady && approved && !state.busy && !saving && !linkingAccount &&
+                    (!InstallTestAccount.hasRecord || accountReady) && pendingSave == null && model.startAllowedByPreviousJob(),
+                modifier = Modifier.fillMaxWidth().testTag("serverOutfitGenerate")) { Text("동의하고 AI로 입어보기") }
             if (state.busy) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("서버 작업: ${state.phase}. 화면 복귀로 새 생성 요청을 보내지 않아요.")
+                Text("착장 이미지를 준비하고 있어요. 화면으로 돌아와도 중복 요청하지 않아요.")
             }
             state.status?.takeIf { it.status == "running" && state.phase in setOf("running", "waiting") }?.providerProgress?.let { progress ->
                 val stage = when (progress.mode) {
@@ -186,7 +227,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("serverOutfitError")) }
             if (visible != null) Text(if (state.previous) "이전 서버 작업 결과 · 새 생성 아님" else "현재 서버 요청 결과 · 품질 검수 필요",
                 modifier = Modifier.testTag("serverOutfitResultLabel"))
-            if (visible != null) state.status?.source?.let {
+            if (visible != null && details) state.status?.source?.let {
                 val modeLabel = when (it.mode) {
                     "clothing-pair-then-shoes" -> "상의·하의 함께 → 신발, 2회 생성"
                     "sequential-3" -> "3회 순차 생성"
@@ -197,7 +238,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 Text("이 작업 예약 상한 ${it.creditsReserved}크레딧 · 실제 청구액은 공급자 사용 내역으로 확인해주세요.")
             }
             TextButton(onClick = { comparison = true; showOriginal = false }, enabled = visible != null,
-                modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본·서버 결과 비교") }
+                modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본과 비교") }
             TextButton(onClick = {
                 if (saving || pendingSave != null) return@TextButton
                 try {
@@ -206,12 +247,14 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 } catch (_: OutOfMemoryError) { pendingSave = null; message = "저장할 메모리가 부족해요." }
                 catch (_: Exception) { pendingSave = null; message = "저장 선택기를 열지 못했어요." }
             }, enabled = visible != null && !saving && pendingSave == null,
-                modifier = Modifier.testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "결과 PNG 저장") }
+                modifier = Modifier.testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "저장하기") }
             TextButton(onClick = {
                 picking = true
                 try { open.launch(arrayOf("image/png", "image/jpeg")) }
                 catch (_: Exception) { picking = false; message = "저장 파일 선택기를 열지 못했어요." }
             }, enabled = !picking && !reading, modifier = Modifier.testTag("serverOutfitOpen")) { Text("저장 이미지 열기") }
+            if (visible != null) TextButton(onClick = onBack, enabled = !saving && pendingSave == null,
+                modifier = Modifier.testTag("serverOutfitChangeClothes")) { Text("다른 옷 입어보기") }
             message?.let { Text(it, modifier = Modifier.testTag("serverOutfitMessage")) }
         }
     }

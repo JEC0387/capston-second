@@ -632,7 +632,7 @@ private fun TodayOutfitView(
                             }
                         }
                         val pieces = tryOnPiecesOf(outfit.items)
-                        if (pieces.isNotEmpty()) {
+                        if (pieces.isNotEmpty() && com.jeiu.fashionproject.BuildConfig.DEBUG && !com.jeiu.fashionproject.BuildConfig.INSTALL_TEST_BUILD) {
                             OutlinedButton(
                                 onClick = { onTryOn(pieces + outfit.items.filter { it !in pieces }) },
                                 modifier = Modifier.fillMaxWidth(),

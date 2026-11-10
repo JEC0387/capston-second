@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,11 @@ import java.util.Locale
 @Composable
 fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:()->Unit,
     onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
+    var measuredProposal by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measurementBaseline by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measuredPart by remember { mutableStateOf<AvatarPart?>(null) }
     val initialBody=checkNotNull(initial.centimeters)
     val initialJson=remember(initialBody){initialBody.toJson().toString()}
     var json by rememberSaveable(initialJson) {mutableStateOf(initialJson)}
@@ -46,6 +52,18 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
     var askReset by remember {mutableStateOf(false)}
     var askLeave by remember {mutableStateOf(false)}
     var message by remember {mutableStateOf<String?>(null)}
+    measuredProposal?.let { proposed ->
+        AlertDialog(onDismissRequest = { measuredProposal = null },
+            title = { Text("원본 실측값에 별도로 저장할까요?") },
+            text = { Text("방금 직접 잰 값으로 입력한 ${measuredPart?.label}만 실측 기록에 저장해요. 체형 분석·사이즈 비교에도 사용돼요. 3D 표시 조절과 별개이며 취소하면 원본 실측값은 유지돼요.") },
+            confirmButton = { TextButton(onClick = {
+                if (ManualBodyStore.current.value == measurementBaseline && ManualBodyStore.update(context, proposed, true)) {
+                    message = "직접 잰 값을 실측 기록에 저장했어요."
+                } else message = "실측값이 바뀌었거나 저장하지 못했어요. 기존 기록을 유지했어요."
+                measuredProposal = null
+            }, modifier = Modifier.testTag("confirmMeasuredWriteback")) { Text("실측 기록에 저장") } },
+            dismissButton = { TextButton(onClick = { measuredProposal = null }, modifier = Modifier.testTag("cancelMeasuredWriteback")) { Text("3D 초안에만 유지") } })
+    }
     var details by rememberSaveable {mutableStateOf(false)}
     var lastSaved by rememberSaveable {mutableStateOf<String?>(null)}
     fun update(next:AvatarCentimeters) {json=next.toJson().toString();message=null}
@@ -58,7 +76,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             OutlinedTextField(text,{if(it.length<=8)text=it},label={Text("cm · 0.5 단위")},singleLine=true,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.testTag("rulerInputField"))
             Text("표시 범위 ${range.start}~${range.endInclusive} cm. 눈금과 같은 0.5cm 단위로 입력해요.")
-            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it});Text("줄자로 직접 잰 값이에요 (선택)")}
+            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it},modifier=Modifier.testTag("rulerMeasured"));Text("줄자로 직접 잰 값이에요 (선택)")}
             if(CmRulerMath.parse(text,range)==null)Text("유효한 범위의 0.5cm 단위 숫자를 입력해주세요.",color=Brown)
         }
     },confirmButton={TextButton(enabled=CmRulerMath.parse(text,range)!=null,onClick={
@@ -66,9 +84,14 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         if(next!=null) {
             update(if(measured)next.copy(values=next.values+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL)),
                 references=next.references+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL))) else next)
+            if (measured) {
+                measurementBaseline = ManualBodyStore.current.value
+                measuredPart = selected
+                measuredProposal = ManualAvatarMeasurements.proposed(measurementBaseline, body.heightCm, selected, value, System.currentTimeMillis())
+            }
             input=false
         }
-    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false}) {Text("취소")}})
+    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false},modifier=Modifier.testTag("rulerInputCancel")) {Text("취소")}})
     if(confirmSave) AvatarApplicationDialog(previous,candidate,onDismiss={confirmSave=false},commitOnApprove=true,onApprove={
         confirmSave=false
         val stamped=candidate.copy(centimeters=body.copy(updatedAt=maxOf(System.currentTimeMillis(),body.createdAt)))
@@ -92,9 +115,9 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=::leave) {Icon(Icons.AutoMirrored.Filled.ArrowBack,contentDescription="3D 조절 닫기")}
-                    Text("3D 체형 조절",style=MaterialTheme.typography.titleLarge,color=Brown)
+                    Text("내 체형 수정",style=MaterialTheme.typography.titleLarge,color=Brown)
                 }
-                Column(Modifier.weight(if(compact).45f else .58f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
+                Column(Modifier.weight(if(compact).45f else .65f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
                     BodyAvatarViewport(body.parameters(),1f,Modifier.weight(1f).fillMaxWidth().testTag("cmAvatarViewport"),
                         resetKey=cameraReset,cameraYaw=yaw,onRotation={yaw=it},fitModel=true)
                     Row(horizontalArrangement=Arrangement.Center) {
@@ -108,7 +131,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         AvatarPart.entries.forEach {part->FilterChip(selected==part,{selectedName=part.name},label={Text(part.label)},
                             modifier=Modifier.testTag("cmPart-${part.name}"))}
                     }
-                Column(Modifier.weight(if(compact).55f else .42f).fillMaxWidth().verticalScroll(rememberScrollState())
+                Column(Modifier.weight(if(compact).55f else .35f).fillMaxWidth().verticalScroll(rememberScrollState())
                     .padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Text("${selected.label} ${selected.unit}",style=MaterialTheme.typography.titleMedium,color=Brown,
                         modifier=Modifier.testTag("cmPartLabel"))
@@ -120,7 +143,6 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                     },{openInput()})
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
                     if(parsed==null)Text("초안 형식을 복원하지 못해 초기 미리보기를 사용해요. 저장된 원본은 유지했어요.")
-                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("3D 설정 저장")}
                     TextButton(onClick={details=!details},modifier=Modifier.testTag("cmEditorAdvancedToggle")) {
                         Text(if(details)"고급 설정 접기" else "고급 설정 · 복원 및 출처")
                     }
@@ -146,6 +168,10 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         body.references.forEach {(part,value)->if(body[part]!=value.cm)Text("${part.label} 원본 ${value.cm} cm는 표시 단위/범위 차이로 현재 ${body[part]} cm와 달라요.")}
                     }
                     Spacer(Modifier.height(12.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
+                    TextButton(onClick=::leave, modifier=Modifier.testTag("cmEditorCancel")) {Text("취소")}
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.weight(1f).testTag("cmEditorSave")) {Text("이 체형으로 저장")}
                 }
             }
         }

@@ -18,7 +18,7 @@ import java.util.UUID
 import kotlin.coroutines.coroutineContext
 
 /** Separate, opt-in server deployment. Never an implementation of DeviceVtonEngine. */
-class OutfitServerFailure(val code: String) : IllegalStateException(code)
+class OutfitServerFailure(val code: String, val httpStatus: Int? = null) : IllegalStateException(code)
 
 class OutfitServerSession(val base: String, internal val token: String) {
     val accountKey = deviceSha256((base + "\u0000" + token).toByteArray())
@@ -87,6 +87,8 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
             return ServerOutfitQaConnection.sessionOrNull() ?: throw OutfitServerFailure("deployment_not_approved")
         if (!BuildConfig.SERVER_OUTFIT_APPROVED || BuildConfig.PREVIEW_BUILD)
             throw OutfitServerFailure("deployment_not_approved")
+        if (BuildConfig.INSTALL_TEST_BUILD && InstallTestAccount.hasRecord)
+            return InstallTestAccount.sessionOrNull() ?: throw OutfitServerFailure("authentication_required")
         val base = BackendApi.BASE_URL.trimEnd('/')
         if (!validBase(base) || !DataAuth.canSync) throw OutfitServerFailure("authentication_required")
         val token = DataAuth.authorizationFor(URL(base + PREFIX + "/config"))
@@ -324,7 +326,13 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
                 }
             }
             val code = conn.responseCode
-            if (code !in 200..299) throw OutfitServerFailure(httpFailureCode(path, code))
+            if (code !in 200..299) {
+                // Bounded input; retain only an allowlisted transport reason, never raw provider text.
+                val reason = if (code == 403) runCatching {
+                    conn.errorStream?.use { it.readNBytesCompat(1024).toString(Charsets.UTF_8) }
+                }.getOrNull() else null
+                throw httpFailure(path, code, reason)
+            }
             // Never log/retain provider error bodies, redirects or signed URLs.
             val limit = if (binary) 8 * 1024 * 1024 else 32768
             val bytes = conn.inputStream.use { input ->
@@ -342,6 +350,27 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
                 .associateWith { conn.getHeaderField(it).orEmpty() })
         } finally { conn.disconnect() }
     }
+
+    private fun java.io.InputStream.readNBytesCompat(limit: Int): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(256)
+        while (output.size() < limit) {
+            val count = read(buffer, 0, minOf(buffer.size, limit - output.size()))
+            if (count <= 0) break
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
+    }
+
+    internal fun httpFailure(path: String, status: Int, body: String?): OutfitServerFailure {
+        val detail = if (status == 403 && body != null && body.length <= 1024)
+            runCatching { JSONObject(body).optString("detail") }.getOrNull() else null
+        val code = if (detail == "https_required") "https_required" else httpFailureCode(path, status)
+        return OutfitServerFailure(code, status)
+    }
+
+    fun friendlyFailure(failure: OutfitServerFailure): String = friendly(failure.code) +
+        (failure.httpStatus?.takeIf { it in 100..599 }?.let { " (HTTP $it)" } ?: "")
 
     internal fun httpFailureCode(path: String, code: Int): String = when (code) {
         401 -> "authentication_required"
@@ -361,6 +390,9 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
     }
     private fun safeCode(value: String) = value.takeIf { Regex("[a-z][a-z0-9_]{0,63}").matches(it) } ?: "server_unavailable"
     fun friendly(code: String?) = when (code) {
+        "https_required" -> "서버가 보안 연결을 확인하지 못했어요. 서버 담당자에게 HTTPS 연결 확인을 요청해주세요. 자동 재시도하지 않아요."
+        "consent_or_transport_required" -> "사진 전송 동의 또는 서버 접근 조건을 확인해주세요. 인증 실패와는 다른 접근 제한이에요."
+        "engine_unavailable" -> "현재 AI 생성 서버가 준비되지 않았어요. 입력은 유지되며 자동으로 다시 생성하지 않아요."
         "deployment_not_approved" -> "서버 기반 3종 AI는 별도 배포 승인이 필요해요. 현재 앱에서는 사진을 전송하지 않아요."
         "authentication_required", "account_changed" -> "현재 서버 계정 인증이 필요하거나 계정이 바뀌었어요. 기존 기록은 유지해요."
         "server_api_unavailable" -> "연결한 서버에 3종 AI API가 배포되지 않았거나 연결 경로가 달라요. 서버 배포와 연결 주소를 확인해주세요. 사진은 전송하지 않았어요."

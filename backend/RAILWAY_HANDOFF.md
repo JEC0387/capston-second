@@ -41,8 +41,14 @@
    `railway up` 실행 전 업로드 대상에 실제 `.env`가 없는지 다시 확인한다.
 5. 기존 start command override가 Dockerfile을 무시하지 않는지 확인한다. `PORT`는 Railway가
    지정한다. `/health`는 liveness이며 DB·로그인·Genlook 준비 완료를 의미하지 않는다.
-   `FASHION_TRUSTED_PROXY_IPS`는 실제 프록시 신뢰 범위를 확인해 설정한다. 근거 없이 `*`로
-   바꾸거나 클라이언트의 `X-Forwarded-Proto`만 신뢰하지 않는다.
+   `FASHION_TRUSTED_PROXY_IPS`를 비워 두면 Railway(플랫폼이 `RAILWAY_PROJECT_ID` 주입)에서는
+   edge 프록시를 신뢰(`*`)하고, 그 밖에서는 loopback만 신뢰한다. Railway 공식 문서는
+   edge가 TLS를 종료하고 `X-Forwarded-Proto: https`를 전달한다고 명시한다.
+   `*`는 컨테이너에 직접 접속 가능한 모든 피어도 신뢰하므로 플랫폼 ID만으로 안전성이 보장되지 않는다.
+   운영 담당자는 HTTP edge 외 TCP 직접 공개가 없고 private network의 비신뢰 서비스가 접근하지 못함을
+   확인해야 한다. 이를 보장할 수 없으면 `FASHION_TRUSTED_PROXY_IPS`에 실제 신뢰 프록시만 지정한다.
+   신뢰하지 않으면 모든 요청이 http로 보여 옷 분류·가상 피팅이 `403 https_required`(앱: "서버 오류 (403)")가 된다.
+   Railway 앞에 다른 프록시를 두거나 컨테이너 포트를 직접 공개하면 이 값을 실제 범위로 명시한다.
 
 공식 근거(2026-11-09 확인): [CLI link](https://docs.railway.com/cli/link),
 [CLI up와 업로드 루트](https://docs.railway.com/cli/up),
