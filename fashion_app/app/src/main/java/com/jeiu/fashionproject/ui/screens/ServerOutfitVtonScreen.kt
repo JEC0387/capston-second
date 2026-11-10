@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -56,7 +57,10 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
         if (!comparison) null else runCatching { visible?.let { it.original to it.png } }.getOrNull()
     }
 
-    LaunchedEffect(model) { model.initialize(context) }
+    LaunchedEffect(model, accountReady) {
+        model.initialize(context)
+        if (accountReady) model.refreshConfig() // Read-only readiness check; never creates a paid job.
+    }
     LaunchedEffect(selection) { model.selectionChanged(selection); comparison = false; message = null }
     BackHandler(onBack = onBack)
 
@@ -94,20 +98,33 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(onClick = onBack, modifier = Modifier.testTag("serverOutfitBack")) { Text("피팅으로 돌아가기") }
-            Text("AI로 입어보기", style = MaterialTheme.typography.headlineSmall)
-            Text("사진과 상의·하의·신발로 AI 착장을 만들어요.")
+            Text("AI 가상피팅", style = MaterialTheme.typography.headlineSmall)
+            Text("전신 사진과 선택한 옷으로 새 착장 이미지를 만들어요.")
             if (ServerOutfitQaConnection.supported) OutfitQaConnectionPanel(enabled = !state.busy && !saving, onChanged = model::invalidateConnection)
-            DeviceGarmentRole.entries.forEach { role ->
-                val count = selection?.garments?.count { it.role == role } ?: 0
-                val label = when (role) { DeviceGarmentRole.TOP -> "상의"; DeviceGarmentRole.BOTTOM -> "하의"; DeviceGarmentRole.SHOES -> "신발" }
-                Text("$label · ${if (count == 1) "선택됨" else "한 벌을 선택해주세요"}")
+            Text("선택한 사진과 옷", style = MaterialTheme.typography.titleMedium)
+            selection?.let { selected ->
+                AsyncImage(selected.person, "선택한 전신 사진", contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxWidth().height(180.dp).testTag("serverOutfitPersonPreview"))
             }
+            DeviceGarmentRole.entries.forEach { role ->
+                val garment = selection?.garments?.singleOrNull { it.role == role }
+                val label = when (role) { DeviceGarmentRole.TOP -> "상의"; DeviceGarmentRole.BOTTOM -> "하의"; DeviceGarmentRole.SHOES -> "신발" }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (garment != null) AsyncImage(garment.source, "$label 미리보기",
+                        contentScale = ContentScale.Fit, modifier = Modifier.size(72.dp).testTag("serverOutfitGarment_${role.name}"))
+                    Text("$label · ${if (garment != null) "선택됨" else "한 벌을 선택해주세요"}")
+                }
+            }
+            TextButton(onClick = onBack, enabled = !saving && pendingSave == null) { Text("사진·옷 변경") }
             if (selection == null) Text("먼저 피팅 화면에서 모델 사진과 상의·하의·신발을 선택해주세요.")
             else if (state.config?.ready == true && !inputsReady)
                 Text("기기에서 읽을 모델 사진과 서로 다른 상의·하의·신발을 한 벌씩 선택해주세요.")
-            TextButton(onClick = model::refreshConfig, enabled = !state.busy && !saving && !linkingAccount,
-                modifier = Modifier.testTag("serverOutfitCheck")) { Text(if (state.config?.ready == true) "연결 다시 확인" else "연결 확인") }
-            Text(if (state.config?.ready == true) "연결 준비됨 · 생성 후 결과를 확인해주세요" else if (!accountReady && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요." else "연결 확인 후 시작할 수 있어요",
+            if (BuildConfig.DEBUG || state.config?.ready != true) TextButton(onClick = model::refreshConfig,
+                enabled = !state.busy && !saving && !linkingAccount,
+                modifier = Modifier.testTag("serverOutfitCheck")) { Text("서버 상태 다시 확인") }
+            Text(if (state.config?.ready == true && accountReady) "서버가 생성 요청을 받을 수 있다고 알려줬어요."
+                else if (!accountReady && !ServerOutfitQaConnection.supported) "서버 계정 연결이 필요해요. 사진은 전송하지 않았어요."
+                else "서버 준비 상태를 확인해야 시작할 수 있어요",
                 modifier = Modifier.testTag("serverOutfitReady"))
             if (BuildConfig.INSTALL_TEST_BUILD && !accountReady) Text("앱 관리자에게 설치검증 앱의 시험 계정 연결을 요청해주세요. Google·카카오 로그인 등록과는 별개예요.",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("installtestAccountHelp"))
@@ -131,7 +148,10 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                             }
                         }
                     })
-            TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) { Text(if(details) "연결 정보 접기" else "연결 상세 보기") }
+            if (BuildConfig.DEBUG || ServerOutfitQaConnection.supported)
+                TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) {
+                    Text(if(details) "연결 정보 접기" else "연결 상세 보기")
+                }
             if (details && BuildConfig.DEBUG && !ServerOutfitQaConnection.supported) {
                 TextButton(onClick={
                     checking=true
@@ -224,7 +244,13 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 Text("앱을 종료해도 작업 번호는 남아요. 다시 조회하며 응답 유실 시 자동 재전송하지 않아요. 미저장 원본 비교 이미지는 앱 종료 후 복구되지 않아요.",
                     style = MaterialTheme.typography.bodySmall)
             }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("serverOutfitError")) }
+            state.error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("serverOutfitError"))
+                state.failureCode?.let { code ->
+                    Text("문의 코드: $code", style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.testTag("serverOutfitFailureCode"))
+                }
+            }
             if (visible != null) Text(if (state.previous) "이전 서버 작업 결과 · 새 생성 아님" else "현재 서버 요청 결과 · 품질 검수 필요",
                 modifier = Modifier.testTag("serverOutfitResultLabel"))
             if (visible != null && details) state.status?.source?.let {
@@ -237,6 +263,9 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                     modifier = Modifier.testTag("serverOutfitResultSource"))
                 Text("이 작업 예약 상한 ${it.creditsReserved}크레딧 · 실제 청구액은 공급자 사용 내역으로 확인해주세요.")
             }
+            if (visible != null) AsyncImage(visible.png, "AI 가상피팅 결과 이미지",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxWidth().height(360.dp).testTag("serverOutfitResultImage"))
             TextButton(onClick = { comparison = true; showOriginal = false }, enabled = visible != null,
                 modifier = Modifier.testTag("serverOutfitCompare")) { Text("원본과 비교") }
             TextButton(onClick = {
@@ -248,7 +277,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                 catch (_: Exception) { pendingSave = null; message = "저장 선택기를 열지 못했어요." }
             }, enabled = visible != null && !saving && pendingSave == null,
                 modifier = Modifier.testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "저장하기") }
-            TextButton(onClick = {
+            if (visible != null) TextButton(onClick = {
                 picking = true
                 try { open.launch(arrayOf("image/png", "image/jpeg")) }
                 catch (_: Exception) { picking = false; message = "저장 파일 선택기를 열지 못했어요." }
