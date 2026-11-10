@@ -171,7 +171,7 @@ fun MyPageScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(nickname, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 Text(email, style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                ServerStatusBadge()
+                if (com.jeiu.fashionproject.BuildConfig.DEBUG) ServerStatusBadge()
             }
             // 통계
             Row(
@@ -333,7 +333,7 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.CloudUpload, label = "데이터 백업 · 복원", onClick = { showBackupDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Dns, label = "서버 주소 (${ServerSettings.current.removePrefix("http://")})",
+            if (com.jeiu.fashionproject.BuildConfig.DEBUG) MyMenuItem(icon = Icons.Filled.Dns, label = "서버 주소 (${ServerSettings.current.removePrefix("http://")})",
                 onClick = { showServerDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
@@ -403,7 +403,7 @@ fun MyPageScreen(
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    if (showServerDialog) {
+    if (showServerDialog && com.jeiu.fashionproject.BuildConfig.DEBUG) {
         ServerAddressDialog(onDismiss = { showServerDialog = false })
     }
 

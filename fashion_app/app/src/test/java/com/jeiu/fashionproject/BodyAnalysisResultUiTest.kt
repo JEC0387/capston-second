@@ -12,7 +12,11 @@ import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.ui.screens.BodyAnalysisScreen
 import com.jeiu.fashionproject.ui.viewmodel.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.junit.Assert.assertEquals
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.After
+import com.jeiu.fashionproject.data.AvatarProfile
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -26,6 +30,11 @@ class BodyAnalysisResultUiTest {
     private val app get() = ApplicationProvider.getApplicationContext<Application>()
     private val photo = Uri.parse("content://test/body-result")
     private val measurements = BodyMeasurements(170f, 40f, 28f, 37f, 80f, 46f, .1f, 1700f, 1L)
+
+    @Before @After fun isolateAvatar() {
+        app.getSharedPreferences("avatar_visual_profile_v1",0).edit().clear().commit()
+        AvatarProfileStore.load(app)
+    }
 
     @Suppress("UNCHECKED_CAST")
     private fun showResult(measured: BodyMeasurements?) {
@@ -59,14 +68,29 @@ class BodyAnalysisResultUiTest {
     }
 
     @Test fun photoMeasurementOpensApprovalBeforeChangingSavedAvatar() {
+        val prior=AvatarProfile(170f,65f)
+        assertTrue(AvatarProfileStore.save(app,prior))
         showResult(measurements)
         compose.onNodeWithTag("bodyAvatarFromPhoto").performScrollTo().performClick()
         compose.waitUntil(5000) {
             compose.onAllNodesWithTag("avatarApplyCancel").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("avatarApplyCancel").performClick()
+        compose.runOnIdle { assertEquals(prior,AvatarProfileStore.current.value) }
         compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarImportPhoto").assertExists()
+    }
+
+    @Test fun firstPhotoImportRequiresUserWeightBeforeApprovalAndDoesNotSaveAutomatically() {
+        showResult(measurements)
+        compose.onNodeWithTag("bodyAvatarFromPhoto").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarApplyCancel").assertDoesNotExist()
+        compose.onNodeWithTag("avatarHeight").performScrollTo().performTextReplacement("170")
+        compose.onNodeWithTag("avatarWeight").performScrollTo().performTextReplacement("65")
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("avatarApplyCancel").fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnIdle { assertNull(AvatarProfileStore.current.value) }
+        compose.onNodeWithTag("avatarApplyCancel").performClick()
+        compose.runOnIdle { assertNull(AvatarProfileStore.current.value) }
     }
 
     @Test fun absentMeasurementsNeverOfferCompletedAvatarImport() {

@@ -92,7 +92,7 @@ import kotlin.math.roundToInt
 /** 옷을 입히는 자리. 번호가 작을수록 아래에 그려진다. */
 internal enum class FitSlot { BOTTOM, SHOES, TOP, OUTER, ACCESSORY }
 
-private fun slotOf(item: WardrobeItem) = when (item.category) {
+internal fun slotOf(item: WardrobeItem) = when (item.category) {
     "상의", "원피스" -> FitSlot.TOP
     "아우터" -> FitSlot.OUTER
     "하의" -> FitSlot.BOTTOM
@@ -429,6 +429,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     var activeSlot by manual::activeSlot
     var overlayAlpha by manual::overlayAlpha
     var inputNotice by remember { mutableStateOf<String?>(null) }
+    val avatarCapture = remember { com.jeiu.fashionproject.ui.components.AvatarFrameCapture() }
     var avatarCameraReset by remember { mutableIntStateOf(0) }
     var inspectAvatar by remember { mutableStateOf(false) }
     var fittingHelp by remember { mutableStateOf(false) }
@@ -825,7 +826,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     avatarProfile?.let { profile ->
                         BodyAvatarViewport(profile.parameters(), profile.thigh,
                             Modifier.fillMaxSize().testTag("fittingAvatarViewport"),
-                            resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty())
+                            resetKey=avatarCameraReset,allowTouch=inspectAvatar || worn.isEmpty(), capture=avatarCapture)
                     }
                 } else {
                     val displayedPhoto = bodyPhoto
@@ -1108,6 +1109,9 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
         }
         if(avatarMode) {
+            AvatarOutfitExportPanel(avatarProfile?.let { profile ->
+                AvatarOutfitSnapshot(profile, canvasSize, worn.values.toList(), overlayAlpha, inspectAvatar, avatarCameraReset)
+            }) { snapshot -> AvatarOutfitExport.create(context.applicationContext, snapshot, avatarCapture) }
             Row(Modifier.fillMaxWidth().padding(horizontal=20.dp)) {
                 TextButton(onClick={inspectAvatar=!inspectAvatar;if(!inspectAvatar)avatarCameraReset++},modifier=Modifier.testTag("fittingInspectModel")) {
                     Text(if(inspectAvatar) "옷 조작으로 돌아가기" else "모델 회전 확인")

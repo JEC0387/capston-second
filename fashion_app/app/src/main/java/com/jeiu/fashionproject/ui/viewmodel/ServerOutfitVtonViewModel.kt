@@ -142,7 +142,7 @@ class ServerOutfitVtonViewModel(
             catch (failure: OutfitServerFailure) {
                 if (failure.code in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
                 state = state.copy(phase = "blocked", result = null,
-                    error = ServerOutfitVtonRepository.friendly(failure.code))
+                    error = ServerOutfitVtonRepository.friendlyFailure(failure))
             } catch (_: OutOfMemoryError) {
                 state = state.copy(phase = "failed", result = null, error = "메모리가 부족해 중단했어요. 기존 작업 번호는 유지하며 자동 재전송하지 않아요.")
             } catch (_: Exception) {

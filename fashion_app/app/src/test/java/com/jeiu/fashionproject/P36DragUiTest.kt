@@ -113,10 +113,12 @@ class P36DragUiTest {
 
     @Test fun wardrobeCardDropsReplaceSameSlotAndUndoRestoresPreviousGarment() {
         drag("top-a")
-        compose.waitUntil(10000) {vm.worn[FitSlot.TOP]?.item?.id=="top-a"}
+        // The decode resumes on Main. Drain the UI queue before inspecting Compose state;
+        // polling it only from the test thread can leave that completion queued in Robolectric.
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]?.item?.id=="top-a"}}
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("수동 배치",substring=true)
         drag("top-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.TOP]?.item?.id=="top-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]?.item?.id=="top-b"}}
         assertEquals(1,vm.worn.size)
         compose.onNodeWithTag("photoDropUndo").performScrollTo().performClick()
         compose.runOnIdle {assertEquals("top-a",vm.worn[FitSlot.TOP]?.item?.id);assertTrue(vm.avatarWorn.isEmpty())}

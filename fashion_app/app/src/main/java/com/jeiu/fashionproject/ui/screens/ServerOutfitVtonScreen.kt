@@ -132,7 +132,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                         }
                     })
             TextButton(onClick={details=!details}, modifier=Modifier.testTag("serverOutfitDetails")) { Text(if(details) "연결 정보 접기" else "연결 상세 보기") }
-            if (details && !ServerOutfitQaConnection.supported) {
+            if (details && BuildConfig.DEBUG && !ServerOutfitQaConnection.supported) {
                 TextButton(onClick={
                     checking=true
                     val base=BackendApi.BASE_URL
