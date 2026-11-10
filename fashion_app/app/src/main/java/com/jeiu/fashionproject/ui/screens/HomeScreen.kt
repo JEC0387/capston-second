@@ -219,7 +219,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                ServerStatusBadge()
+                if (com.jeiu.fashionproject.BuildConfig.DEBUG) ServerStatusBadge()
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
