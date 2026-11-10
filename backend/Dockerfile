@@ -30,6 +30,11 @@ RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
     && python -c "import fashion_detection; fashion_detection._download_df2_model()"
 
 # Railway 가 정해 주는 PORT 번호로 켠다 (없으면 8000)
-# Exactly one owner for the file-backed request/spend journals. Trust forwarded
-# headers only from the operator's verified proxy addresses (default loopback).
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log --forwarded-allow-ips \"${FASHION_TRUSTED_PROXY_IPS:-127.0.0.1}\""]
+# Exactly one owner for the file-backed request/spend journals.
+# Forwarded headers: FASHION_TRUSTED_PROXY_IPS wins when set. Otherwise loopback only, except on
+# Railway (RAILWAY_PROJECT_ID is injected by the platform): its edge proxy has no fixed IP range,
+# terminates HTTPS and overwrites X-Forwarded-Proto/For/Host/X-Real-IP, and is the only public route
+# into the container. Without trusting it every request looks like plain http and the photo/try-on
+# routes answer 403 https_required ("서버 오류 (403)" in the app).
+# https://docs.railway.com/networking/public-networking/specs-and-limits
+CMD ["sh", "-c", "if [ -z \"${FASHION_TRUSTED_PROXY_IPS:-}\" ] && [ -n \"${RAILWAY_PROJECT_ID:-}\" ]; then FASHION_TRUSTED_PROXY_IPS='*'; fi; exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --no-access-log --forwarded-allow-ips \"${FASHION_TRUSTED_PROXY_IPS:-127.0.0.1}\""]
