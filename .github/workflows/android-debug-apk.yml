@@ -97,6 +97,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python tools/apk_release.py prepare
 
+      - name: Download Gradle (retry temporary network errors such as HTTP 504)
+        run: for attempt in 1 2 3 4; do bash gradlew --version --console=plain >/dev/null && exit 0; echo "Gradle download failed (attempt $attempt), retrying"; sleep $((attempt * 20)); done; exit 1
+
       - name: Focused P23 preservation and guest regressions
         run: set -o pipefail; bash gradlew :app:testDebugUnitTest --tests '*DataAuthRecoverySafetyTest' --tests '*P23*' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/p23-focused.log"
 
