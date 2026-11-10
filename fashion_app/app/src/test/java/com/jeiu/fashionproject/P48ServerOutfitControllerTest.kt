@@ -95,6 +95,8 @@ class P48ServerOutfitControllerTest {
         ready(vm); vm.start(app, selection(), false); scheduler.runCurrent(); assertEquals(0, g.posts)
         store.failWrite = true
         vm.start(app, selection(), true); scheduler.runCurrent(); assertEquals(0, g.posts); assertNull(vm.state.result)
+        assertEquals("ticket_storage_failed", vm.state.failureCode)
+        assertEquals("ticket_write", vm.state.failureStage)
     }
 
     @Test fun serverPreparationUsesItsNegotiatedImageSpecAndKeepsOnDeviceDefaultSeparate() {
@@ -107,6 +109,19 @@ class P48ServerOutfitControllerTest {
         assertEquals(1536, preparedMaxSide)
         assertEquals(1, g.posts)
         assertEquals(1024, DeviceModelSpec("synthetic", "rev", "a".repeat(64), DeviceGarmentRole.entries.toSet()).maxSide)
+    }
+
+    @Test fun unreadableImageReportsPreparationStageWithoutSavingOrPosting() {
+        val store = Store(); val g = Gateway(store)
+        val vm = ServerOutfitVtonViewModel(g, { store }, { _, _, _, _ ->
+            throw DeviceVtonPreparationFailure("image_read_failed", "선택한 이미지를 읽지 못했어요.")
+        }, clock = { 1000 + scheduler.currentTime }).also { controllers += it; it.initialize(app) }
+        ready(vm)
+        vm.start(app, selection(), true); scheduler.runCurrent()
+        assertEquals("image_read_failed", vm.state.failureCode)
+        assertEquals("image_preparation", vm.state.failureStage)
+        assertEquals(0, g.posts)
+        assertNull(store.ticket)
     }
 
     @Test fun duplicateClicksKeepFrozenRequestAndResultIsNotSubstitutedAfterClothesChange() {
@@ -124,6 +139,8 @@ class P48ServerOutfitControllerTest {
         val store = Store(); val g = Gateway(store).apply { lost = true }; val first = vm(g, store)
         ready(first); first.start(app, selection(), true); scheduler.runCurrent()
         assertEquals(1, g.posts); assertNotNull(store.ticket); assertNull(first.state.result)
+        assertEquals("submit_unconfirmed", first.state.failureCode)
+        assertEquals("submit_request", first.state.failureStage)
         first.start(app, selection(2), true); scheduler.runCurrent(); assertEquals(1, g.posts)
         first.viewModelScope.cancel(); scheduler.runCurrent()
         val second = vm(g, store)
