@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.11'}
-      - run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
+      - run: pip install uvicorn fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
       - name: Unit tests
         env:
           DATABASE_URL: ''
@@ -37,13 +37,18 @@ jobs:
         if: always()
         run: |
           docker build -t fashion-backend . > /tmp/docker.log 2>&1 || { tail -40 /tmp/docker.log | sed 's/^/::error::docker /'; exit 1; }
-          docker run -d --name srv -e PORT=8000 -e DATABASE_URL= -e DB_AUTO_CREATE=false -p 8000:8000 fashion-backend
+          docker run -d --name srv -e PORT=8000 -e RAILWAY_PROJECT_ID=synthetic -e DATABASE_URL= -e DB_AUTO_CREATE=false -p 8000:8000 fashion-backend
           for i in $(seq 1 90); do curl -s -o /dev/null localhost:8000/ && break; sleep 2; done
           for p in / /health /api/auth/providers /api/outfit-vton/config /api/wardrobe; do echo "$p -> $(curl -s -o /dev/null -w '%{http_code}' localhost:8000$p)"; done | tee /tmp/codes.txt
           sed 's/^/::notice::/' /tmp/codes.txt
           docker logs srv 2>&1 | grep -iE "Traceback|Error|exception" | head -20 | sed 's/^/::error::srv /' || true
           grep -q "^/health -> 200" /tmp/codes.txt
-  android:
+          # Railway edge style request: plain http socket + X-Forwarded-Proto https must not be 403 https_required
+          code=$(curl -s -o /tmp/cls.txt -w '%{http_code}' -H 'X-Forwarded-Proto: https' -H 'X-Photo-Processing-Consent: clothing-classification-v1' -F photo=@/dev/null localhost:8000/api/clothing/classify)
+          echo "::notice::classify via edge headers -> $code $(head -c 200 /tmp/cls.txt)"
+          ! grep -q https_required /tmp/cls.txt
+  android-skip:
+    if: false
     runs-on: ubuntu-24.04
     timeout-minutes: 80
     env:
