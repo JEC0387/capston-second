@@ -1,0 +1,87 @@
+name: CI genlook check (verification only)
+on:
+  push:
+    branches: [ci/genlook-check]
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fashionai_test
+          POSTGRES_USER: fashionai_test
+          POSTGRES_PASSWORD: local-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U fashionai_test" --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults: {run: {shell: bash, working-directory: backend}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
+      - name: Unit tests
+        env:
+          DATABASE_URL: ''
+          DB_AUTO_CREATE: 'false'
+          TEST_POSTGRES_URL: postgresql://fashionai_test:local-test-only@127.0.0.1:5432/fashionai_test
+        run: |
+          python -m pytest -q -rfE 2>&1 | tee /tmp/b.log | tail -40
+          grep -E "^(FAILED|ERROR) " /tmp/b.log | head -30 | sed 's/^/::error::/' || true
+          ! grep -qE "[0-9]+ (failed|error)" /tmp/b.log
+      - name: Docker image build and real start (same as Railway)
+        if: always()
+        run: |
+          docker build -t fashion-backend . > /tmp/docker.log 2>&1 || { tail -40 /tmp/docker.log | sed 's/^/::error::docker /'; exit 1; }
+          docker run -d --name srv -e PORT=8000 -e DATABASE_URL= -e DB_AUTO_CREATE=false -p 8000:8000 fashion-backend
+          for i in $(seq 1 90); do curl -s -o /dev/null localhost:8000/ && break; sleep 2; done
+          for p in / /health /api/auth/providers /api/outfit-vton/config /api/wardrobe; do echo "$p -> $(curl -s -o /dev/null -w '%{http_code}' localhost:8000$p)"; done | tee /tmp/codes.txt
+          sed 's/^/::notice::/' /tmp/codes.txt
+          docker logs srv 2>&1 | grep -iE "Traceback|Error|exception" | head -20 | sed 's/^/::error::srv /' || true
+          grep -q "^/health -> 200" /tmp/codes.txt
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 80
+    env:
+      ANDROID_USER_HOME: ${{ github.workspace }}/../android-user
+    defaults: {run: {shell: bash, working-directory: fashion_app}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21', cache: gradle}
+      - run: |
+          mkdir -p "$ANDROID_USER_HOME"
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools' >/dev/null
+      - name: Build
+        run: |
+          for i in 1 2 3; do bash gradlew --version >/dev/null 2>&1 && break; sleep 20; done
+          bash gradlew :app:assembleDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "^e: |FAIL|BUILD" || true
+          grep -E "^e: " "$RUNNER_TEMP/build.log" | head -20 | sed 's/^/::error::/' || true
+          grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/build.log"
+      - name: Unit tests
+        run: |
+          bash gradlew :app:testDebugUnitTest --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 --continue 2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "^e: |tests completed|BUILD" || true
+          grep -E "^e: " "$RUNNER_TEMP/test.log" | head -20 | sed 's/^/::error::/' || true
+          grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/test.log"
+      - name: Report failed tests
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          for f in glob.glob('app/build/test-results/testDebugUnitTest/*.xml'):
+              for tc in ET.parse(f).getroot().iter('testcase'):
+                  for fl in list(tc.findall('failure')) + list(tc.findall('error')):
+                      msg = (fl.get('message') or '') + ' | ' + (fl.text or '')[:700]
+                      print('::error::' + tc.get('classname') + '.' + tc.get('name') + ' :: ' + msg.replace('\n', ' / ')[:1200])
+          PY
+      - name: Compile instrumented tests + lint
+        if: always()
+        run: |
+          bash gradlew :app:compileDebugAndroidTestKotlin :app:lintDebug --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 --continue 2>&1 | tee "$RUNNER_TEMP/lint.log" | grep -E "^e: |BUILD" | head -30 || true
+          grep -E "^e: " "$RUNNER_TEMP/lint.log" | head -20 | sed 's/^/::error::/' || true
+          [ -f app/build/reports/lint-results-debug.txt ] && grep -E "Error:" app/build/reports/lint-results-debug.txt | head -20 | sed 's/^/::error::lint /' || true
+          grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/lint.log"
