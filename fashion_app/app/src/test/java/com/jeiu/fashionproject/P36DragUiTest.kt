@@ -162,8 +162,8 @@ class P36DragUiTest {
         compose.runOnIdle {assertEquals(shoes,vm.worn[FitSlot.SHOES]);assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertTrue(vm.avatarWorn.isEmpty())}
     }
     @Test fun pinnedSlidersOnlyScaleSelectedGarmentAndKeepOpacityAcrossSelection() {
-        drag("top-a"); compose.waitUntil(10000) {vm.worn[FitSlot.TOP]!=null}
-        drag("pants-a"); compose.waitUntil(10000) {vm.worn[FitSlot.BOTTOM]!=null}
+        drag("top-a"); compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]!=null}}
+        drag("pants-a"); compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.BOTTOM]!=null}}
         val top=vm.worn.getValue(FitSlot.TOP)
         val pants=vm.worn.getValue(FitSlot.BOTTOM)
         compose.onNodeWithTag("manualScale").assertIsDisplayed()
