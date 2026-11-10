@@ -88,7 +88,10 @@ object UnavailableDeviceVtonEngine : DeviceVtonEngine {
         throw DeviceVtonFailure("온디바이스 생성형 엔진이 준비되지 않았어요.")
 }
 
-class DeviceVtonFailure(message: String) : IllegalArgumentException(message)
+open class DeviceVtonFailure(message: String) : IllegalArgumentException(message)
+
+/** Allowlisted preparation reason; never contains the selected URI, image bytes or provider exception. */
+class DeviceVtonPreparationFailure(val safeCode: String, message: String) : DeviceVtonFailure(message)
 
 fun deviceSha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
     .joinToString("") { "%02x".format(it) }
