@@ -87,6 +87,7 @@ class P48ServerOutfitUiTest {
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides documents) {
             MaterialTheme { if (showing.value) ServerOutfitVtonScreen(selectedInput.value, { showing.value = false }, vm) }
         } }
+        compose.onNodeWithTag("serverOutfitPersonPreview").performScrollTo().assertExists()
         compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.ready == true }
@@ -105,6 +106,7 @@ class P48ServerOutfitUiTest {
         compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().performClick()
         await { vm.state.result != null && !vm.state.busy }
         assertEquals(1, posts)
+        compose.onNodeWithTag("serverOutfitResultImage").performScrollTo().assertExists()
         compose.onNodeWithTag("serverOutfitCompare").performScrollTo().performClick()
         compose.onNodeWithTag("serverOutfitToggle").performClick()
         compose.onNodeWithText("서버 결과 보기").assertExists()
