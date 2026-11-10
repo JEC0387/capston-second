@@ -411,6 +411,14 @@ object ServerOutfitVtonRepository : OutfitServerGateway {
         "genlook_journal_unavailable" -> "외부 생성 기록을 안전하게 저장하지 못해 후속 요청을 차단했어요. 기존 기록은 유지해요."
         "genlook_result_untrusted", "genlook_invalid_response" -> "Genlook 결과의 출처·형식·작업 연결을 확인하지 못해 표시하지 않아요."
         "genlook_remote_failed", "genlook_unavailable" -> "Genlook 생성을 완료하지 못했어요. 이전 이미지를 새 생성 결과로 표시하거나 자동 재생성하지 않아요."
+        "config_request_failed" -> "AI 서버의 준비 상태를 확인하지 못했어요. 사진은 전송하지 않았어요."
+        "request_encoding_failed" -> "요청 데이터를 준비하지 못했어요. 사진은 전송하지 않았어요."
+        "ticket_storage_failed" -> "작업 번호를 안전하게 저장하지 못해 사진을 전송하지 않았어요. 기기 저장 공간을 확인해주세요."
+        "submit_unconfirmed" -> "생성 요청의 접수 여부를 확인하지 못했어요. 저장된 작업 번호로 상태만 다시 조회해주세요. 자동 재전송하지 않아요."
+        "status_request_failed" -> "기존 작업의 상태를 조회하지 못했어요. 같은 작업 번호로 다시 조회할 수 있어요."
+        "result_download_failed" -> "완료된 작업의 이미지를 받지 못했어요. 같은 작업 번호로 다시 조회해주세요."
+        "result_png_invalid" -> "받은 결과 PNG가 손상됐어요. 같은 작업 번호로 다시 조회해주세요."
+        "operation_failed" -> "처리를 완료하지 못했어요. 기존 작업 번호는 유지하며 자동 재전송하지 않아요."
         else -> "승인된 생성 서버가 준비되지 않았거나 요청을 완료하지 못했어요. 이전 사진을 새 AI 결과로 대신하지 않아요."
     }
 }
