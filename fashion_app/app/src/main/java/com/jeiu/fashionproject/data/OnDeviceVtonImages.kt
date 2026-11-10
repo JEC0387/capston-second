@@ -63,9 +63,9 @@ object OnDeviceVtonImages {
             } catch (failure: DeviceVtonFailure) {
                 throw failure
             } catch (_: OutOfMemoryError) {
-                throw DeviceVtonFailure("이미지를 준비할 메모리가 부족해요. 더 작은 사진으로 다시 선택해주세요.")
+                throw DeviceVtonPreparationFailure("image_memory", "이미지를 준비할 메모리가 부족해요. 더 작은 사진으로 다시 선택해주세요.")
             } catch (_: Exception) {
-                throw DeviceVtonFailure("선택한 이미지를 읽을 수 없어요. 기기에서 다시 선택해주세요.")
+                throw DeviceVtonPreparationFailure("image_preparation_failed", "이미지를 준비하지 못했어요. 선택한 사진을 다시 확인해주세요.")
             }
         }
     }
@@ -156,10 +156,32 @@ object OnDeviceVtonImages {
 
     private suspend fun freeze(context: Context, source: String, maxSide: Int): DeviceImage {
         currentCoroutineContext().ensureActive()
-        val encoded = context.contentResolver.openInputStream(localUri(source))?.use { readBounded(it) }
-            ?: throw DeviceVtonFailure("선택한 이미지를 열 수 없어요.")
+        val encoded = try {
+            context.contentResolver.openInputStream(localUri(source))?.use { readBounded(it) }
+                ?: throw DeviceVtonPreparationFailure("image_read_failed", "선택한 이미지를 열 수 없어요. 사진 접근 권한을 확인해주세요.")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: DeviceVtonPreparationFailure) {
+            throw failure
+        } catch (_: OutOfMemoryError) {
+            throw DeviceVtonPreparationFailure("image_memory", "사진을 읽을 메모리가 부족해요. 더 작은 사진을 선택해주세요.")
+        } catch (_: Exception) {
+            throw DeviceVtonPreparationFailure("image_read_failed", "선택한 이미지를 읽지 못했어요. 사진 접근 권한을 확인하고 다시 선택해주세요.")
+        }
         currentCoroutineContext().ensureActive()
-        return canonicalImage(encoded, maxSide)
+        return try {
+            canonicalImage(encoded, maxSide)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: DeviceVtonPreparationFailure) {
+            throw failure
+        } catch (failure: DeviceVtonFailure) {
+            throw DeviceVtonPreparationFailure("image_processing_failed", failure.message ?: "사진 형식이나 크기를 확인해주세요.")
+        } catch (_: OutOfMemoryError) {
+            throw DeviceVtonPreparationFailure("image_memory", "사진 변환에 필요한 메모리가 부족해요. 더 작은 사진을 선택해주세요.")
+        } catch (_: Exception) {
+            throw DeviceVtonPreparationFailure("image_processing_failed", "사진을 PNG로 변환하지 못했어요. 다른 사진을 선택해주세요.")
+        }
     }
 
     private suspend fun readBounded(input: InputStream): ByteArray {
@@ -292,11 +314,11 @@ object OnDeviceVtonImages {
 
     private class BoundedBytes(private val maximum: Int) : ByteArrayOutputStream() {
         override fun write(value: Int) {
-            if (count >= maximum) throw DeviceVtonFailure("이미지는 한 장당 8MB 이하여야 해요.")
+            if (count >= maximum) throw DeviceVtonPreparationFailure("image_size", "이미지는 한 장당 8MB 이하여야 해요.")
             super.write(value)
         }
         override fun write(bytes: ByteArray, offset: Int, length: Int) {
-            if (length > maximum - count) throw DeviceVtonFailure("이미지는 한 장당 8MB 이하여야 해요.")
+            if (length > maximum - count) throw DeviceVtonPreparationFailure("image_size", "이미지는 한 장당 8MB 이하여야 해요.")
             super.write(bytes, offset, length)
         }
     }
