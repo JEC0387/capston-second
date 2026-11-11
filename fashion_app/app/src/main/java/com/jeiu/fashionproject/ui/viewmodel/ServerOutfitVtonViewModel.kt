@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.ui.viewmodel
 
+import android.util.Log
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,6 +41,13 @@ class ServerOutfitVtonViewModel(
     private val localWaitMillis: Long = 120_000,
     private val qaRecoveryAvailable: () -> Boolean = { ServerOutfitQaConnection.supported }
 ) : ViewModel() {
+    private fun logFailure(stage: String, code: String, httpStatus: Int? = null) {
+        // Codes and stages are allowlisted internal diagnostics; never log URLs, tokens,
+        // selected URIs, provider bodies, or exception messages.
+        val safeStage = stage.takeIf { it.matches(Regex("[a-z_]{1,32}")) } ?: "unknown"
+        val safeCode = code.takeIf { it.matches(Regex("[a-z0-9_]{1,64}")) } ?: "unknown"
+        Log.w("FashionFitTryOn", "stage=$safeStage code=$safeCode http=${httpStatus?.takeIf { it in 100..599 } ?: 0}")
+    }
     var state by mutableStateOf(ServerOutfitUiState())
         private set
     private var store: OutfitTicketStore? = null
@@ -144,14 +152,17 @@ class ServerOutfitVtonViewModel(
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: DeviceVtonPreparationFailure) {
+                logFailure("image_preparation", failure.safeCode)
                 state = state.copy(phase = "failed", result = null, error = failure.message,
                     failureCode = failure.safeCode, failureStage = "image_preparation")
             } catch (failure: DeviceVtonFailure) {
+                logFailure(activeStage, "input_validation")
                 state = state.copy(phase = "failed", result = null,
                     error = if (activeStage == "result_png") "받은 결과 PNG가 손상됐어요. 같은 작업 번호로 상태만 다시 확인해주세요." else failure.message,
                     failureCode = if (activeStage == "result_png") "result_png_invalid" else "input_validation",
                     failureStage = activeStage)
             } catch (failure: OutfitServerFailure) {
+                logFailure(activeStage, failure.code, failure.httpStatus)
                 if (failure.code in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
                 state = state.copy(phase = "blocked", result = null,
                     error = ServerOutfitVtonRepository.friendlyFailure(failure),
@@ -171,6 +182,7 @@ class ServerOutfitVtonViewModel(
                     "result_png" -> "result_png_invalid"
                     else -> "operation_failed"
                 }
+                logFailure(activeStage, code)
                 if (activeStage == "submit_request") unresolvedRequestId = state.ticket?.id
                 state = state.copy(phase = "blocked", result = null,
                     error = ServerOutfitVtonRepository.friendly(code),

@@ -114,22 +114,25 @@ class P52ServerProgressUiTest {
         catch (failure: AssertionError) {
             throw AssertionError("Resume phase=${vm.state.phase} busy=${vm.state.busy} GET=$gets POST=$posts error=${vm.state.error}", failure)
         }
-        visibleTag("serverOutfitStage").assertTextEquals("1/2단계 · 상의·하의 함께 · 생성 결과 대기 중")
-        visible("stageDisclaimer", hasText("서버가 확인한 처리 단계예요. 추론 완료율이나 착장 품질 합격을 뜻하지 않아요."))
-            .assertExists()
+        assertEquals(1, vm.state.status?.providerProgress?.stageIndex)
+        assertEquals("waiting_for_generation", vm.state.status?.providerProgress?.phase)
+        // Internal provider progress stays in the view model; the consumer UI does not expose diagnostics.
+        compose.onNodeWithTag("serverOutfitStage").assertDoesNotExist()
+        compose.onNodeWithText("waiting_for_generation").assertDoesNotExist()
 
         observed = observed.copy(providerProgress = OutfitServerProgress(mode, 2, 2, "validating_result"))
         visibleTag("serverOutfitResume").performClick()
         await { vm.state.status?.providerProgress?.stageIndex == 2 && !vm.state.busy }
-        visibleTag("serverOutfitStage").assertTextEquals("2/2단계 · 신발 · 반환 이미지 확인 중")
+        assertEquals("validating_result", vm.state.status?.providerProgress?.phase)
+        compose.onNodeWithTag("serverOutfitStage").assertDoesNotExist()
         assertNull(vm.state.result)
 
         observed = observed.copy(status = "interrupted", error = "remote_execution_unconfirmed", providerProgress = null)
         visibleTag("serverOutfitResume").performClick()
         await { vm.state.phase == "interrupted" && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitStage").assertDoesNotExist()
-        visibleTag("serverOutfitError").assertTextEquals(
-            "Genlook 작업 종료·과금 여부를 확인하지 못했어요. 후속 생성을 차단했으며 외부 작업 취소·환불·삭제 완료를 뜻하지 않아요.")
+        visibleTag("serverOutfitError").assertTextEquals("요청 상태를 확인하지 못했어요. 기존 요청만 조회할 수 있어요.")
+        compose.onNodeWithText("remote_execution_unconfirmed").assertDoesNotExist()
         assertEquals(3, gets)
         assertEquals(0, posts)
         assertNull(vm.state.result)

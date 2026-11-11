@@ -123,8 +123,10 @@ internal data class Placement(val center: Offset, val width: Float, val rotation
 /** Snapshot all selected originals and placement state. Never silently discard an unsupported slot. */
 internal fun onDeviceFittingSelection(person: String?, revision: Long, garments: Collection<WornGarment>,
     canvas: Size): DeviceVtonSelection? {
-    if (person.isNullOrBlank() || garments.any { it.item.category !in setOf("상의", "하의", "신발") }) return null
-    return DeviceVtonSelection(person, revision, garments.map { g ->
+    if (person.isNullOrBlank()) return null
+    // Manual fitting can include accessories and outerwear. The server contract supports
+    // exactly TOP/BOTTOM/SHOES, so freeze those selections without relabelling extras.
+    return DeviceVtonSelection(person, revision, garments.filter { it.item.category in setOf("상의", "하의", "신발") }.map { g ->
         DeviceGarmentInput(g.item.id, when (g.item.category) {
             "상의" -> DeviceGarmentRole.TOP
             "하의" -> DeviceGarmentRole.BOTTOM
@@ -321,11 +323,13 @@ internal class ManualFittingViewModel : ViewModel() {
     }
 
     /** Explicit server mode; the on-device wand and original wardrobe remain unchanged. */
-    fun openServerOutfit(selection: DeviceVtonSelection?) {
+    fun openServerOutfit(selection: DeviceVtonSelection?): Boolean {
+        if (selection?.hasCompleteOutfit() != true) return false
         cancelPhotoDrops()
         selectionRequests.keys.toList().forEach { slot -> selectionRequests[slot] = (selectionRequests[slot] ?: 0L) + 1L }
         serverOutfitSelection = selection?.copy()
         showServerOutfitAi = true
+        return true
     }
 
     fun applyPhotoDrop(ticket: PhotoDropTicket, garment: WornGarment): Boolean {
@@ -967,14 +971,17 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         }
 
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)) {
-            if (!avatarMode) Button(onClick = { manual.openServerOutfit(currentDeviceSelection) },
+            if (!avatarMode) Button(onClick = {
+                if (!manual.openServerOutfit(currentDeviceSelection))
+                    inputNotice = "전신 사진과 상의·하의·신발을 하나씩 선택해주세요."
+            }, enabled = currentDeviceSelection?.hasCompleteOutfit() == true,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("aiTryOnWand"),
                 colors = ButtonDefaults.buttonColors(containerColor = Camel)) {
                 Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("AI로 입어보기")
             }
-            if (!avatarMode && !compact) Text("선택한 사진과 상의·하의·신발을 확인하고 전송에 동의한 뒤 시작해요.",
+            if (!avatarMode && !compact) Text("사진과 상의·하의·신발을 선택하면 AI 피팅을 시작할 수 있어요.",
                 color = MediumGray, style = MaterialTheme.typography.labelSmall)
         }
 

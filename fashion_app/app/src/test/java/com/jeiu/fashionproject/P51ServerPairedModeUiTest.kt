@@ -35,6 +35,10 @@ import java.io.ByteArrayOutputStream
 class P51ServerPairedModeUiTest {
     @get:Rule val compose = createComposeRule()
     private fun await(condition: () -> Boolean) = compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); condition() }
+    private fun completeSelection() = DeviceVtonSelection("content://synthetic/person", 1, listOf(
+        DeviceGarmentInput("top", DeviceGarmentRole.TOP, "content://synthetic/top"),
+        DeviceGarmentInput("bottom", DeviceGarmentRole.BOTTOM, "content://synthetic/bottom"),
+        DeviceGarmentInput("shoes", DeviceGarmentRole.SHOES, "content://synthetic/shoes")))
 
     @Test fun pairedDisclosureResetsConsentAndDoesNotRelabelRestoredSequentialResult() {
         val session = OutfitServerSession("https://synthetic.example", "synthetic-only")
@@ -83,34 +87,29 @@ class P51ServerPairedModeUiTest {
         }
         val vm = ServerOutfitVtonViewModel(gateway, { store }, clock = { 2000L })
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides documents) {
-            MaterialTheme { ServerOutfitVtonScreen(null, {}, vm) }
+            MaterialTheme { ServerOutfitVtonScreen(completeSelection(), {}, vm) }
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config != null && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitPolicyDetails").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitGenerationMode").performScrollTo().assertTextEquals(
-            "상의 → 하의 → 신발, 3회 순차 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().performClick().assertIsOn()
+        compose.onNodeWithTag("serverOutfitGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitPolicyDetails").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
+        assertEquals("Recovered unresolved work blocks another request", oldTicket, vm.state.ticket)
 
         config = config.copy(revision = "genlook-paired-v1-20261106-fedcba9876543210", modelSha = "e".repeat(64),
             providerInfo = info.copy(mode = "clothing-pair-then-shoes"))
+        vm.invalidateConnection()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo?.mode == "clothing-pair-then-shoes" && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().assertIsOff()
-        compose.onNodeWithTag("serverOutfitGenerationMode").performScrollTo().assertTextEquals(
-            "상의·하의 함께 → 신발, 2회 생성이에요. 앞 단계 의류·얼굴·자세 보존과 전체 착장 품질은 실제 결과 검수가 필요해요.")
-        compose.onNodeWithTag("serverOutfitCost").performScrollTo().assertTextEquals(
-            "최대 3크레딧 · 자동 충전 없음. 실제 청구·환불은 사용 내역에서 확인해요.")
         compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료·후속 생성 중단")
+        compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertExists()
 
         compose.onNodeWithTag("serverOutfitResume").performScrollTo().performClick()
         await { vm.state.result != null && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitResultLabel").performScrollTo().assertTextEquals("이전 서버 작업 결과 · 새 생성 아님")
+        compose.onNodeWithTag("serverOutfitResultLabel").performScrollTo().assertTextEquals("이전 요청 결과")
         compose.onNodeWithTag("serverOutfitResultSource").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitDetails").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitResultSource").performScrollTo().assertTextEquals(
-            "출처: Genlook Try-On API · 3회 순차 생성 · 내부 모델 버전 미공개. 파일 검증과 착장 품질 합격은 달라요.")
+        compose.onNodeWithText("Genlook Try-On API").assertDoesNotExist()
         assertEquals(0, posts)
         assertEquals(1, reads)
         assertEquals(oldTicket, vm.state.ticket)

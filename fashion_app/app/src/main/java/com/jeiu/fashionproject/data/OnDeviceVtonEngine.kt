@@ -20,6 +20,12 @@ class DeviceVtonSelection(val person: String, val revision: Long, garments: List
     val garments: List<DeviceGarmentInput> get() = frozenGarments.toList()
     fun copy(person: String = this.person, revision: Long = this.revision,
         garments: List<DeviceGarmentInput> = this.garments) = DeviceVtonSelection(person, revision, garments)
+    /** The server try-on route requires one selected item from each supported role. */
+    fun hasCompleteOutfit(): Boolean = person.isNotBlank() &&
+        frozenGarments.size == DeviceGarmentRole.entries.size &&
+        frozenGarments.map { it.role }.toSet() == DeviceGarmentRole.entries.toSet() &&
+        frozenGarments.map { it.id }.toSet().size == frozenGarments.size &&
+        frozenGarments.all { it.id.isNotBlank() && it.source.isNotBlank() }
     override fun equals(other: Any?) = other is DeviceVtonSelection && person == other.person &&
         revision == other.revision && frozenGarments == other.frozenGarments
     override fun hashCode() = 31 * (31 * person.hashCode() + revision.hashCode()) + frozenGarments.hashCode()

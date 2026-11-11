@@ -89,12 +89,10 @@ class PresentationFittingUiTest {
             androidx.compose.ui.semantics.ProgressBarRangeInfo(.6f, .3f..1f)))
         compose.onNodeWithText("옷 선택 · 상의 / 하의 / 신발").performScrollTo().assertIsDisplayed()
     }
-    @Test fun wandWithoutPhotoOpensServerReadinessWithoutGeneration() {
+    @Test fun wandWithoutPhotoCannotEnterGenerationScreen() {
         compose.setContent { VirtualFittingScreen {} }
-        compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
+        compose.onNodeWithTag("aiTryOnWand").assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertDoesNotExist()
     }
     @Test fun wandWithoutClothesShowsNoticeAndAlignmentRetainsManualScaleControls() {
         var requestCode = 0
@@ -105,9 +103,8 @@ class PresentationFittingUiTest {
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) { VirtualFittingScreen {} } }
         compose.onNodeWithText("전신 사진 선택").performClick()
         compose.runOnIdle { registry.dispatchResult(requestCode, Uri.parse("content://invalid/manual")) }
-        compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
+        compose.onNodeWithTag("aiTryOnWand").assertIsNotEnabled().performClick()
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertDoesNotExist()
         compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         val id = com.jeiu.fashionproject.data.WardrobeStore.items.value.first().id
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
@@ -131,7 +128,7 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
-    @Test fun photoMagicWandOpensServerFlowWithoutAutomaticUpload() {
+    @Test fun incompletePhotoOutfitCannotOpenServerFlowOrUpload() {
         com.jeiu.fashionproject.data.TryOnSession.clear()
         var requestCode = 0
         val registry = object : ActivityResultRegistry() {
@@ -150,13 +147,12 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         compose.onNodeWithTag("manualAutoAlign").assertExists()
         compose.onNodeWithTag("aiTryOnWand").assertTextContains("AI로 입어보기", substring = true)
+        compose.onNodeWithTag("aiTryOnWand").assertIsNotEnabled()
         compose.onNodeWithTag("aiTryOnWand").performClick()
-        compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertDoesNotExist()
         compose.onNodeWithTag("deviceVtonResultLabel").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
         compose.onNodeWithTag("manualAutoAlign").assertExists()
         if (BuildConfig.INSTALL_TEST_BUILD) {
             compose.onNodeWithTag("fittingAdvancedToggle").assertDoesNotExist()

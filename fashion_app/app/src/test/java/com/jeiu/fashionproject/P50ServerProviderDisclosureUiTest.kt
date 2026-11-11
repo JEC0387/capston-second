@@ -32,6 +32,10 @@ import org.robolectric.annotation.GraphicsMode
 class P50ServerProviderDisclosureUiTest {
     @get:Rule val compose = createComposeRule()
     private fun await(condition: () -> Boolean) = compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); condition() }
+    private fun completeSelection() = DeviceVtonSelection("content://synthetic/person", 1, listOf(
+        DeviceGarmentInput("top", DeviceGarmentRole.TOP, "content://synthetic/top"),
+        DeviceGarmentInput("bottom", DeviceGarmentRole.BOTTOM, "content://synthetic/bottom"),
+        DeviceGarmentInput("shoes", DeviceGarmentRole.SHOES, "content://synthetic/shoes")))
 
     @Test fun externalDisclosureConsentResetAndCancellationAreVisibleWithoutPosting() {
         val session = OutfitServerSession("https://synthetic.example", "synthetic-only")
@@ -71,34 +75,27 @@ class P50ServerProviderDisclosureUiTest {
         }
         val vm = ServerOutfitVtonViewModel(gateway, { store })
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides documents) {
-            MaterialTheme { ServerOutfitVtonScreen(null, {}, vm) }
+            MaterialTheme { ServerOutfitVtonScreen(completeSelection(), {}, vm) }
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo != null && !vm.state.busy }
-        // Assert the complete disclosure. assertTextContains defaults to matching a
-        // complete semantics text element, not an arbitrary substring of it.
-        compose.onNodeWithTag("serverOutfitProvider").performScrollTo()
-            .assertTextEquals("외부 처리: Genlook · 스마트폰이 아닌 제3자 서버에서 실행")
-        compose.onNodeWithTag("serverOutfitCost").performScrollTo()
-            .assertTextEquals("최대 3크레딧 · 자동 충전 없음. 실제 청구·환불은 사용 내역에서 확인해요.")
-        compose.onNodeWithTag("serverOutfitExternalRetention").performScrollTo()
-            .assertTextEquals("Genlook 이미지 보관 1일 · 앱 서버 ${config.retentionSeconds}초. 기록·백업·삭제 제한은 처리 정책을 확인해주세요.")
-        compose.onNodeWithTag("serverOutfitConsentText").performScrollTo()
-            .assertTextEquals("선택한 사진·의류 3종과 중간 결과의 Genlook 전송 및 표시된 비용·보관 정책에 동의해요.")
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().performClick().assertIsOn()
-        compose.onNodeWithTag("serverOutfitProviderNotice").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitPolicyDetails").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitProviderNotice").performScrollTo().assertTextEquals(info.notice)
+        // Policy and cost are intentionally shown at the final consent point, not on the main screen.
+        compose.onNodeWithTag("serverOutfitProvider").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitConsentText").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitPolicyDetails").assertDoesNotExist()
+        assertEquals("An unresolved prior request prevents a second paid generation", ticket, vm.state.ticket)
         // Changing the disclosed provider policy resets consent even if the API policy ID is unchanged.
         config = config.copy(providerInfo = info.copy(notice = "Revised synthetic processing disclosure."))
+        vm.invalidateConnection()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo?.notice == "Revised synthetic processing disclosure." && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().assertIsOff()
         compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료·후속 생성 중단").performClick()
+        compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료").performClick()
         await { vm.state.phase == "interrupted" && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitError").performScrollTo()
-            .assertTextEquals("Genlook 작업 종료·과금 여부를 확인하지 못했어요. 후속 생성을 차단했으며 외부 작업 취소·환불·삭제 완료를 뜻하지 않아요.")
+            .assertTextEquals("요청 상태를 확인하지 못했어요. 기존 요청만 조회할 수 있어요.")
         assertEquals(1, cancelRequests)
         assertEquals(0, posts)
         assertNull(vm.state.result)

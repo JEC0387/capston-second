@@ -34,14 +34,17 @@ class P39FittingHandoffTest {
         assertNotEquals(snapshot, snapshot.copy(revision = 8))
     }
 
-    @Test fun unsupportedCategoriesAreNotSilentlyDroppedOrRelabelledAsTops() {
+    @Test fun unsupportedCategoriesAreExcludedAndNeverRelabelledAsSupportedRoles() {
         for (category in listOf("원피스", "아우터", "액세서리")) {
-            assertNull(onDeviceFittingSelection("content://synthetic/person", 1,
-                listOf(garment("top", "상의"), garment("extra", category)), Size(400f, 800f)))
+            val selected = onDeviceFittingSelection("content://synthetic/person", 1,
+                listOf(garment("top", "상의"), garment("extra", category)), Size(400f, 800f))!!
+            assertEquals(listOf("top"), selected.garments.map { it.id })
+            assertFalse(selected.hasCompleteOutfit())
         }
         assertNull(onDeviceFittingSelection(null, 1, emptyList(), Size.Zero))
         val incomplete = onDeviceFittingSelection("content://synthetic/person", 1, listOf(garment("top", "상의")), Size.Zero)!!
         assertEquals(1, incomplete.garments.size) // Screen/controller must block, never fabricate missing clothing.
+        assertFalse(incomplete.hasCompleteOutfit())
     }
 
     @Test fun openingOnDeviceModeRejectsLatePhotoDropWithoutChangingAvatarOrPhotoClothes() {
