@@ -1,0 +1,45 @@
+name: Demo APK release (sangyoon)
+on:
+  push:
+    branches: [apk/sangyoon]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ANDROID_USER_HOME: ${{ github.workspace }}/../android-user
+    defaults: {run: {shell: bash, working-directory: fashion_app}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '21', cache: gradle}
+      - name: Android SDK
+        run: |
+          mkdir -p "$ANDROID_USER_HOME"
+          printf 'y\n%.0s' {1..100} | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_HOME" 'platforms;android-37.0' 'build-tools;36.0.0' 'platform-tools' >/dev/null
+      - name: Build debug APK
+        env:
+          FASHION_VERSION_NAME: 1.1-demo
+        run: |
+          for attempt in 1 2 3 4; do bash gradlew --version --console=plain >/dev/null && break; sleep $((attempt * 20)); done
+          bash gradlew :app:assembleDebug --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "^e: |FAIL|BUILD" || true
+          grep -E "^e: " "$RUNNER_TEMP/build.log" | head -20 | sed 's/^/::error::/' || true
+          grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/build.log"
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse --short=7 HEAD)
+          TAG="apk-demo-$(TZ=Asia/Seoul date +%Y%m%d)-$SHA"
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          cp "$APK" "$RUNNER_TEMP/FashionFit.apk"
+          ls -la "$RUNNER_TEMP/FashionFit.apk"
+          unzip -p "$RUNNER_TEMP/FashionFit.apk" assets/build_identity.json 2>/dev/null | sed 's/^/::notice::identity /' || true
+          gh release create "$TAG" "$RUNNER_TEMP/FashionFit.apk" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "FashionFit 발표용 APK ($SHA, sangyoon 브랜치)" --latest=false \
+            --notes "발표 시연용 디버그 APK입니다. sangyoon 브랜치 $SHA 에서 빌드했습니다.
+          설치: 휴대폰에서 FashionFit.apk 를 내려받아 열고, '알 수 없는 앱 설치'를 허용하세요.
+          이미 다른 서명으로 설치된 앱이 있으면 먼저 지우고 설치하세요."
+          echo "::notice::DOWNLOAD https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/FashionFit.apk"
