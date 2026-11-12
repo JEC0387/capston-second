@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.Gender
+import com.jeiu.fashionproject.BuildConfig
 import com.jeiu.fashionproject.data.TryOnRepository
 import com.jeiu.fashionproject.data.TryOnBatch
 import com.jeiu.fashionproject.data.TryOnPlan
@@ -126,6 +127,9 @@ private fun demoClothesFor(gender: Gender?): List<ClothingItem> = when (gender) 
     null -> femaleDemoClothes + maleDemoClothes
 }
 
+internal fun legacyFashnTryOnEntryEnabled(debugBuild: Boolean, installTestBuild: Boolean): Boolean =
+    debugBuild && !installTestBuild
+
 /**
  * 무신사 랭킹 옷장 (손유리) — 10/13 무신사 판매 랭킹 상품으로 만든 성별 맞춤 데모 옷장.
  * 오늘 날씨 코디 조합과 FASHN 가상 피팅("입어보기")을 바로 해볼 수 있다.
@@ -163,7 +167,7 @@ fun MusinsaClosetScreen(
 
     val filtered = if (selectedCategory == "전체") allDisplayed else allDisplayed.filter { it.category == selectedCategory }
 
-    tryOnPieces?.let { pieces ->
+    if (legacyFashnTryOnEntryEnabled(BuildConfig.DEBUG, BuildConfig.INSTALL_TEST_BUILD)) tryOnPieces?.let { pieces ->
         TryOnView(
             pieces = pieces,
             defaultPhoto = bodyPhotoUri,
@@ -319,7 +323,8 @@ fun MusinsaClosetScreen(
                                     Text("무신사에서 보기 ›", style = MaterialTheme.typography.labelSmall, color = Camel)
                                 }
                                 // 미설정이어도 진입해 서비스 안내를 볼 수 있다. 실제 생성은 별도 동의/설정 검사 후 실행한다.
-                                if (TryOnRepository.categoryFor(item.category) != null) {
+                                if (legacyFashnTryOnEntryEnabled(BuildConfig.DEBUG, BuildConfig.INSTALL_TEST_BUILD) &&
+                                    TryOnRepository.categoryFor(item.category) != null) {
                                     Spacer(Modifier.weight(1f))
                                     Text(
                                         "입어보기",
