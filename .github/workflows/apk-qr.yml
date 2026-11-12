@@ -1,0 +1,29 @@
+name: Demo APK QR (sangyoon)
+on:
+  push:
+    branches: [apk/qr]
+permissions:
+  contents: write
+jobs:
+  qr:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install segno==1.6.6
+      - name: Make QR and attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: apk-demo-20261112-a88f21f
+          URL: https://github.com/JEC0387/capston-second/releases/download/apk-demo-20261112-a88f21f/FashionFit.apk
+        run: |
+          python - <<'PY'
+          import os, segno
+          q = segno.make(os.environ["URL"], error="h", micro=False)
+          q.save("FashionFit-APK-QR.png", scale=24, border=4)
+          q.save("FashionFit-APK-QR.svg", scale=10, border=4)
+          print("version", q.version, "error", q.error)
+          PY
+          python -c "import segno,os;print(segno.make(os.environ['URL']).terminal(compact=True))" || true
+          gh release upload "$TAG" FashionFit-APK-QR.png FashionFit-APK-QR.svg --repo "$GITHUB_REPOSITORY" --clobber
