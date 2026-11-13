@@ -23,7 +23,6 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -1173,25 +1172,19 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
         // 입은 옷 — 누르면 그 옷을 조절, X로 벗기
         // (전신 사진을 고른 뒤에는 조절 영역 높이를 고정해, 옷을 입혀도 사진 위치가 바뀌지 않게 한다)
         if (avatarMode && avatarProfile != null || !avatarMode && bodyPhoto != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 52.dp)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("조절할 옷", style = MaterialTheme.typography.labelMedium, color = FashionMuted)
-                if (worn.isEmpty()) {
-                    Text("아래에서 옷을 고르면 여기에 나와요", style = MaterialTheme.typography.labelMedium, color = FashionMuted)
-                }
+            Text("조절할 옷", style = MaterialTheme.typography.labelMedium, color = FashionMuted,
+                modifier = Modifier.padding(horizontal = 20.dp))
+            Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (worn.isEmpty()) Text("옷을 고르면 여기에 나와요", style = MaterialTheme.typography.labelMedium,
+                    color = FashionMuted, modifier = Modifier.padding(bottom = 8.dp))
                 worn.entries.sortedBy { it.key.ordinal }.forEach { (slot, g) ->
-                    Surface(shape = FashionActionShape, color = if (slot == activeSlot) CreamDark else Cream) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { activeSlot = slot }, modifier = Modifier.heightIn(min = 48.dp)
+                    Surface(shape = FashionActionShape, color = if (slot == activeSlot) CreamDark else Cream,
+                        border = if (slot == activeSlot) BorderStroke(1.dp, FashionBorder) else null) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { activeSlot = slot }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
                                 .semantics { selected = slot == activeSlot }) {
-                                Text(g.item.name, maxLines = 1)
+                                Text(g.item.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                             IconButton(onClick = { toggle(g.item) }, modifier = Modifier.size(48.dp)) {
                                 Icon(Icons.Filled.Close, contentDescription = "${g.item.name} 벗기", modifier = Modifier.size(18.dp))

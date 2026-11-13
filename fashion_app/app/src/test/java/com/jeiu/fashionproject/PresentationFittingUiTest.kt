@@ -133,7 +133,9 @@ class PresentationFittingUiTest {
             androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("자동핏을 적용하지 않았어요", substring = true)
         compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithContentDescription("벗기", substring = true).performScrollTo().performClick()
+        compose.onNode(hasContentDescription("벗기", substring = true) and hasClickAction())
+            .performScrollTo().assertIsDisplayed()
+            .performClick()
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
