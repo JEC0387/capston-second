@@ -199,16 +199,30 @@ object OnDeviceVtonImages {
 
     private suspend fun canonicalImage(encoded: ByteArray, maxSide: Int): DeviceImage {
         val isPng = encoded.size >= 8 && pngSignature.indices.all { encoded[it] == pngSignature[it] }
-        val isJpeg = encoded.size >= 4 && encoded[0] == 0xff.toByte() && encoded[1] == 0xd8.toByte() &&
-            encoded[encoded.lastIndex - 1] == 0xff.toByte() && encoded.last() == 0xd9.toByte()
-        if (!isPng && !isJpeg) throw DeviceVtonFailure("정상적인 PNG 또는 JPEG 이미지를 선택해주세요.")
-        if (isPng) validatePngStructure(encoded)
+        val isJpeg = encoded.size >= 2 && encoded[0] == 0xff.toByte() && encoded[1] == 0xd8.toByte()
+        val mimeType = when {
+            isPng -> {
+                validatePngStructure(encoded)
+                "image/png"
+            }
+            isJpeg -> {
+                if (encoded.size < 4 || encoded[encoded.lastIndex - 1] != 0xff.toByte() || encoded.last() != 0xd9.toByte())
+                    throw DeviceVtonFailure("JPEG 파일이 완성되지 않았어요.")
+                "image/jpeg"
+            }
+            encoded.size >= 12 && encoded.fourCc(0) == "RIFF" && encoded.fourCc(8) == "WEBP" -> {
+                validateStaticWebP(encoded)
+                "image/webp"
+            }
+            else -> unsupportedImage()
+        }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(encoded, 0, encoded.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outMimeType != mimeType)
+            throw DeviceVtonFailure("이미지의 실제 형식이나 크기를 읽을 수 없어요.")
         if (bounds.outWidth < 32 || bounds.outHeight < 32 ||
-            bounds.outWidth.toLong() * bounds.outHeight > MAX_PIXELS ||
-            bounds.outMimeType != if (isPng) "image/png" else "image/jpeg")
-            throw DeviceVtonFailure("이미지 크기 또는 형식이 지원 범위를 벗어났어요.")
+            bounds.outWidth.toLong() * bounds.outHeight > MAX_PIXELS)
+            throw DeviceVtonPreparationFailure("image_size", "이미지 크기가 지원 범위를 벗어났어요.")
         val orientation = ByteArrayInputStream(encoded).use { ExifInterface(it).rotationOrientation() }
         var sample = 1
         while ((maxOf(bounds.outWidth, bounds.outHeight) + sample - 1) / sample > maxSide) sample *= 2
@@ -222,7 +236,7 @@ object OnDeviceVtonImages {
         try {
             val decoded = requireNotNull(bitmap)
             if (decoded.width <= 0 || decoded.height <= 0 || maxOf(decoded.width, decoded.height) > maxSide)
-                throw DeviceVtonFailure("이미지 디코딩 크기가 안전 범위를 벗어났어요.")
+                throw DeviceVtonPreparationFailure("image_size", "이미지 크기가 지원 범위를 벗어났어요.")
             val matrix = orientationMatrix(orientation)
             if (!matrix.isIdentity) {
                 val oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
@@ -239,6 +253,43 @@ object OnDeviceVtonImages {
         } finally {
             bitmap?.recycle()
         }
+    }
+
+    private fun ByteArray.fourCc(offset: Int) = String(this, offset, 4, Charsets.US_ASCII)
+
+    private fun unsupportedImage(): Nothing = throw DeviceVtonPreparationFailure(
+        "image_unsupported", "정지 PNG, JPEG 또는 WebP 이미지를 선택해주세요.")
+
+    /** BitmapFactory can decode the first frame of an animation, so inspect RIFF before decoding. */
+    private fun validateStaticWebP(bytes: ByteArray) {
+        fun corrupt(): Nothing = throw DeviceVtonFailure("WebP 파일이 손상됐어요.")
+        fun littleEndianSize(offset: Int): Long = (0..3).fold(0L) { value, index ->
+            value or ((bytes[offset + index].toLong() and 255L) shl (8 * index))
+        }
+        if (littleEndianSize(4) + 8 != bytes.size.toLong()) corrupt()
+        var offset = 12
+        var hasImage = false
+        while (offset < bytes.size) {
+            if (bytes.size - offset < 8) corrupt()
+            val size = littleEndianSize(offset + 4)
+            val payload = offset + 8
+            val end = payload + size + (size and 1L)
+            if (end > bytes.size) corrupt()
+            if (size and 1L != 0L && bytes[end.toInt() - 1] != 0.toByte()) corrupt()
+            when (bytes.fourCc(offset)) {
+                "ANIM", "ANMF" -> unsupportedImage()
+                "VP8X" -> {
+                    if (offset != 12 || size != 10L) corrupt()
+                    if (bytes[payload].toInt() and 0x02 != 0) unsupportedImage()
+                }
+                "VP8 ", "VP8L" -> {
+                    if (hasImage || size == 0L) corrupt()
+                    hasImage = true
+                }
+            }
+            offset = end.toInt()
+        }
+        if (!hasImage) corrupt()
     }
 
     private fun ExifInterface.rotationOrientation() = getAttributeInt(

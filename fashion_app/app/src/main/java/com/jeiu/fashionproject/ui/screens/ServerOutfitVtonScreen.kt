@@ -296,7 +296,7 @@ private fun DeviceGarmentRole.userLabel(): String = when (this) {
     DeviceGarmentRole.SHOES -> "신발"
 }
 
-private fun userFacingTryOnError(code: String?, previousRequest: Boolean): String? {
+internal fun userFacingTryOnError(code: String?, previousRequest: Boolean): String? {
     if (previousRequest) return "이전 요청이 있어 결과 상태를 먼저 확인해주세요. 새 요청은 보내지 않았어요."
     if (code == null) return null
     return when (code) {
@@ -305,6 +305,11 @@ private fun userFacingTryOnError(code: String?, previousRequest: Boolean): Strin
             "AI 피팅을 아직 사용할 수 없어요."
         "authentication_required", "account_changed" -> "계정 연결을 확인해주세요."
         "https_required", "consent_or_transport_required" -> "보안 연결을 확인할 수 없어요."
+        "image_read_failed" -> "선택한 이미지를 열 수 없어요. 파일이나 접근 권한을 확인해주세요."
+        "image_processing_failed", "image_preparation_failed" -> "이미지를 변환할 수 없어요. 파일이 손상됐는지 확인해주세요."
+        "image_size", "body_size" -> "이미지 크기가 지원 범위를 벗어났어요. 크기를 조정해 다시 선택해주세요."
+        "image_unsupported" -> "정지 PNG, JPEG 또는 WebP 이미지를 선택해주세요."
+        "image_memory" -> "이미지를 준비할 메모리가 부족해요. 더 작은 이미지를 선택해주세요."
         "genlook_budget_exhausted", "genlook_insufficient_credits", "usage_limit", "genlook_rate_limited" ->
             "AI 사용 한도에 도달했어요. 자동으로 다시 요청하지 않았어요."
         "submit_unconfirmed", "remote_execution_unconfirmed", "genlook_reconciliation_required" ->
