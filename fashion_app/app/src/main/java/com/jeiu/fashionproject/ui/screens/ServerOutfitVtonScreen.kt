@@ -294,26 +294,26 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                         if (BuildConfig.DEBUG && !hasResult && !generating) {
                             if (ServerOutfitQaConnection.supported)
                                 OutfitQaConnectionPanel(enabled = !state.busy && !saving, onChanged = model::invalidateConnection)
-            if (BuildConfig.DEBUG && BuildConfig.INSTALL_TEST_BUILD && (!DataAuth.canSync || InstallTestAccount.hasRecord))
-                com.jeiu.fashionproject.ui.components.InstallTestAccountPanel(testAccountState, InstallTestAccount.hasRecord,
-                    linkingAccount || state.busy || saving,
-                    onEnroll = { consent, reference, server ->
-                        if (!linkingAccount) {
-                            linkingAccount = true
-                            scope.launch {
-                                try { InstallTestAccount.enroll(consent, reference, server); model.invalidateConnection() }
-                                finally { linkingAccount = false }
-                            }
-                        }
-                    }, onVerify = {
-                        if (!linkingAccount) {
-                            linkingAccount = true
-                            scope.launch {
-                                try { InstallTestAccount.verify(); model.invalidateConnection() }
-                                finally { linkingAccount = false }
-                            }
-                        }
-                    })
+                            if (BuildConfig.DEBUG && BuildConfig.INSTALL_TEST_BUILD && (!DataAuth.canSync || InstallTestAccount.hasRecord))
+                                com.jeiu.fashionproject.ui.components.InstallTestAccountPanel(testAccountState, InstallTestAccount.hasRecord,
+                                    linkingAccount || state.busy || saving,
+                                    onEnroll = { consent, reference, server ->
+                                        if (!linkingAccount) {
+                                            linkingAccount = true
+                                            scope.launch {
+                                                try { InstallTestAccount.enroll(consent, reference, server); model.invalidateConnection() }
+                                                finally { linkingAccount = false }
+                                            }
+                                        }
+                                    }, onVerify = {
+                                        if (!linkingAccount) {
+                                            linkingAccount = true
+                                            scope.launch {
+                                                try { InstallTestAccount.verify(); model.invalidateConnection() }
+                                                finally { linkingAccount = false }
+                                            }
+                                        }
+                                    })
                             if (state.config?.ready != true && !state.busy)
                                 TextButton(onClick = model::refreshConfig, modifier = Modifier.testTag("serverOutfitCheck")) { Text("다시 확인") }
                             if (model.canArchiveReviewedQaJob()) TextButton(onClick = {
