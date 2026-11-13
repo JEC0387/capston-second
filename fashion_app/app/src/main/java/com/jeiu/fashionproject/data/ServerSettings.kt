@@ -23,14 +23,17 @@ object ServerSettings {
     const val DEFAULT_PORT = 8000
     private const val EMULATOR = "http://10.0.2.2:8000"
 
-    /** 앱에 들어 있는 기본 주소 (local.properties SERVER_URL, 없으면 에뮬레이터 주소) */
+    /** 빌드에 포함된 기본 주소. 개발 빌드에서는 local.properties로 지정할 수 있다. */
     val defaultUrl: String get() = normalize(BuildConfig.SERVER_URL) ?: EMULATOR
 
-    /** 앱 시작 때 한 번 — 저장된 주소(없으면 기본 주소)를 BackendApi 에 넣는다 */
+    /** 앱 시작 때 한 번. 저장된 서버 변경값은 개발 빌드에서만 적용한다. */
     fun load(context: Context) {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
-        BackendApi.BASE_URL = saved?.let { normalize(it) } ?: defaultUrl
+        BackendApi.BASE_URL = startupUrl(saved, BuildConfig.DEBUG)
     }
+
+    internal fun startupUrl(saved: String?, debugBuild: Boolean): String =
+        (if (debugBuild) saved?.let(::normalize) else null) ?: defaultUrl
 
     val current: String get() = BackendApi.BASE_URL
     val isDefault: Boolean get() = current == defaultUrl

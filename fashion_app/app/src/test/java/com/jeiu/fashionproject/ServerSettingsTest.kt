@@ -11,6 +11,14 @@ import org.junit.Test
 class ServerSettingsTest {
 
     @Test
+    fun startup_usesPackagedServerInReleaseAndKeepsDebugOverrides() {
+        val localServer = "http://192.168.0.10:8000"
+        assertEquals(ServerSettings.defaultUrl, ServerSettings.startupUrl(localServer, debugBuild = false))
+        assertEquals(localServer, ServerSettings.startupUrl(localServer, debugBuild = true))
+        assertEquals(ServerSettings.defaultUrl, ServerSettings.startupUrl("invalid address", debugBuild = true))
+    }
+
+    @Test
     fun normalize_addsSchemeAndDefaultPort() {
         assertEquals("http://192.168.0.10:8000", ServerSettings.normalize("192.168.0.10"))
         assertEquals("http://192.168.0.10:8000", ServerSettings.normalize(" http://192.168.0.10:8000/ "))
