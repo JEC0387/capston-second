@@ -269,7 +269,8 @@ fun AppNavigation() {
                     onStyleSuggestion = { navController.navigate(Screen.StyleSuggestion.route) },
                     onCameraClick = { navController.navigate(Screen.Camera.route) },
                     viewModel = bodyAnalysisViewModel,
-                    onHistory = { navController.navigate(Screen.BodyHistory.route) }
+                    onHistory = { navController.navigate(Screen.BodyHistory.route) },
+                    onFitting = { navController.navigate(Screen.VirtualFitting.route + "?avatar=true") }
                 )
             }
             composable(Screen.Camera.route) {

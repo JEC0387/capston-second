@@ -184,7 +184,7 @@ class P68BundledOutfitImageTest {
             compose.setContent { MaterialTheme { ServerOutfitVtonScreen(selected, {}, model) } }
             compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
             compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); model.state.config?.ready == true }
-            compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().performClick()
+            compose.onNodeWithTag("serverOutfitGenerate").performClick()
             compose.onNodeWithTag("serverOutfitConsent").performClick()
             compose.onNodeWithTag("serverOutfitConsentConfirm").performClick()
             compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); model.state.failureCode != null && !model.state.busy }

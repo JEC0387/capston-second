@@ -52,13 +52,16 @@ class BodyAnalysisResultUiTest {
         } }
     }
 
-    @Test fun resultStartsWithPhotoTypeAndCmThenExpandsDetailsAndSize() {
+    @Test fun resultStartsWithSummaryAndRevealsPhotoAndMeasurementsOnDemand() {
         showResult(measurements)
-        compose.onNodeWithContentDescription("분석한 사진").assertExists()
+        compose.onNodeWithContentDescription("분석한 사진").assertDoesNotExist()
+        compose.onNodeWithText("사진 분석 요약").assertExists()
         compose.onNodeWithText("균형형").assertExists()
-        compose.onNodeWithText("측정 결과 · 키 기준 cm 추정").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("측정 결과 · 키 기준 cm 추정").assertDoesNotExist()
         compose.onNodeWithText("신체 비율 추정 (정면 너비, 둘레 아님)").assertDoesNotExist()
         compose.onNodeWithTag("bodyDetailsExpand").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("분석한 사진").assertExists()
+        compose.onNodeWithText("측정 결과 · 키 기준 cm 추정").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("신체 비율 추정 (정면 너비, 둘레 아님)").assertExists()
         compose.onNodeWithTag("bodySizeExpand").performScrollTo().performClick()
         compose.onNodeWithText("체형 기반 사이즈 추천").assertExists()

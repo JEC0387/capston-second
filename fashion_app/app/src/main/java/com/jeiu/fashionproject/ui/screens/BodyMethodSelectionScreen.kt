@@ -37,6 +37,7 @@ fun BodyMethodSelectionScreen(
     onSizeComparison: () -> Unit = {},
     onHistory: () -> Unit = {}
 ) {
+    FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -52,18 +53,18 @@ fun BodyMethodSelectionScreen(
         Text("체형을 어떻게 확인할까요?", style = MaterialTheme.typography.titleLarge,
             color = CharcoalBlack)
         Text("사진으로 분석하거나 내 3D 체형을 직접 만들 수 있어요.",
-            style = MaterialTheme.typography.bodyMedium, color = MediumGray)
+            style = MaterialTheme.typography.bodyMedium, color = FashionMuted)
         BodyMethodCard(
-            title = "사진으로 체형 분석",
-            description = "지금 촬영하거나 갤러리의 전신 사진을 선택해 신체 비율을 분석해요.",
-            icon = { Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = Camel) },
+            title = "전신 사진으로 분석",
+            description = "정면 전신 사진에서 체형과 신체 비율을 확인해요.",
+            icon = { Icon(Icons.Filled.CameraAlt, contentDescription = null, tint = BrownDark) },
             onClick = onPhotoAnalysis,
             tag = "bodyMethodPhoto"
         )
         BodyMethodCard(
-            title = "3D 내 체형 만들기",
-            description = "키·몸무게, 사진 결과 또는 직접 입력한 치수로 모델을 조절해요.",
-            icon = { Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = Camel) },
+            title = "내 3D 체형 만들기",
+            description = "내 치수로 아바타를 만들고 옷을 입혀봐요.",
+            icon = { Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = BrownDark) },
             onClick = onAvatarSetup,
             tag = "bodyMethodAvatar"
         )
@@ -72,14 +73,15 @@ fun BodyMethodSelectionScreen(
         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = White)) {
             Column {
                 BodyMenuRow("의류 사이즈 비교", "실측표와 내 치수를 비교해요", onSizeComparison,
-                    "bodyMethodSize", { Icon(Icons.Filled.Straighten, contentDescription = null, tint = Camel) })
+                    "bodyMethodSize", { Icon(Icons.Filled.Straighten, contentDescription = null, tint = BrownDark) })
                 HorizontalDivider(color = LightGray, modifier = Modifier.padding(horizontal = 16.dp))
                 BodyMenuRow("지난 분석 기록", "저장된 측정과 변화 보기", onHistory,
-                    "bodyMethodHistory", { Icon(Icons.Filled.History, contentDescription = null, tint = Camel) })
+                    "bodyMethodHistory", { Icon(Icons.Filled.History, contentDescription = null, tint = BrownDark) })
             }
         }
         }
     }
+}
 }
 
 @Composable
@@ -92,7 +94,7 @@ private fun BodyMenuRow(title: String, description: String, onClick: () -> Unit,
         icon()
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium, color = CharcoalBlack)
-            Text(description, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = FashionMuted)
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray)
     }
@@ -108,8 +110,8 @@ private fun BodyMethodCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().testTag(tag).clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = White)
+        shape = FashionCardShape,
+        colors = CardDefaults.cardColors(containerColor = CreamDark)
     ) {
         Row(
             Modifier.fillMaxWidth().padding(18.dp),
@@ -120,7 +122,7 @@ private fun BodyMethodCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold, color = CharcoalBlack)
-                Text(description, style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                Text(description, style = MaterialTheme.typography.bodySmall, color = FashionMuted)
             }
             Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray)
         }
@@ -131,19 +133,20 @@ private fun BodyMethodCard(
 @Composable
 fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitting:(()->Unit)?=null) {
     var manualExpanded by rememberSaveable { mutableStateOf(false) }
+    FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
             }
-            Text("3D 아바타 체형 설정", style = MaterialTheme.typography.titleLarge,
+            Text("내 3D 체형", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold, color = CharcoalBlack)
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("3D 모델을 확인하고 체형 생성 방법을 선택해 보세요.",
+            Text("치수를 확인하고 아바타를 저장하면 옷을 입혀볼 수 있어요.",
                 style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
             AvatarSetupCard(onApplyToFitting=onFitting)
             OutlinedButton(onClick = { manualExpanded = !manualExpanded },
@@ -157,4 +160,5 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
             Spacer(Modifier.height(16.dp))
         }
     }
+}
 }

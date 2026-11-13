@@ -8,6 +8,13 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -77,6 +84,7 @@ fun ShopScreen(
         else viewModel.searchProducts(searchQuery, gender)
     }
 
+    FashionFeatureTheme {
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 헤더
         Column(modifier = Modifier.fillMaxWidth().background(White).padding(horizontal = 20.dp, vertical = 16.dp)) {
@@ -87,7 +95,7 @@ fun ShopScreen(
                 onValueChange = { searchQuery = it },
                 placeholder = { Text(if (tab == ShopTab.PRODUCTS) "옷 상품 검색 (예: 셔츠, 청바지)" else "스타일 검색 (예: 가을 코디, 미니멀룩)", color = MediumGray) },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MediumGray) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("shopSearch"),
                 shape = RoundedCornerShape(12.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = LightGray,
@@ -103,7 +111,7 @@ fun ShopScreen(
                         onClick = { tab = t },
                         label = { Text(t.label) },
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Camel,
+                            selectedContainerColor = BrownDark,
                             selectedLabelColor = White
                         )
                     )
@@ -111,26 +119,12 @@ fun ShopScreen(
             }
         }
 
-        // 안내 배너
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(CamelLight)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
-        ) {
-            Text(
-                when {
-                    tab == ShopTab.PRODUCTS -> "앱에 등록된 카탈로그예요. 가격·재고는 실시간 정보가 아니에요. 옷장과 저장한 취향을 기준으로 순서를 정하며, 하트는 관심 옷에 담겨요."
-                    gender != null -> "네이버 이미지 검색에서 ${gender.label} 맞춤 스타일을 가져왔어요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
-                    else -> "네이버 이미지 검색 결과예요. 탭하면 쇼핑몰에서 검색해볼 수 있어요"
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = Brown,
-                fontWeight = FontWeight.Medium
-            )
-        }
+        if (tab == ShopTab.STYLES) Text(
+            if (gender != null) "${gender.label} 스타일을 찾아봤어요. 사진을 누르면 쇼핑몰에서 검색할 수 있어요."
+            else "사진을 누르면 비슷한 옷을 쇼핑몰에서 검색할 수 있어요.",
+            style = MaterialTheme.typography.bodySmall, color = FashionMuted,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp)
+        )
 
         when (tab) {
             ShopTab.PRODUCTS -> ProductGrid(
@@ -157,6 +151,7 @@ fun ShopScreen(
 
     searchKeyword?.let { keyword ->
         ShopSearchSheet(keyword = keyword, onDismiss = { searchKeyword = null })
+    }
     }
 }
 
@@ -201,18 +196,48 @@ private fun ProductGrid(
             .thenByDescending { picks[it.id]?.score ?: 0.0 }
     )
 
+    val gridState = rememberLazyGridState()
+    val atTop by remember { derivedStateOf {
+        gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0
+    } }
+    var introExpanded by rememberSaveable { mutableStateOf(true) }
+    var showDetailsHere by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(atTop) { if (atTop) { showDetailsHere = false; introExpanded = true } }
+    LaunchedEffect(gridState.isScrollInProgress) { if (gridState.isScrollInProgress) showDetailsHere = false }
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(onClick = {
+            if (atTop) introExpanded = !introExpanded else showDetailsHere = !showDetailsHere
+        }, shape = FashionActionShape, color = CreamDark,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                .heightIn(min = 48.dp).testTag("shopCatalogueDisclosure")) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Text("가격·재고는 실시간이 아니에요.", Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall, color = FashionMuted)
+                Text(if (if (atTop) introExpanded else showDetailsHere) "접기" else "안내 보기",
+                    style = MaterialTheme.typography.labelMedium, color = BrownDark)
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxWidth()) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
+        state = gridState,
+        modifier = Modifier.fillMaxSize().testTag("shopCatalogueGrid"),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (introExpanded) item(key = "catalogue-intro", span = { GridItemSpan(maxLineSpan) }) {
+            CatalogueExplanation()
+        }
         items(displayProducts, key = { it.id }) { product ->
             val isLiked = product.id in likedSet
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateItem()
+                    .testTag("shopProduct-"+product.id)
                     .clickable { onOpen(product.id) },
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = White),
@@ -231,21 +256,10 @@ private fun ProductGrid(
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
                         )
-                        picks[product.id]?.reasons?.firstOrNull()?.let {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopStart)
-                                    .padding(8.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Camel)
-                                    .padding(horizontal = 8.dp, vertical = 3.dp)
-                            ) {
-                                Text(it, style = MaterialTheme.typography.labelSmall, color = White)
-                            }
-                        }
                         IconButton(
                             onClick = { onToggleLike(product.id) },
-                            modifier = Modifier.align(Alignment.TopEnd)
+                            modifier = Modifier.align(Alignment.TopEnd).testTag("shopLike-"+product.id)
+                                .background(Cream, androidx.compose.foundation.shape.CircleShape)
                         ) {
                             Icon(
                                 if (isLiked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
@@ -261,10 +275,10 @@ private fun ProductGrid(
                         if (product.originalPrice != product.price) {
                             Text(product.originalPrice, style = MaterialTheme.typography.labelSmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
                         }
-                        Text(product.price, style = MaterialTheme.typography.bodySmall, color = Camel, fontWeight = FontWeight.Bold)
-                        // 추천 이유 두 번째 줄 (첫 번째는 사진 위 딱지)
-                        picks[product.id]?.reasons?.getOrNull(1)?.let {
-                            Text(it, style = MaterialTheme.typography.labelSmall, color = Brown, maxLines = 1)
+                        Text(product.price, style = MaterialTheme.typography.bodySmall, color = BrownDark, fontWeight = FontWeight.Bold)
+                        picks[product.id]?.reasons?.firstOrNull()?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = FashionMuted,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -304,9 +318,28 @@ private fun ProductGrid(
             }
         }
     }
+        CatalogueDetailsOverlay(showDetailsHere && !atTop,
+            Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp, vertical = 8.dp))
+        }
+    }
 }
 
-/** 옷과 관련 없는 검색어일 때 안내 */
+@Composable
+private fun CatalogueDetailsOverlay(visible: Boolean, modifier: Modifier) {
+    AnimatedVisibility(visible, modifier, enter = fadeIn(), exit = fadeOut()) {
+        CatalogueExplanation()
+    }
+}
+
+@Composable
+private fun CatalogueExplanation() {
+    Surface(shape = FashionActionShape, color = CreamDark, tonalElevation = 1.dp,
+        modifier = Modifier.fillMaxWidth().testTag("shopCatalogueDetails")) {
+        Text("옷장과 저장한 취향을 바탕으로 상품을 추천해요. 하트를 누르면 관심 옷에 담겨요. 구매 전 판매처에서 가격과 재고를 확인해주세요.",
+            style = MaterialTheme.typography.bodySmall, color = FashionMuted, modifier = Modifier.padding(14.dp))
+    }
+}
+
 @Composable
 private fun SearchHint(message: String) {
     Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {

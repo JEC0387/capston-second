@@ -91,7 +91,7 @@ class P51ServerPairedModeUiTest {
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config != null && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitPolicyDetails").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
         assertEquals("Recovered unresolved work blocks another request", oldTicket, vm.state.ticket)
@@ -101,13 +101,13 @@ class P51ServerPairedModeUiTest {
         vm.invalidateConnection()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo?.mode == "clothing-pair-then-shoes" && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertExists()
+        compose.onNodeWithTag("serverOutfitCancel").assertExists()
 
-        compose.onNodeWithTag("serverOutfitResume").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitResume").performClick()
         await { vm.state.result != null && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitResultLabel").performScrollTo().assertTextEquals("이전 요청 결과")
+        compose.onNodeWithTag("serverOutfitResultLabel").performScrollTo().assertTextEquals("이전에 요청한 착장이에요.")
         compose.onNodeWithTag("serverOutfitResultSource").assertDoesNotExist()
         compose.onNodeWithText("Genlook Try-On API").assertDoesNotExist()
         assertEquals(0, posts)

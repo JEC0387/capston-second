@@ -73,21 +73,31 @@ class PresentationFittingUiTest {
         val id = WardrobeStore.items.value.first().id
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
         compose.onNodeWithTag("manualGarment-$id").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("manualScale").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithTag("manualAlpha").assertIsDisplayed().assertIsEnabled()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("fittingSelectedClothes").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScale").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("fittingCanvas").assertIsDisplayed()
         Assert.assertTrue(compose.onNodeWithTag("fittingCanvas").fetchSemanticsNode().size.height > 0)
         compose.onNodeWithTag("aiTryOnWand").assertIsDisplayed()
-        compose.onNodeWithTag("manualScaleUp").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("manualScaleUp").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("manualScale").assert(SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
             androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
-        compose.onNodeWithTag("manualAlpha").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.6f) }
+        compose.onNodeWithTag("manualAlpha").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.6f) }
         compose.onNodeWithTag("manualAlpha").assert(SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
             androidx.compose.ui.semantics.ProgressBarRangeInfo(.6f, .3f..1f)))
-        compose.onNodeWithText("옷 선택 · 상의 / 하의 / 신발").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScale").assertDoesNotExist()
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScale").performScrollTo().assert(SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
+            androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
+        compose.onNodeWithTag("fittingResetAdjustments").performScrollTo().performClick()
+        compose.onNodeWithTag("manualAlpha").performScrollTo().assert(SemanticsMatcher.expectValue(
+            androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
+            androidx.compose.ui.semantics.ProgressBarRangeInfo(1f, .3f..1f)))
     }
     @Test fun wandWithoutPhotoCannotEnterGenerationScreen() {
         compose.setContent { VirtualFittingScreen {} }
@@ -105,12 +115,12 @@ class PresentationFittingUiTest {
         compose.runOnIdle { registry.dispatchResult(requestCode, Uri.parse("content://invalid/manual")) }
         compose.onNodeWithTag("aiTryOnWand").assertIsNotEnabled().performClick()
         compose.onNodeWithTag("serverOutfitVtonScreen").assertDoesNotExist()
-        compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
         val id = com.jeiu.fashionproject.data.WardrobeStore.items.value.first().id
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
         compose.onNodeWithTag("manualGarment-$id").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("manualScaleUp").assertIsDisplayed().performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("fittingSelectedClothes").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScaleUp").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("manualScale").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
             androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
@@ -122,9 +132,8 @@ class PresentationFittingUiTest {
             androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
             androidx.compose.ui.semantics.ProgressBarRangeInfo(1.1f, .4f..3f)))
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("자동핏을 적용하지 않았어요", substring = true)
-        compose.onNodeWithTag("manualAlpha").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithContentDescription("벗기", useUnmergedTree = true)
-            .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("벗기", substring = true).performScrollTo().performClick()
         compose.onNodeWithTag("manualAutoAlign").assertIsNotEnabled()
     }
 
@@ -143,9 +152,8 @@ class PresentationFittingUiTest {
         val id = WardrobeStore.items.value.first().id
         compose.onNodeWithTag("manualWardrobe").performScrollTo()
         compose.onNodeWithTag("manualGarment-$id").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("벗기").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("manualToolsToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("manualAutoAlign").assertExists()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("fittingSelectedClothes").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("manualAutoAlign").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnWand").assertTextContains("AI로 입어보기", substring = true)
         compose.onNodeWithTag("aiTryOnWand").assertIsNotEnabled()
         compose.onNodeWithTag("aiTryOnWand").performClick()
@@ -153,7 +161,7 @@ class PresentationFittingUiTest {
         compose.onNodeWithTag("deviceVtonResultLabel").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnGuide").assertDoesNotExist()
         compose.onNodeWithTag("aiTryOnSuccess").assertDoesNotExist()
-        compose.onNodeWithTag("manualAutoAlign").assertExists()
+        compose.onNodeWithTag("manualAutoAlign").assertDoesNotExist()
         if (BuildConfig.INSTALL_TEST_BUILD) {
             compose.onNodeWithTag("fittingAdvancedToggle").assertDoesNotExist()
             compose.onNodeWithTag("openOnDeviceFromFitting").assertDoesNotExist()
@@ -187,7 +195,8 @@ class PresentationFittingUiTest {
             compose.setContent { VirtualFittingScreen(onBack = {}) }
             compose.onNodeWithTag("fittingAvatarMode").performClick()
             compose.onNodeWithTag("fittingAvatarViewport").assertExists()
-            compose.onNodeWithTag("avatarAutoFit").assertIsNotEnabled()
+            compose.onNodeWithTag("fittingAdjustToggle").performClick()
+            compose.onNodeWithTag("avatarAutoFit").performScrollTo().assertIsNotEnabled()
             compose.onNodeWithText("전신 사진 선택").assertDoesNotExist()
         } finally { AvatarProfileStore.clear(app) }
     }
@@ -201,16 +210,17 @@ class PresentationFittingUiTest {
         try {
             compose.setContent { VirtualFittingScreen(onBack={}) }
             compose.onNodeWithTag("fittingAvatarMode").performClick()
-            compose.waitUntil(5000) { runCatching {compose.onNodeWithTag("avatarAutoFit").assertIsEnabled()}.isSuccess }
+            compose.onNodeWithTag("fittingAdjustToggle").performClick()
+            compose.waitUntil(5000) { runCatching {compose.onNodeWithTag("avatarAutoFit").performScrollTo().assertIsEnabled()}.isSuccess }
             compose.runOnIdle { Assert.assertTrue(AvatarProfileStore.save(app,prior.copy(chest=1.2f,shoulder=1.1f))) }
-            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
             compose.runOnIdle {
                 val retained=AvatarFittingStore.load(app).single()
                 Assert.assertEquals(.3f,retained.width,.001f);Assert.assertEquals(1.1f,retained.scale,.001f)
                 Assert.assertEquals(8f,retained.rotation,.001f)
             }
-            compose.onNodeWithTag("avatarAutoFit").performClick()
-            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.onNodeWithTag("avatarAutoFit").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
             compose.runOnIdle {Assert.assertEquals(1f,AvatarFittingStore.load(app).single().scale,.001f)}
         } finally {AvatarFittingStore.clear(app);AvatarProfileStore.clear(app)}
     }
@@ -227,15 +237,16 @@ class PresentationFittingUiTest {
         try {
             compose.setContent { VirtualFittingScreen(onBack = {}) }
             compose.onNodeWithTag("fittingAvatarMode").performClick()
+            compose.onNodeWithTag("fittingAdjustToggle").performClick()
             compose.waitUntil(5000) {
-                runCatching { compose.onNodeWithTag("avatarAutoFit").assertIsEnabled() }.isSuccess
+                runCatching { compose.onNodeWithTag("avatarAutoFit").performScrollTo().assertIsEnabled() }.isSuccess
             }
-            compose.onNodeWithTag("manualScale").assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithTag("manualAlpha").assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithTag("avatarAutoFit").assertIsEnabled()
-            compose.onNodeWithTag("avatarSaveFitting").assertIsEnabled()
-            compose.onNodeWithTag("avatarAutoFit").performClick()
-            compose.onNodeWithTag("avatarSaveFitting").performClick()
+            compose.onNodeWithTag("manualScale").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().assertIsEnabled()
+            compose.onNodeWithTag("avatarAutoFit").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("avatarSaveFitting").performScrollTo().assertIsEnabled()
+            compose.onNodeWithTag("avatarAutoFit").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
             compose.runOnIdle {
                 Assert.assertEquals(1f, AvatarFittingStore.load(app).single().scale)
             }

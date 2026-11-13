@@ -40,15 +40,16 @@ class P16FittingUiTest {
             compose.onAllNodesWithTag("fittingOverlay-${item.id}").fetchSemanticsNodes().isNotEmpty()
         }
 
-        compose.onNodeWithTag("avatarAutoFit").performClick()
-        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("avatarAutoFit").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
         val aligned = AvatarFittingStore.load(app).single()
         assertEquals(1f, aligned.scale, .001f)
         assertEquals(0f, aligned.rotation, .001f)
-        compose.onNodeWithTag("avatarAutoFit").performClick()
+        compose.onNodeWithTag("avatarAutoFit").performScrollTo().performClick()
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("이미 자동 정렬된 위치예요.", substring = true)
         compose.onNodeWithTag("avatarUndoFit").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
 
         val restored = AvatarFittingStore.load(app).single()
         assertEquals(manual.centerX, restored.centerX, .002f)
@@ -82,10 +83,11 @@ class P16FittingUiTest {
         AvatarFittingStore.save(app, listOf(manual))
         compose.setContent { VirtualFittingScreen(startAvatar = true, onBack = {}) }
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("fittingOverlay-${item.id}").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithTag("avatarAutoFit").performClick()
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("avatarAutoFit").performScrollTo().performClick()
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("투명 의류 영역을 확인하지 못했어요.", substring = true)
         compose.onNodeWithTag("avatarUndoFit").assertDoesNotExist()
-        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
         val saved = AvatarFittingStore.load(app).single()
         assertEquals(manual.centerX, saved.centerX, .002f)
         assertEquals(manual.centerY, saved.centerY, .002f)
@@ -112,7 +114,8 @@ class P16FittingUiTest {
         }
         compose.onNodeWithTag("fittingOverlay-${current.id}").assertExists()
         compose.onNodeWithTag("fittingOverlay-${long.id}").assertDoesNotExist()
-        compose.onNodeWithTag("avatarSaveFitting").performClick()
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("avatarSaveFitting").performScrollTo().performClick()
         assertEquals(current.id, AvatarFittingStore.load(app).single().itemId)
     }
 

@@ -88,46 +88,51 @@ class P48ServerOutfitUiTest {
             MaterialTheme { if (showing.value) ServerOutfitVtonScreen(selectedInput.value, { showing.value = false }, vm) }
         } }
         compose.onNodeWithTag("serverOutfitPersonPreview").performScrollTo().assertExists()
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitGenerate").assertIsNotEnabled()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.ready == true }
         // Selection and server readiness alone cannot submit: the just-in-time consent dialog is required.
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitGenerate").performClick()
         compose.onNodeWithTag("serverOutfitConsent").assertIsOff()
         compose.onNodeWithTag("serverOutfitConsentConfirm").assertIsNotEnabled()
         compose.onNodeWithTag("serverOutfitConsent").performClick().assertIsOn()
         compose.onNodeWithTag("serverOutfitConsentConfirm").performClick()
         await { vm.state.phase == "preparing" && vm.state.busy }
-        compose.onNodeWithTag("serverOutfitCancelPreparation").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitProgress").assertExists()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitCancelPreparation").performClick()
         compose.runOnIdle { preparation.complete(Unit) }
         await { vm.state.phase == "cancelled" && !vm.state.busy }
         assertEquals(0, posts); assertNull(ticket)
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitGenerate").performClick()
         compose.onNodeWithTag("serverOutfitConsent").performClick()
         compose.onNodeWithTag("serverOutfitConsentConfirm").performClick()
         await { vm.state.result != null && !vm.state.busy }
         assertEquals(1, posts)
         compose.onNodeWithTag("serverOutfitResultImage").performScrollTo().assertExists()
-        compose.onNodeWithTag("serverOutfitCompare").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitToggle").performClick()
-        compose.onNodeWithText("결과 보기").assertExists()
-        compose.onNodeWithText("닫기").performClick()
-        compose.onNodeWithTag("serverOutfitSave").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitPersonPreview").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitShowOriginal").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitOriginalImage").assertExists()
+        compose.onNodeWithTag("serverOutfitResultImage").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitShowResult").performScrollTo().performClick()
+        compose.onNodeWithTag("serverOutfitResultImage").assertExists()
+        compose.onNodeWithTag("serverOutfitSave").performClick()
+        compose.onNodeWithTag("serverOutfitOpen").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitSave").assertIsNotEnabled()
         val target = File(app.cacheDir, "p48-synthetic-${System.nanoTime()}.png")
         try {
             compose.runOnIdle { documents.reply(Uri.fromFile(target)) }
             compose.waitUntil(15000) { target.exists() && target.length() > 0 && compose.onAllNodesWithText(
-                "이미지를 저장했어요. 저장한 파일을 다시 열어 확인할 수 있어요.").fetchSemanticsNodes().isNotEmpty() }
+                "사진을 저장했어요.").fetchSemanticsNodes().isNotEmpty() }
             assertArrayEquals(result, target.readBytes())
             val bitmap = BitmapFactory.decodeFile(target.path)
             try { assertEquals(Color.BLUE, bitmap.getPixel(32, 48)) } finally { bitmap.recycle() }
-            compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
-            compose.runOnIdle { showing.value = true }
             compose.onNodeWithTag("serverOutfitOpen").performScrollTo().performClick()
-            compose.runOnIdle { documents.reply(Uri.fromFile(target)) }
             compose.waitUntil(15000) { compose.onAllNodesWithText("저장 이미지").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("닫기").performClick()
+            compose.onNodeWithTag("serverOutfitChangeClothes").performClick()
+            compose.runOnIdle { showing.value = true }
+            compose.onNodeWithTag("serverOutfitResultImage").assertExists()
             assertEquals(1, posts)
         } finally { target.delete() }
     }

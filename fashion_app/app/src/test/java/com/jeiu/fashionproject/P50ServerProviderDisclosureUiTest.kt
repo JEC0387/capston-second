@@ -81,7 +81,7 @@ class P50ServerProviderDisclosureUiTest {
         await { vm.state.config?.providerInfo != null && !vm.state.busy }
         // Policy and cost are intentionally shown at the final consent point, not on the main screen.
         compose.onNodeWithTag("serverOutfitProvider").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitGenerate").assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsentText").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitPolicyDetails").assertDoesNotExist()
         assertEquals("An unresolved prior request prevents a second paid generation", ticket, vm.state.ticket)
@@ -90,9 +90,9 @@ class P50ServerProviderDisclosureUiTest {
         vm.invalidateConnection()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo?.notice == "Revised synthetic processing disclosure." && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료").performClick()
+        compose.onNodeWithTag("serverOutfitCancel").assertTextEquals("대기 종료").performClick()
         await { vm.state.phase == "interrupted" && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitError").performScrollTo()
             .assertTextEquals("요청 상태를 확인하지 못했어요. 기존 요청만 조회할 수 있어요.")

@@ -166,16 +166,17 @@ class P36DragUiTest {
         drag("pants-a"); compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.BOTTOM]!=null}}
         val top=vm.worn.getValue(FitSlot.TOP)
         val pants=vm.worn.getValue(FitSlot.BOTTOM)
-        compose.onNodeWithTag("manualScale").assertIsDisplayed()
-        compose.onNodeWithTag("manualScaleUp").assertIsDisplayed().performClick()
-        compose.onNodeWithTag("manualAlpha").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.55f) }
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScale").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("manualScaleUp").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.55f) }
         compose.runOnIdle {
             assertEquals(top,vm.worn[FitSlot.TOP])
             assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])
             assertEquals(.55f,vm.overlayAlpha,.001f)
             vm.activeSlot=FitSlot.TOP
         }
-        compose.onNodeWithTag("manualScaleDown").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("manualScaleDown").performScrollTo().assertIsDisplayed().performClick()
         compose.runOnIdle {
             assertEquals(top.copy(scale=.9f),vm.worn[FitSlot.TOP])
             assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])

@@ -153,18 +153,18 @@ class ServerOutfitVtonViewModel(
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: DeviceVtonPreparationFailure) {
                 logFailure("image_preparation", failure.safeCode)
-                state = state.copy(phase = "failed", result = null, error = failure.message,
+                state = state.copy(phase = "failed", error = failure.message,
                     failureCode = failure.safeCode, failureStage = "image_preparation")
             } catch (failure: DeviceVtonFailure) {
                 logFailure(activeStage, "input_validation")
-                state = state.copy(phase = "failed", result = null,
+                state = state.copy(phase = "failed",
                     error = if (activeStage == "result_png") "받은 결과 PNG가 손상됐어요. 같은 작업 번호로 상태만 다시 확인해주세요." else failure.message,
                     failureCode = if (activeStage == "result_png") "result_png_invalid" else "input_validation",
                     failureStage = activeStage)
             } catch (failure: OutfitServerFailure) {
                 logFailure(activeStage, failure.code, failure.httpStatus)
                 if (failure.code in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
-                state = state.copy(phase = "blocked", result = null,
+                state = state.copy(phase = "blocked",
                     error = ServerOutfitVtonRepository.friendlyFailure(failure),
                     failureCode = failure.code, failureStage = activeStage)
             } catch (_: OutOfMemoryError) {
@@ -184,7 +184,7 @@ class ServerOutfitVtonViewModel(
                 }
                 logFailure(activeStage, code)
                 if (activeStage == "submit_request") unresolvedRequestId = state.ticket?.id
-                state = state.copy(phase = "blocked", result = null,
+                state = state.copy(phase = "blocked",
                     error = ServerOutfitVtonRepository.friendly(code),
                     failureCode = code, failureStage = activeStage)
             }
@@ -231,7 +231,7 @@ class ServerOutfitVtonViewModel(
                 throw OutfitServerFailure("account_changed")
             }
             val id = UUID.randomUUID().toString()
-            state = state.copy(phase = "preparing", result = null, previous = false)
+            state = state.copy(phase = "preparing")
             markStage("image_preparation")
             val job = preparer(context.applicationContext, id, frozen,
                 config.imageSpec())
@@ -251,7 +251,7 @@ class ServerOutfitVtonViewModel(
             markStage("ticket_write")
             store!!.write(ticket) // Synchronous atomic metadata commit, before first byte of POST.
             original = job.person.bytes
-            state = state.copy(ticket = ticket, status = null, phase = "submitting")
+            state = state.copy(ticket = ticket, status = null, phase = "submitting", result = null, previous = false)
             markStage("submit_request")
             val first = gateway.submit(session, ticket, body)
             sessionFor(ticket)
