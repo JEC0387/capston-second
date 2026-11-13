@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Checkroom
@@ -215,8 +217,12 @@ private fun ProductGrid(
                 verticalAlignment = Alignment.CenterVertically) {
                 Text("가격·재고는 실시간이 아니에요.", Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall, color = FashionMuted)
-                Text(if (if (atTop) introExpanded else showDetailsHere) "접기" else "안내 보기",
-                    style = MaterialTheme.typography.labelMedium, color = BrownDark)
+                val expanded = if (atTop) introExpanded else showDetailsHere
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "안내 접기" else "안내 펼치기",
+                    tint = BrownDark
+                )
             }
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {

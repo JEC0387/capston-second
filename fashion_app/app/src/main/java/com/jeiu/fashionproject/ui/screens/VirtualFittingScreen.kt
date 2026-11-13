@@ -397,7 +397,6 @@ internal class ManualFittingViewModel : ViewModel() {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=false,onBack: () -> Unit) {
     val context = LocalContext.current
@@ -892,13 +891,12 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
             }
         }
 
-        FlowRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
-            maxItemsInEachRow = if (compact) 2 else 1, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val generateAction: @Composable (Modifier) -> Unit = { actionModifier ->
             if (!avatarMode) Button(onClick = {
                 if (!manual.openServerOutfit(currentDeviceSelection))
                     inputNotice = "전신 사진과 상의·하의·신발을 하나씩 선택해주세요."
             }, enabled = currentDeviceSelection?.hasCompleteOutfit() == true,
-                modifier = (if (compact) Modifier.weight(1f) else Modifier.fillMaxWidth()).heightIn(min = 48.dp).testTag("aiTryOnWand"),
+                modifier = actionModifier.heightIn(min = 48.dp).testTag("aiTryOnWand"),
                 shape = FashionActionShape) {
                 if (!compact) {
                     Icon(Icons.Filled.AutoFixHigh, contentDescription = null)
@@ -906,10 +904,24 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                 }
                 Text("AI로 입어보기")
             }
+        }
+        val adjustAction: @Composable (Modifier) -> Unit = { actionModifier ->
             OutlinedButton(onClick = { adjustmentExpanded = !adjustmentExpanded },
-                shape = FashionActionShape, modifier = (if (compact) Modifier.weight(1f) else Modifier.fillMaxWidth()).heightIn(min = 48.dp)
+                shape = FashionActionShape, modifier = actionModifier.heightIn(min = 48.dp)
                     .testTag("fittingAdjustToggle")) {
                 Text(if (adjustmentExpanded) "직접 조절 닫기" else "직접 조절")
+            }
+        }
+        val actionBar = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
+        if (compact && !avatarMode) {
+            Row(actionBar, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                generateAction(Modifier.weight(1f))
+                adjustAction(Modifier.weight(1f))
+            }
+        } else {
+            Column(actionBar) {
+                generateAction(Modifier.fillMaxWidth())
+                adjustAction(Modifier.fillMaxWidth())
             }
         }
 

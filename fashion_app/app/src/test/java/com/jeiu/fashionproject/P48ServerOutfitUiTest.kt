@@ -109,13 +109,13 @@ class P48ServerOutfitUiTest {
         compose.onNodeWithTag("serverOutfitConsentConfirm").performClick()
         await { vm.state.result != null && !vm.state.busy }
         assertEquals(1, posts)
-        compose.onNodeWithTag("serverOutfitResultImage").performScrollTo().assertExists()
+        compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).performScrollTo().assertExists()
         compose.onNodeWithTag("serverOutfitPersonPreview").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitShowOriginal").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitOriginalImage").assertExists()
-        compose.onNodeWithTag("serverOutfitResultImage").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitOriginalImage", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitShowResult").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitResultImage").assertExists()
+        compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("serverOutfitSave").performClick()
         compose.onNodeWithTag("serverOutfitOpen").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitSave").assertIsNotEnabled()
@@ -132,7 +132,7 @@ class P48ServerOutfitUiTest {
             compose.onNodeWithText("닫기").performClick()
             compose.onNodeWithTag("serverOutfitChangeClothes").performClick()
             compose.runOnIdle { showing.value = true }
-            compose.onNodeWithTag("serverOutfitResultImage").assertExists()
+            compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).assertExists()
             assertEquals(1, posts)
         } finally { target.delete() }
     }

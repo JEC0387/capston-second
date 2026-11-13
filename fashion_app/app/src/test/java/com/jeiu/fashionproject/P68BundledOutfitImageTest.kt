@@ -196,7 +196,9 @@ class P68BundledOutfitImageTest {
             compose.onNodeWithTag("serverOutfitError").performScrollTo()
                 .assertTextEquals(checkNotNull(userFacingTryOnError("image_processing_failed", false)))
             compose.onNodeWithTag("serverOutfitPersonPreview").assertExists()
-            DeviceGarmentRole.entries.forEach { compose.onNodeWithTag("serverOutfitGarment_${it.name}").assertExists() }
+            DeviceGarmentRole.entries.forEach {
+                compose.onNodeWithTag("serverOutfitGarment_${it.name}", useUnmergedTree = true).assertExists()
+            }
         } finally { model.viewModelScope.cancel() }
     }
 }

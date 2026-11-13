@@ -40,7 +40,7 @@ class BodyAnalysisResultUiTest {
     private fun showResult(measured: BodyMeasurements?) {
         val model = BodyAnalysisViewModel(app)
         val result = BodyAnalysisResult("균형형", .8f, .65f, .75f,
-            .47f, listOf("어깨와 골반 비율이 비슷해요"), listOf("기본 핏 참고"),
+            .47f, listOf("어깨와 골반 비율이 비슷해요"), listOf("기본 핏 참고", "두 번째 스타일 참고"),
             measurements = measured)
         val field = BodyAnalysisViewModel::class.java.getDeclaredField("_state")
         field.isAccessible = true
@@ -57,6 +57,8 @@ class BodyAnalysisResultUiTest {
         compose.onNodeWithContentDescription("분석한 사진").assertDoesNotExist()
         compose.onNodeWithText("사진 분석 요약").assertExists()
         compose.onNodeWithText("균형형").assertExists()
+        compose.onNodeWithText("기본 핏 참고").assertExists()
+        compose.onNodeWithText("두 번째 스타일 참고").assertDoesNotExist()
         compose.onNodeWithText("측정 결과 · 키 기준 cm 추정").assertDoesNotExist()
         compose.onNodeWithText("신체 비율 추정 (정면 너비, 둘레 아님)").assertDoesNotExist()
         compose.onNodeWithTag("bodyDetailsExpand").performScrollTo().performClick()
@@ -67,7 +69,7 @@ class BodyAnalysisResultUiTest {
         compose.onNodeWithText("체형 기반 사이즈 추천").assertExists()
         compose.onNodeWithTag("measuredSizeOpen").assertExists()
         compose.onNodeWithTag("bodyStyleExpand").performScrollTo().performClick()
-        compose.onNodeWithText("기본 핏 참고").assertExists()
+        compose.onNodeWithText("두 번째 스타일 참고").assertExists()
     }
 
     @Test fun photoMeasurementOpensApprovalBeforeChangingSavedAvatar() {
