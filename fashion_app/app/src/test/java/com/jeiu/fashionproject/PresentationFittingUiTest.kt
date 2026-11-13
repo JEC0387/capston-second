@@ -168,6 +168,7 @@ class PresentationFittingUiTest {
             compose.onNodeWithTag("openExternalTryOnFromFitting").assertDoesNotExist()
             compose.onNodeWithTag("openLocalVtonFromFitting").assertDoesNotExist()
         } else {
+            compose.onNodeWithTag("fittingAdjustToggle").performClick()
             compose.onNodeWithTag("fittingAdvancedToggle").performScrollTo().performClick()
             compose.onNodeWithTag("openLocalVtonFromFitting").performScrollTo().assertExists()
         }

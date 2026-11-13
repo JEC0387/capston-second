@@ -1187,19 +1187,17 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
                     Text("아래에서 옷을 고르면 여기에 나와요", style = MaterialTheme.typography.labelMedium, color = FashionMuted)
                 }
                 worn.entries.sortedBy { it.key.ordinal }.forEach { (slot, g) ->
-                    InputChip(
-                        selected = slot == activeSlot,
-                        onClick = { activeSlot = slot },
-                        label = { Text(g.item.name, maxLines = 1) },
-                        trailingIcon = {
+                    Surface(shape = FashionActionShape, color = if (slot == activeSlot) CreamDark else Cream) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { activeSlot = slot }, modifier = Modifier.heightIn(min = 48.dp)
+                                .semantics { selected = slot == activeSlot }) {
+                                Text(g.item.name, maxLines = 1)
+                            }
                             IconButton(onClick = { toggle(g.item) }, modifier = Modifier.size(48.dp)) {
                                 Icon(Icons.Filled.Close, contentDescription = "${g.item.name} 벗기", modifier = Modifier.size(18.dp))
                             }
-                        },
-                        colors = InputChipDefaults.inputChipColors(
-                            selectedContainerColor = BrownDark, selectedLabelColor = White, selectedTrailingIconColor = White
-                        )
-                    )
+                        }
+                    }
                 }
             }
         }
