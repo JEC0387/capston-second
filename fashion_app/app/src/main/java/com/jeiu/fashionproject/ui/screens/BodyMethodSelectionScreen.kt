@@ -29,13 +29,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
-import com.jeiu.fashionproject.ui.components.AvatarSetupCard
+import com.jeiu.fashionproject.ui.components.AvatarAnalysisForm
 import com.jeiu.fashionproject.ui.components.AvatarBodyResultCard
 import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.data.AuthStore
 import com.jeiu.fashionproject.data.BodyMeasurementScope
 import com.jeiu.fashionproject.data.DataAuth
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.ui.theme.*
 
 /** Start with a clear user choice rather than showing photo and avatar controls together. */
@@ -139,11 +139,12 @@ private fun BodyMethodCard(
     }
 }
 
-/** Phase-one avatar entry reuses existing manual measurements and 3D preview. */
+/** One form updates the saved avatar and opens its measured analysis. */
 @Composable
 fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitting:(()->Unit)?=null) {
     val context = LocalContext.current
     val saved by AvatarProfileStore.current.collectAsState()
+    val manual by ManualBodyStore.current.collectAsState()
     val mode by AuthStore.mode.collectAsState()
     val account by AuthStore.account.collectAsState()
     val connection by DataAuth.state.collectAsState()
@@ -151,9 +152,9 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
     var loaded by remember(owner) { mutableStateOf(false) }
     LaunchedEffect(owner) {
         AvatarProfileStore.load(context)
+        ManualBodyStore.load(context)
         loaded = true
     }
-    var manualExpanded by rememberSaveable { mutableStateOf(false) }
     var showAnalysis by rememberSaveable(owner) { mutableStateOf(true) }
     val showResult = owner != null && loaded && showAnalysis && saved != null
     FashionFeatureTheme {
@@ -167,7 +168,7 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
                 fontWeight = FontWeight.Bold, color = CharcoalBlack)
         }
         key(owner, showResult) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 when {
@@ -177,23 +178,11 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
                     !loaded -> Unit
                     owner == null -> Text("계정 연결을 확인한 뒤 3D 치수를 열어주세요.")
                     else -> {
-                        Text("3D 체형을 저장하면 직접 잰 치수로 체형과 추천 핏을 확인할 수 있어요.",
-                            style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
-                        AvatarSetupCard(onSavedForAnalysis = { showAnalysis = true })
-                        if (saved != null) TextButton(onClick = { showAnalysis = true }) { Text("저장한 분석 결과 보기") }
-                        else if (mode == AuthStore.Mode.SIGNED_IN) Text(
-                            "계정별로 치수를 저장해요. 이전 게스트 치수는 게스트에서 확인할 수 있어요.",
-                            style = MaterialTheme.typography.bodySmall, color = FashionMuted
-                        )
-                        OutlinedButton(onClick = { manualExpanded = !manualExpanded },
-                            modifier = Modifier.fillMaxWidth().testTag("avatarManualExpand")) {
-                            Text(if (manualExpanded) "직접 입력한 치수 접기" else "신체 치수 직접 입력")
+                        AvatarAnalysisForm(saved, manual, owner, onAnalyzed = { showAnalysis = true })
+                        TextButton(onClick = onPhotoAnalysis, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("사진으로 체형 분석하기")
                         }
-                        if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = {}, onAvatarSaved = { showAnalysis = true })
                     }
-                }
-                OutlinedButton(onClick = onPhotoAnalysis, modifier = Modifier.fillMaxWidth()) {
-                    Text("사진으로 체형 분석하기")
                 }
                 Spacer(Modifier.height(16.dp))
             }

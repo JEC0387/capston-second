@@ -39,7 +39,7 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
             Text(result.shape?.label ?: if (result.missing.isEmpty()) "체형 유형 판정 보류" else "체형 분석에 필요한 치수가 있어요",
                 style = MaterialTheme.typography.titleLarge, color = CharcoalBlack)
             if (result.missing.isNotEmpty()) {
-                Text("${result.missing.joinToString { it.label }}를 입력하고 ‘줄자로 직접 잰 값’으로 표시해 주세요.")
+                Text("치수 수정에서 ${result.missing.joinToString { it.label }}를 입력해 주세요.")
             }
             result.chestHipDifference?.let { difference ->
                 val evidence = when {
@@ -63,7 +63,6 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
             Text("하의 · " + if (hasBottom) bottomFit else "허리와 엉덩이 둘레를 입력해 상품 실측을 비교해 보세요.")
             Text("사이즈 참고", style = MaterialTheme.typography.titleMedium)
             Text("상품별 어깨·둘레 실측과 비교해 주세요. 소재와 신축성에 따라 착용감이 달라요.", color = FashionMuted)
-            if (result.measurements.values.isNotEmpty()) MeasuredSizeCard(result.measurements)
             OutlinedButton({ details = !details }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyDetails")) {
                 Text(if (details) "상세 신체 치수 접기" else "상세 신체 치수")
             }
@@ -72,14 +71,14 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
                 result.measurements.values.forEach { (dimension, value) ->
                     if (dimension != BodyDimension.HEIGHT) Text("${dimension.label} ${number(value.cm)} cm · 직접 잰 값")
                 }
-                Text("사진 추정과 3D 화면에서만 조절한 값은 분석에서 제외돼요.", color = FashionMuted)
+                if (result.measurements.values.isNotEmpty()) MeasuredSizeCard(result.measurements)
             }
             OutlinedButton(onEdit, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyEdit")) {
                 Text("치수 수정하기")
             }
             onFitting?.let { fitting ->
                 Button(fitting, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyFitting")) {
-                    Text("이 체형으로 가상피팅하기")
+                    Text("내 체형으로 가상피팅하기")
                 }
             }
         }

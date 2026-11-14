@@ -174,8 +174,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             adjustment("상체 길이",torso,{torso=it},"avatarTorso")
             } else Text("저장된 cm 프로필은 위 줄자 화면에서 조절해요. 다른 출처를 선택하면 변경 전 비교를 거쳐 새 초안을 만들어요.")
             imported?.applied?.forEach { (key,value) -> Text("${key.label}: ${value.cm} cm · ${value.origin.label}") }
-            if(draft.source!=AvatarSource.BMI) Text("빠진 가슴/부위 치수와 앞뒤 깊이는 기본 비율 추정이에요. 둘레→타원 형상은 시각화 가정이며 실제 깊이 측정이 아니에요.")
-            Text("조절값은 3D 메시 너비·관절 높이에 반영돼요. 사진 분석·직접 잰 치수에는 쓰지 않아요.",
+            Text("이 조절값은 3D 미리보기에만 적용돼요.",
                 style=MaterialTheme.typography.bodySmall)
             }
             Text("저장하면 선택한 치수의 숫자·출처 복사본도 이 기기에 남아요. 원본 분석 기록과 별도이며 서버로 전송하지 않아요.",

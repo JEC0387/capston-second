@@ -45,6 +45,21 @@ class AvatarBodyAnalysisTest {
         assertNotNull(BodyProfileRepository.current(null, null, resized))
     }
 
+    @Test fun formChangesUseTheSameRendererAndKeepExactMeasurementsSeparate() {
+        val initial = checkNotNull(AvatarAnalysisInput.build(170f, 65f, emptyMap(), null, 10L))
+        val entered = mapOf(AvatarPart.WAIST to 84.2f, AvatarPart.CHEST to 96f,
+            AvatarPart.HIP to 99f, AvatarPart.SHOULDER to 42f)
+        val preview = checkNotNull(AvatarAnalysisInput.build(170f, 65f, entered, initial, 20L))
+        assertNotEquals(initial.parameters().waistWidthCm, preview.parameters().waistWidthCm)
+        assertEquals(84f, preview.centimeters!![AvatarPart.WAIST], 0f)
+        assertEquals(84.2f, AvatarBodyAnalysis.analyze(preview).measurements[BodyDimension.WAIST_CIRCUMFERENCE]!!.cm, 0f)
+        assertEquals(AvatarValueOrigin.ADJUSTED, preview.centimeters.values.getValue(AvatarPart.WAIST).origin)
+        assertNull(AvatarAnalysisInput.build(170f, 65f, entered + (AvatarPart.HIP to 10f), preview, 30L))
+        val removed = checkNotNull(AvatarAnalysisInput.build(170f, 65f, entered - AvatarPart.WAIST, preview, 30L))
+        assertNull(AvatarBodyAnalysis.analyze(removed).shape)
+        assertNull(AvatarBodyAnalysis.analyze(removed).measurements[BodyDimension.WAIST_CIRCUMFERENCE])
+    }
+
     @Test fun missingAndInvalidInputsNeverBecomeATypeOrAFallbackMeasurement() {
         val inferred = checkNotNull(AvatarCentimeters.generate(170f, 65f, 10))
         val reference = inferred.copy(references = mapOf(

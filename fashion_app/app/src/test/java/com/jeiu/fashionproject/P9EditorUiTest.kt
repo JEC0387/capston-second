@@ -1,8 +1,12 @@
 package com.jeiu.fashionproject
 
 import android.app.Application
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -11,7 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.components.PremiumAvatarEditor
-import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
+import com.jeiu.fashionproject.ui.components.AvatarSetupCard
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -141,8 +145,7 @@ class P9EditorUiTest {
     }
     @Test fun setupAndLegacySaveDoNotDropACmProfile() {
         AvatarProfileStore.save(app,initial)
-        compose.setContent {BodyAvatarSetupScreen({}, {})}
-        compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+        compose.setContent { Column(Modifier.verticalScroll(rememberScrollState())) { AvatarSetupCard() } }
         compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
         compose.onNodeWithTag("premiumAvatarEditor").assertIsDisplayed()
         compose.onNodeWithContentDescription("3D 조절 닫기").performClick()
