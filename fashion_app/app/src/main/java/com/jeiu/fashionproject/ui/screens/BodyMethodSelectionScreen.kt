@@ -73,7 +73,7 @@ fun BodyMethodSelectionScreen(
         )
         BodyMethodCard(
             title = "내 3D 체형 만들기",
-            description = "내 치수로 아바타를 만들고 옷을 입혀봐요.",
+            description = "내 치수로 아바타를 만들고 체형을 확인해요.",
             icon = { Icon(Icons.Filled.AccessibilityNew, contentDescription = null, tint = BrownDark) },
             onClick = onAvatarSetup,
             tag = "bodyMethodAvatar"
@@ -141,7 +141,7 @@ private fun BodyMethodCard(
 
 /** One form updates the saved avatar and opens its measured analysis. */
 @Composable
-fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitting:(()->Unit)?=null) {
+fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
     val context = LocalContext.current
     val saved by AvatarProfileStore.current.collectAsState()
     val manual by ManualBodyStore.current.collectAsState()
@@ -156,7 +156,7 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
         ManualBodyStore.load(context)
         loaded = true
     }
-    var showAnalysis by rememberSaveable(owner) { mutableStateOf(true) }
+    var showAnalysis by rememberSaveable(owner) { mutableStateOf(false) }
     val showResult = owner != null && loaded && showAnalysis && saved != null
     FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
@@ -174,7 +174,7 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
                 verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 when {
                     showResult -> AvatarBodyResultCard(
-                        checkNotNull(saved), onEdit = { showAnalysis = false }, onFitting = onFitting
+                        checkNotNull(saved), onEdit = { showAnalysis = false }
                     )
                     !loaded -> Unit
                     owner == null -> Text("계정 연결을 확인한 뒤 3D 치수를 열어주세요.")

@@ -234,7 +234,7 @@ fun MyPageScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Person, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
-                    Text("체형", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Text("사진 체형", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
                 }
                 Box(
                     modifier = Modifier
@@ -244,7 +244,7 @@ fun MyPageScreen(
                 ) {
                     // 이번 실행에서 분석한 결과가 있으면 그것, 없으면 서버에 저장된 최근 결과 (둘 다 없으면 안내)
                     Text(
-                        shownBodyType ?: "분석 전",
+                        shownBodyType ?: "사진 분석 전",
                         style = MaterialTheme.typography.labelLarge,
                         color = if (shownBodyType != null) Brown else MediumGray,
                         fontWeight = FontWeight.SemiBold

@@ -16,7 +16,7 @@ import java.util.Locale
 import kotlin.math.abs
 
 @Composable
-internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, onFitting: (() -> Unit)?) {
+internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit) {
     val result = remember(profile) { AvatarBodyAnalysis.analyze(profile) }
     var details by rememberSaveable { mutableStateOf(false) }
     fun number(value: Float): String = String.format(Locale.KOREA, "%.1f", value)
@@ -27,7 +27,7 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
     }
     val bottomFit = when (result.shape) {
         CircumferenceShape.HIP_DOMINANT -> "엉덩이에 여유가 있는 스트레이트핏부터 비교해 보세요."
-        CircumferenceShape.DEFINED_WAIST -> "허리와 엉덩이 치수를 모두 확인하고 허리를 조절할 수 있는 하의도 비교해 보세요."
+        CircumferenceShape.DEFINED_WAIST -> "허리와 엉덩이에 맞는 조절형 하의를 비교해 보세요."
         else -> "허리와 엉덩이 실측을 기준으로 기본핏부터 비교해 보세요."
     }
 
@@ -62,7 +62,7 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
             Text("상의 · " + if (hasTop) topFit else "어깨 너비와 가슴 둘레를 입력하면 상품 실측표와 비교할 수 있어요.")
             Text("하의 · " + if (hasBottom) bottomFit else "허리와 엉덩이 둘레를 입력해 상품 실측을 비교해 보세요.")
             Text("사이즈 참고", style = MaterialTheme.typography.titleMedium)
-            Text("상품별 어깨·둘레 실측과 비교해 주세요. 소재와 신축성에 따라 착용감이 달라요.", color = FashionMuted)
+            Text("상품 실측표와 비교해 주세요. 소재·신축성에 따라 달라요.", color = FashionMuted)
             OutlinedButton({ details = !details }, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyDetails")) {
                 Text(if (details) "상세 신체 치수 접기" else "상세 신체 치수")
             }
@@ -76,11 +76,7 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit, on
             OutlinedButton(onEdit, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyEdit")) {
                 Text("치수 수정하기")
             }
-            onFitting?.let { fitting ->
-                Button(fitting, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyFitting")) {
-                    Text("내 체형으로 가상피팅하기")
-                }
-            }
+
         }
     }
 }

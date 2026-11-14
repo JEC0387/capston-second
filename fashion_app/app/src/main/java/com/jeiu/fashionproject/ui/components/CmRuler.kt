@@ -24,7 +24,7 @@ import kotlin.math.*
 /** A moving tape beneath a fixed centre marker. The caller's cm value is the only displayed state. */
 @Composable
 fun CmRuler(value:Float,range:ClosedFloatingPointRange<Float>,label:String,onValueChange:(Float)->Unit,
-    onDirectInput:()->Unit,modifier:Modifier=Modifier) {
+    onDirectInput:()->Unit,modifier:Modifier=Modifier,showDirectInputAction:Boolean=true) {
     val density=LocalDensity.current
     val pixelsPerCm=with(density){16.dp.toPx()}
     val textSize=with(density){13.sp.toPx()}
@@ -78,7 +78,7 @@ fun CmRuler(value:Float,range:ClosedFloatingPointRange<Float>,label:String,onVal
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             OutlinedButton(onClick={onValueChange(CmRulerMath.drag(value-.5f,0f,pixelsPerCm,range))},
                 enabled=value>range.start,modifier=Modifier.testTag("rulerMinus")) {Text("−0.5 cm")}
-            TextButton(onClick=onDirectInput,modifier=Modifier.testTag("rulerDirectInput")) {Text("직접 입력")}
+            if(showDirectInputAction)TextButton(onClick=onDirectInput,modifier=Modifier.testTag("rulerDirectInput")) {Text("직접 입력")}
             OutlinedButton(onClick={onValueChange(CmRulerMath.drag(value+.5f,0f,pixelsPerCm,range))},
                 enabled=value<range.endInclusive,modifier=Modifier.testTag("rulerPlus")) {Text("+0.5 cm")}
         }

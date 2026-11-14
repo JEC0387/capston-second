@@ -270,7 +270,6 @@ fun AppNavigation() {
             composable(Screen.BodyAnalysisAvatar.route) {
                 BodyAvatarSetupScreen(
                     onBack = { navController.popBackStack() },
-                    onFitting={navController.navigate(Screen.VirtualFitting.route+"?avatar=true")},
                     onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
                 )
             }
