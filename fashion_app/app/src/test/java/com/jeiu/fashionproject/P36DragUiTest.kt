@@ -148,15 +148,16 @@ class P36DragUiTest {
     fun narrowScreenDropsAllCategoriesAndReplacingOnePreservesTheOthers() {
         for ((id,slot) in listOf("top-a" to FitSlot.TOP,"pants-a" to FitSlot.BOTTOM,"shoes-a" to FitSlot.SHOES)) {
             drag(id)
-            compose.waitUntil(10000) {vm.worn[slot]?.item?.id==id}
+            // Decoding resumes on Main; drain that queue just as the other drag cases do.
+            compose.waitUntil(10000) {compose.runOnIdle {vm.worn[slot]?.item?.id==id}}
         }
         val top=vm.worn.getValue(FitSlot.TOP); val shoes=vm.worn.getValue(FitSlot.SHOES)
         drag("pants-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.BOTTOM]?.item?.id=="pants-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.BOTTOM]?.item?.id=="pants-b"}}
         compose.runOnIdle {assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(shoes,vm.worn[FitSlot.SHOES])}
         val pants=vm.worn.getValue(FitSlot.BOTTOM)
         drag("shoes-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.SHOES]?.item?.id=="shoes-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.SHOES]?.item?.id=="shoes-b"}}
         compose.runOnIdle {assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertEquals(3,vm.worn.size)}
         compose.onNodeWithTag("photoDropUndo").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(shoes,vm.worn[FitSlot.SHOES]);assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertTrue(vm.avatarWorn.isEmpty())}
