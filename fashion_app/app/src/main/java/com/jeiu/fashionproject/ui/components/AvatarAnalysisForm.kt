@@ -44,17 +44,17 @@ internal fun AvatarAnalysisForm(
         return value.origin == AvatarValueOrigin.ADJUSTED &&
             original[part]?.let { AvatarCentimeters.snap(it) != value.cm } != false
     }
-    var fields by rememberSaveable(owner) { mutableStateOf(ArrayList(parts.map { part ->
+    var fields by rememberSaveable(owner) { mutableStateOf<List<String>>(ArrayList(parts.map { part ->
         val value = initial?.centimeters?.values?.get(part)
         if (hasSeparateAdjustment(part)) value?.cm.toString()
         else original[part]?.toString().orEmpty()
     })) }
-    var kinds by rememberSaveable(owner) { mutableStateOf(ArrayList(parts.map { part ->
+    var kinds by rememberSaveable(owner) { mutableStateOf<List<String>>(ArrayList(parts.map { part ->
         if (hasSeparateAdjustment(part)) AvatarValueOrigin.ADJUSTED.name
         else if (part in original) AvatarValueOrigin.MANUAL.name else AvatarValueOrigin.AUTO.name
     })) }
     // A visual adjustment preserves real tape references until explicitly confirmed.
-    var references by rememberSaveable(owner) { mutableStateOf(ArrayList(parts.map { original[it]?.toString().orEmpty() })) }
+    var references by rememberSaveable(owner) { mutableStateOf<List<String>>(ArrayList(parts.map { original[it]?.toString().orEmpty() })) }
     var direct by rememberSaveable(owner) { mutableStateOf(false) }
     var selectedName by rememberSaveable(owner) { mutableStateOf(AvatarPart.WAIST.name) }
     val selected = AvatarPart.valueOf(selectedName)
