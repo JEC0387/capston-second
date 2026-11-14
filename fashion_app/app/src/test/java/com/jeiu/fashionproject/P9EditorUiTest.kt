@@ -142,6 +142,7 @@ class P9EditorUiTest {
     @Test fun setupAndLegacySaveDoNotDropACmProfile() {
         AvatarProfileStore.save(app,initial)
         compose.setContent {BodyAvatarSetupScreen({}, {})}
+        compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
         compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
         compose.onNodeWithTag("premiumAvatarEditor").assertIsDisplayed()
         compose.onNodeWithContentDescription("3D 조절 닫기").performClick()
