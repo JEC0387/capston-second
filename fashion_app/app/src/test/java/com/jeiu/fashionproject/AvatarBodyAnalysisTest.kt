@@ -6,6 +6,7 @@ import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.recommend.*
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +18,7 @@ import org.robolectric.annotation.Config
 class AvatarBodyAnalysisTest {
     private val app = ApplicationProvider.getApplicationContext<Application>()
 
-    @After fun clearFixtures() {
+    @Before @After fun clearFixtures() {
         app.getSharedPreferences("auth", 0).edit().clear().commit()
         AuthStore.load(app)
         AvatarProfileStore.clear(app)
