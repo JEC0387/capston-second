@@ -148,7 +148,8 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
     val mode by AuthStore.mode.collectAsState()
     val account by AuthStore.account.collectAsState()
     val connection by DataAuth.state.collectAsState()
-    val owner = remember(mode, account, connection) { BodyMeasurementScope.current() }
+    val ownershipRevision by BodyMeasurementScope.revision.collectAsState()
+    val owner = remember(mode, account, connection, ownershipRevision) { BodyMeasurementScope.current() }
     var loaded by remember(owner) { mutableStateOf(false) }
     LaunchedEffect(owner) {
         AvatarProfileStore.load(context)

@@ -15,7 +15,7 @@ import java.net.URI
 import java.net.URL
 
 /** One immutable token/destination pair is swapped atomically after secure persistence. */
-internal data class ServerBoundToken(val token: String, val server: String) {
+internal data class ServerBoundToken(val token: String, val server: String, val accountId: String? = null) {
     fun forDestination(currentServer: String, url: URL): String? = token.takeIf {
         server == currentServer && url.protocol == "https" && url.toString().startsWith(server + "/")
     }
@@ -31,6 +31,9 @@ object DataAuth {
     @Volatile private var requestedRecovery: String? = null
     @Volatile private var requestedRecoveryServer: String? = null
     @Volatile private var binding: ServerBoundToken? = null
+    // Only mappings established by an authenticated server response enter this vault.
+    // Old hashes are migration provenance, not the new account storage identity.
+    @Volatile private var bodyOwners: Map<String, String> = emptyMap()
     private val token: String? get() = binding?.token
     private val origin: String? get() = binding?.server
     @Volatile private var enabled = false
@@ -50,6 +53,16 @@ object DataAuth {
     val canSync: Boolean get() = !storageLocked && accessToken != null && enabled && !restorePending &&
         (!::context.isInitialized || !RestoreJournal.hasPending(context))
     val isRestorePending: Boolean get() = restorePending
+    internal fun bodyScope(mode: AuthStore.Mode): String? {
+        val captured = binding
+        val usable = captured?.takeIf { it.server == BackendApi.BASE_URL && canSync && binding === captured }
+        return BodyMeasurementScope.resolve(mode, restorePending, usable?.token,
+            captured?.server ?: BackendApi.BASE_URL, usable?.accountId)
+    }
+    internal fun bodyLegacyScopes(scope: String): List<String> =
+        if (bodyScope(AuthStore.mode.value) == scope) bodyOwners.filterValues { it == scope }.keys.toList() else emptyList()
+
+    private fun JSONObject.bodyAccountId(): String? = optString("accountId").takeIf(BodyMeasurementScope::validAccountId)
     val legacyDeviceId: String? get() = if (::context.isInitialized)
         context.getSharedPreferences("db_sync", Context.MODE_PRIVATE).getString("device_id", null) else null
 
@@ -74,7 +87,15 @@ object DataAuth {
             _state.value = "secure_storage_unavailable"
             return
         }
-        binding = access?.let { ServerBoundToken(it, savedOrigin) }
+        binding = access?.let { ServerBoundToken(it, savedOrigin,
+            saved.optString("body_account_id").takeIf(BodyMeasurementScope::validAccountId)) }
+        bodyOwners = saved.optJSONObject("body_legacy_owners")?.let { owners ->
+            owners.keys().asSequence().mapNotNull { key ->
+                val target = owners.optString(key)
+                if (Regex("account_[a-f0-9]{64}_").matches(key) && Regex("account_v2_[a-f0-9]{64}_").matches(target))
+                    key to target else null
+            }.toMap()
+        } ?: emptyMap()
         enabled = saved.optBoolean("enabled", false)
         restorePending = saved.optBoolean("restore_pending", false)
         legacyPending = saved.optBoolean("legacy_pending", token == null && legacyDeviceId != null)
@@ -90,14 +111,26 @@ object DataAuth {
     @Synchronized private fun persist(access: String?, recovery: String?, dataEnabled: Boolean,
                         pending: Boolean, oldAccount: Boolean, server: String = origin ?: BackendApi.BASE_URL,
                         requestedRecovery: String? = this.requestedRecovery,
-                        requestedRecoveryServer: String? = this.requestedRecoveryServer): Boolean {
+                        requestedRecoveryServer: String? = this.requestedRecoveryServer,
+                        accountId: String? = binding?.takeIf { it.token == access && it.server == server }?.accountId): Boolean {
+        val previousScope = bodyScope(AuthStore.mode.value)
+        val verifiedId = accountId?.takeIf(BodyMeasurementScope::validAccountId)
+        val owners = bodyOwners.toMutableMap()
+        if (access != null && verifiedId != null) {
+            // A legacy claim may change the owner without changing the token. Never
+            // reassign an already proven source prefix to that different account.
+            owners.putIfAbsent(BodyMeasurementScope.legacyScope(server, access),
+                BodyMeasurementScope.accountScope(server, verifiedId))
+        }
         val saved = JSONObject().put("enabled", dataEnabled).put("restore_pending", pending)
             .put("legacy_pending", oldAccount).put("token", access).put("recovery", recovery)
             .put("origin", if (access == null) null else server).put("requested_recovery", requestedRecovery)
             .put("requested_recovery_server", if (requestedRecovery == null) null else requestedRecoveryServer)
+            .put("body_account_id", verifiedId).put("body_legacy_owners", JSONObject(owners as Map<*, *>))
         if (!runCatching { vault.write(saved) }.getOrDefault(false)) {
             storageLocked = true
             _state.value = "secure_storage_unavailable"
+            BodyMeasurementScope.refresh(context)
             return false
         }
         storageLocked = false
@@ -106,7 +139,8 @@ object DataAuth {
         this.requestedRecoveryServer = if (requestedRecovery == null) null else requestedRecoveryServer
         restorePending = pending
         legacyPending = oldAccount
-        binding = access?.let { ServerBoundToken(it, server) }
+        bodyOwners = owners.toMap()
+        binding = access?.let { ServerBoundToken(it, server, verifiedId) }
         enabled = dataEnabled
         _state.value = when {
             pending -> "restore_pending"
@@ -114,6 +148,7 @@ object DataAuth {
             access != null && dataEnabled -> "ready"
             else -> "waiting"
         }
+        if (previousScope != bodyScope(AuthStore.mode.value)) BodyMeasurementScope.refresh(context)
         return true
     }
 
@@ -167,7 +202,8 @@ object DataAuth {
         val access = json.optString("accessToken")
         val recovery = json.optString("recoveryCode")
         if (access.length < 40 || recovery.length < 40) return@withLock false
-        if (!persist(access, recovery, json.optBoolean("dataEnabled"), false, legacyPending, response.server)) return@withLock false
+        if (!persist(access, recovery, json.optBoolean("dataEnabled"), false, legacyPending, response.server,
+                accountId = json.bodyAccountId())) return@withLock false
         canSync
     }
 
@@ -180,8 +216,12 @@ object DataAuth {
             if (reply?.server != BackendApi.BASE_URL) return@withLock false
             if (reply.code == 401) { markUnauthorized(access); return@withLock false }
             if (reply.code != 200) return@withLock false
-            val dataEnabled = runCatching { JSONObject(reply.body).getBoolean("dataEnabled") }.getOrDefault(false)
+            val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return@withLock false
+            val dataEnabled = runCatching { json.getBoolean("dataEnabled") }.getOrDefault(false)
             if (!dataEnabled) return@withLock false
+            if (json.optBoolean("authenticated") && json.bodyAccountId() != null &&
+                !persist(access, recoveryCode, enabled, restorePending, legacyPending, reply.server,
+                    accountId = json.bodyAccountId())) return@withLock false
             canSync
         }
     }
@@ -201,6 +241,7 @@ object DataAuth {
     /** A recovery code rotates the server access token and pauses sync until restore completes. */
     suspend fun recover(code: String): Boolean = lock.withLock {
         if (!::context.isInitialized || !Regex("[A-Za-z0-9_-]{40,100}").matches(code)) return@withLock false
+        if (!captureLegacyBodyOwner()) return@withLock false
         // Persist the intended account/server before rotation, including lost responses/process death.
         val destination = BackendApi.BASE_URL
         if (!persist(token, recoveryCode, enabled, true, legacyPending, requestedRecovery = code,
@@ -210,7 +251,8 @@ object DataAuth {
         val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return@withLock false
         val access = json.optString("accessToken")
         if (access.length < 40) return@withLock false
-        persist(access, code, json.optBoolean("dataEnabled"), true, false, reply.server, requestedRecovery = null)
+        persist(access, code, json.optBoolean("dataEnabled"), true, false, reply.server, requestedRecovery = null,
+            accountId = json.bodyAccountId())
     }
 
     /** Only an operator-issued ticket can attach old server data; sync stays paused for restore. */
@@ -222,7 +264,8 @@ object DataAuth {
             if (!persist(access, recoveryCode, false, true, true, requestedRecovery = null)) return@withLock false
             val reply = call("/api/auth/claim-legacy", JSONObject().put("ticket", ticket), access)
             if (reply?.code != 200 || reply.server != BackendApi.BASE_URL) return@withLock false
-            persist(access, recoveryCode, true, true, false)
+            persist(access, recoveryCode, true, true, false,
+                accountId = runCatching { JSONObject(reply.body).bodyAccountId() }.getOrNull())
         }
     }
 
@@ -241,6 +284,7 @@ object DataAuth {
         ensureReady()
         lock.withLock {
             val access = accessToken ?: return@withLock null
+            if (!captureLegacyBodyOwner()) return@withLock null
             val reply = call(path, body, access) ?: return@withLock null
             if (reply.server != BackendApi.BASE_URL) return@withLock null
             if (reply.code == 401) {
@@ -274,7 +318,11 @@ object DataAuth {
                     val rotated = json.optString("accessToken")
                     if (!Regex("[A-Za-z0-9_-]{40,100}").matches(rotated)) return@withLock null
                     // The other account's recovery code is not known here; Google/Kakao login is its recovery.
-                    if (!persist(rotated, null, true, true, false, reply.server, requestedRecovery = null)) return@withLock null
+                    if (!persist(rotated, null, true, true, false, reply.server, requestedRecovery = null,
+                            accountId = json.bodyAccountId())) return@withLock null
+                } else if (json.bodyAccountId() != null) {
+                    if (!persist(access, recoveryCode, enabled, restorePending, legacyPending, reply.server,
+                            accountId = json.bodyAccountId())) return@withLock null
                 }
                 // Secrets stay inside DataAuth; callers only see account metadata.
                 json.remove("accessToken"); json.remove("recoveryCode")
@@ -293,6 +341,20 @@ object DataAuth {
         return if (code != null) recover(code) else reconcileClaim()
     }
 
+    /** Before rotating a still-valid P69 token, prove only that token's legacy
+     * record owner. A failed/expired probe never adopts its data into the target. */
+    private suspend fun captureLegacyBodyOwner(): Boolean {
+        val current = binding ?: return true
+        if (current.accountId != null || current.server != BackendApi.BASE_URL ||
+            !BodyMeasurementScope.hasLegacyRecord(context, current.server, current.token)) return true
+        val reply = call("/api/auth/status", JSONObject(), current.token, "GET", current.server) ?: return true
+        if (reply.code != 200 || reply.server != BackendApi.BASE_URL) return true
+        val json = runCatching { JSONObject(reply.body) }.getOrNull() ?: return true
+        if (!json.optBoolean("authenticated")) return true
+        val id = json.bodyAccountId() ?: return true
+        return persist(current.token, recoveryCode, enabled, restorePending, legacyPending, current.server, accountId = id)
+    }
+
     /** Reconcile a successful server claim whose response was lost before local persistence. */
     suspend fun reconcileClaim(): Boolean = lock.withLock {
         if (!restorePending || !legacyPending) return@withLock true
@@ -300,7 +362,8 @@ object DataAuth {
         val reply = call("/api/auth/status", JSONObject(), access, "GET")
         if (reply?.code != 200 || reply.server != BackendApi.BASE_URL) return@withLock false
         val ready = runCatching { JSONObject(reply.body).getBoolean("dataEnabled") }.getOrDefault(false)
-        ready && persist(access, recoveryCode, true, true, false)
+        ready && persist(access, recoveryCode, true, true, false,
+            accountId = runCatching { JSONObject(reply.body).bodyAccountId() }.getOrNull())
     }
 
     fun completeRestore(): Boolean {
@@ -311,7 +374,6 @@ object DataAuth {
 
     @Synchronized fun markUnauthorized(sentToken: String) {
         if (!::context.isInitialized || accessToken != sentToken) return
-        enabled = false
         persist(token, recoveryCode, false, restorePending, legacyPending)
         _state.value = "reauth_required"
     }
@@ -319,6 +381,7 @@ object DataAuth {
     fun onServerChanged() {
         if (token != null && origin != BackendApi.BASE_URL) _state.value = "server_mismatch"
         else if (canSync) _state.value = "ready"
+        if (::context.isInitialized) BodyMeasurementScope.refresh(context)
     }
 
     fun clearAfterServerDelete() {

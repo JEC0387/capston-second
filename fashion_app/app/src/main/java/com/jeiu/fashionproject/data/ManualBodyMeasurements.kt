@@ -49,7 +49,7 @@ object ManualBodyStore {
 
     @Synchronized
     fun load(context: Context) {
-        val scope = enterScope() ?: return
+        val scope = enterScope(context) ?: return
         if (scope in unconfirmedWrites) return
         try {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -60,6 +60,10 @@ object ManualBodyStore {
                 readOptional(prefs, scope + "hip"), readOptional(prefs, scope + "leg"),
                 readOptional(prefs, scope + "torso"), prefs.getLong(scope + "entered_at", 0L)
             )
+            if (BodyMeasurementScope.current() != scope) {
+                _current.value = null; _saved.value = false
+                return
+            }
             if (value.isValid()) {
                 _current.value = value
                 _saved.value = true
@@ -80,7 +84,7 @@ object ManualBodyStore {
 
     @Synchronized
     fun update(context: Context, value: ManualBodyMeasurements, saveOnDevice: Boolean): Boolean {
-        val scope = enterScope() ?: return false
+        val scope = enterScope(context) ?: return false
         if (!value.isValid()) return false
         if (!commitChange(context, scope) { edit ->
             storedKeys.forEach { edit.remove(scope + it) }
@@ -94,6 +98,7 @@ object ManualBodyStore {
                 }
             }
         }) return false
+        if (BodyMeasurementScope.current() != scope) { _current.value=null; _saved.value=false; return false }
         _current.value = value
         _saved.value = saveOnDevice
         _issue.value = null
@@ -102,7 +107,7 @@ object ManualBodyStore {
 
     @Synchronized
     fun clear(context: Context): Boolean {
-        val scope = enterScope() ?: return false
+        val scope = enterScope(context) ?: return false
         if (!commitChange(context, scope) { edit -> storedKeys.forEach { edit.remove(scope + it) } }) return false
         _current.value = null
         _saved.value = false
@@ -110,13 +115,18 @@ object ManualBodyStore {
         return true
     }
 
-    private fun enterScope(): String? {
+    private fun enterScope(context: Context): String? {
         val scope = BodyMeasurementScope.current()
         if (activeScope != scope) {
             activeScope = scope
             _current.value = null
             _saved.value = false
             _issue.value = null
+        }
+        if (scope != null && !BodyMeasurementScope.prepare(context, PREFS, storedKeys, scope)) {
+            _current.value = null; _saved.value = false
+            _issue.value = "기존 체형 기록을 확인하지 못했어요. 원본은 그대로 보존했어요."
+            return null
         }
         return scope
     }

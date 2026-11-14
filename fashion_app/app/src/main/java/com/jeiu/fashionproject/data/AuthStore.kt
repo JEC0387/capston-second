@@ -83,7 +83,10 @@ object AuthStore {
     private fun saveLocalMode(context: Context, mode: Mode): Boolean {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("mode", mode.name).remove("email").remove("name").remove("provider").remove(KEY_BEARER).commit()
-        if (saved) { _mode.value = mode; _account.value = null; _redirect.value = null }
+        if (saved) {
+            _mode.value = mode; _account.value = null; _redirect.value = null
+            BodyMeasurementScope.refresh(context)
+        }
         return saved
     }
 
@@ -91,7 +94,10 @@ object AuthStore {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString("mode", Mode.SIGNED_IN.name).putString("email", account.email).putString("name", account.name)
             .putString("provider", account.provider.key).putBoolean(KEY_BEARER, true).commit()
-        if (saved) { _mode.value = Mode.SIGNED_IN; _account.value = account }
+        if (saved) {
+            _mode.value = Mode.SIGNED_IN; _account.value = account
+            BodyMeasurementScope.refresh(context)
+        }
         return saved
     }
 

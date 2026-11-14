@@ -97,6 +97,7 @@ object AvatarMeasurementImport {
 object AvatarProfileStore {
     private const val PREFS = "avatar_visual_profile_v1"
     private const val KEY = "profile"
+    private val storedKeys = listOf(KEY, "profile_v1_preserved", "profile_pre_cm_preserved")
     private val _current = MutableStateFlow<AvatarProfile?>(null)
     val current: StateFlow<AvatarProfile?> = _current
     private val _issue = MutableStateFlow<String?>(null)
@@ -130,11 +131,17 @@ object AvatarProfileStore {
             _issue.value = null
             return
         }
+        if (!BodyMeasurementScope.prepare(context, PREFS, storedKeys, scope)) {
+            _current.value = null
+            _issue.value = "기존 체형 기록을 확인하지 못했어요. 원본은 그대로 보존했어요."
+            return
+        }
         val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(scope + KEY,null)}.getOrElse {
             _current.value=null;_issue.value="저장된 3D 형식을 읽지 못했어요. 원본을 보존했어요.";return
         }
         if(raw==null) {_current.value=null;_issue.value=null;return}
         val parsed=decode(raw)
+        if (BodyMeasurementScope.current() != scope) { _current.value=null; _issue.value=null; return }
         _current.value = parsed
         _issue.value = if (parsed == null) "저장된 3D 표시값을 읽지 못했어요. 원본을 보존했어요." else null
     }
@@ -166,6 +173,7 @@ object AvatarProfileStore {
         if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains(scope + "profile_pre_cm_preserved"))
             edit.putString(scope + "profile_pre_cm_preserved",original)
         val ok = edit.putString(scope + KEY, encode(profile)).commit()
+        if (BodyMeasurementScope.current() != scope) { _current.value=null; return false }
         if (ok) _current.value = profile
         return ok
     }
@@ -173,6 +181,7 @@ object AvatarProfileStore {
     @Synchronized
     fun clear(context: Context): Boolean {
         val scope = BodyMeasurementScope.current() ?: return false
+        if (!BodyMeasurementScope.prepare(context, PREFS, storedKeys, scope)) return false
         val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(scope + KEY)
             .remove(scope + "profile_v1_preserved").remove(scope + "profile_pre_cm_preserved").commit()
         if (ok) { _current.value = null; _issue.value = null }

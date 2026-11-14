@@ -98,7 +98,7 @@ def register(request: RegisterRequest, response: Response, db: Session = Depends
         raise HTTPException(503, "auth_schema_unavailable") from None
     response.headers["Cache-Control"] = "no-store"
     return {"accessToken": access, "recoveryCode": recovery,
-            "dataEnabled": not request.legacyPending}
+            "dataEnabled": not request.legacyPending, "accountId": str(user.id)}
 
 
 @router.post("/recover", dependencies=[Depends(budget("recover", 20))])
@@ -118,12 +118,17 @@ def recover(request: RecoveryRequest, response: Response, db: Session = Depends(
         db.rollback()
         raise HTTPException(503, "auth_schema_unavailable") from None
     response.headers["Cache-Control"] = "no-store"
-    return {"accessToken": access, "dataEnabled": credential.data_enabled}
+    return {"accessToken": access, "dataEnabled": credential.data_enabled,
+            "accountId": str(credential.user_id)}
 
 
 @router.get("/status")
-def status(credential: AuthCredential = Depends(current_credential)):
-    return {"authenticated": True, "dataEnabled": credential.data_enabled}
+def status(response: Response, credential: AuthCredential = Depends(current_credential)):
+    # Stable database identity, not a credential or caller-supplied/device ID.
+    # Additive contract; old clients ignore it. No schema migration is needed.
+    response.headers["Cache-Control"] = "no-store"
+    return {"authenticated": True, "dataEnabled": credential.data_enabled,
+            "accountId": str(credential.user_id)}
 
 
 @router.post("/start-fresh")
@@ -131,7 +136,7 @@ def start_fresh(db: Session = Depends(get_db), credential: AuthCredential = Depe
     """Explicit opt-in: local data may now sync to this new account; old server data stays untouched."""
     credential.data_enabled = True
     db.commit()
-    return {"dataEnabled": True}
+    return {"dataEnabled": True, "accountId": str(credential.user_id)}
 
 
 @router.post("/claim-legacy", dependencies=[Depends(budget("claim", 20))])
@@ -162,7 +167,7 @@ def claim_legacy(request: ClaimRequest, db: Session = Depends(get_db),
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(503, "auth_schema_unavailable") from None
-    return {"dataEnabled": True}
+    return {"dataEnabled": True, "accountId": str(credential.user_id)}
 
 
 def issue_legacy_ticket(db: Session, device_id: str, hours: int = 24, *,
