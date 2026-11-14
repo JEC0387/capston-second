@@ -7,11 +7,13 @@ import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 import com.jeiu.fashionproject.data.BodyDimensions
 import com.jeiu.fashionproject.data.ManualBodyMeasurements
 import com.jeiu.fashionproject.data.ManualBodyStore
+import com.jeiu.fashionproject.data.AvatarProfile
 
 /** 세션 측정값을 우선 사용하고, 허용된 경우에만 저장된 서버 기록을 조회한다. */
 object BodyProfileRepository {
-    fun current(manual: ManualBodyMeasurements?, session: BodyMeasurements?): BodyProfile? =
-        BodyProfileAnalyzer.fromDimensions(BodyDimensions.resolve(manual,session))
+    fun current(manual: ManualBodyMeasurements?, session: BodyMeasurements?, avatar: AvatarProfile? = null): BodyProfile? =
+        avatar?.let { BodyProfileAnalyzer.fromDimensions(AvatarBodyAnalysis.measuredDimensions(it)) }
+            ?: BodyProfileAnalyzer.fromDimensions(BodyDimensions.resolve(manual,session))
     fun selectLatest(session: BodyMeasurements?, savedRecords: List<BodyRecord>?): BodyProfile? =
         BodyProfileAnalyzer.fromMeasurements(session) ?: BodyProfileAnalyzer.latestValid(savedRecords)
 

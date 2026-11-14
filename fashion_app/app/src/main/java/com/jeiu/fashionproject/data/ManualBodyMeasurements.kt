@@ -35,6 +35,7 @@ data class ManualBodyMeasurements(
 object ManualBodyStore {
     private const val PREFS = "manual_body_measurements"
     private val keys = listOf("height", "shoulder", "chest", "waist", "hip", "leg", "torso")
+    private val storedKeys = keys + listOf("save", "entered_at")
     private val _current = MutableStateFlow<ManualBodyMeasurements?>(null)
     val current: StateFlow<ManualBodyMeasurements?> = _current
     private val _saved = MutableStateFlow(false)
@@ -43,29 +44,31 @@ object ManualBodyStore {
     val issue: StateFlow<String?> = _issue
     // A failed commit may already have changed SharedPreferences' memory map.
     // Until an explicit retry succeeds, load must not promote those unconfirmed values.
-    private var unconfirmedWriteSnapshot: Map<String, *>? = null
+    private val unconfirmedWrites = mutableMapOf<String, Map<String, *>>()
+    private var activeScope: String? = null
 
     @Synchronized
     fun load(context: Context) {
-        if (unconfirmedWriteSnapshot != null) return
+        val scope = enterScope() ?: return
+        if (scope in unconfirmedWrites) return
         try {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("save", false)) return
-        val value = ManualBodyMeasurements(
-            prefs.getFloat("height", 0f), readOptional(prefs, "shoulder"),
-            readOptional(prefs, "chest"), readOptional(prefs, "waist"),
-            readOptional(prefs, "hip"), readOptional(prefs, "leg"),
-            readOptional(prefs, "torso"), prefs.getLong("entered_at", 0L)
-        )
-        if (value.isValid()) {
-            _current.value = value
-            _saved.value = true
-            _issue.value = null
-        } else {
-            _current.value = null
-            _saved.value = false
-            _issue.value = "저장된 직접 입력값의 범위를 확인해주세요. 기록을 자동으로 삭제하지 않았어요."
-        }
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(scope + "save", false)) return
+            val value = ManualBodyMeasurements(
+                prefs.getFloat(scope + "height", 0f), readOptional(prefs, scope + "shoulder"),
+                readOptional(prefs, scope + "chest"), readOptional(prefs, scope + "waist"),
+                readOptional(prefs, scope + "hip"), readOptional(prefs, scope + "leg"),
+                readOptional(prefs, scope + "torso"), prefs.getLong(scope + "entered_at", 0L)
+            )
+            if (value.isValid()) {
+                _current.value = value
+                _saved.value = true
+                _issue.value = null
+            } else {
+                _current.value = null
+                _saved.value = false
+                _issue.value = "저장된 직접 입력값의 범위를 확인해주세요. 기록을 자동으로 삭제하지 않았어요."
+            }
         } catch (_: Exception) {
             _current.value=null;_saved.value=false
             _issue.value="저장된 직접 입력값의 형식을 읽지 못했어요. 원본을 보존했어요."
@@ -77,16 +80,17 @@ object ManualBodyStore {
 
     @Synchronized
     fun update(context: Context, value: ManualBodyMeasurements, saveOnDevice: Boolean): Boolean {
+        val scope = enterScope() ?: return false
         if (!value.isValid()) return false
-        if (!commitChange(context) { edit ->
-            edit.clear()
+        if (!commitChange(context, scope) { edit ->
+            storedKeys.forEach { edit.remove(scope + it) }
             if (saveOnDevice) {
-                edit.putBoolean("save", true).putLong("entered_at", value.enteredAt)
-                    .putFloat("height", value.heightCm)
+                edit.putBoolean(scope + "save", true).putLong(scope + "entered_at", value.enteredAt)
+                    .putFloat(scope + "height", value.heightCm)
                 listOf(value.shoulderWidthCm, value.chestCircumferenceCm,
                     value.waistCircumferenceCm, value.hipCircumferenceCm,
                     value.legLengthCm, value.torsoLengthCm).forEachIndexed { index, number ->
-                    if (number != null) edit.putFloat(keys[index + 1], number)
+                    if (number != null) edit.putFloat(scope + keys[index + 1], number)
                 }
             }
         }) return false
@@ -98,33 +102,47 @@ object ManualBodyStore {
 
     @Synchronized
     fun clear(context: Context): Boolean {
-        if (!commitChange(context) { it.clear() }) return false
+        val scope = enterScope() ?: return false
+        if (!commitChange(context, scope) { edit -> storedKeys.forEach { edit.remove(scope + it) } }) return false
         _current.value = null
         _saved.value = false
         _issue.value = null
         return true
     }
 
-    private fun commitChange(context: Context, change: (SharedPreferences.Editor) -> Unit): Boolean {
+    private fun enterScope(): String? {
+        val scope = BodyMeasurementScope.current()
+        if (activeScope != scope) {
+            activeScope = scope
+            _current.value = null
+            _saved.value = false
+            _issue.value = null
+        }
+        return scope
+    }
+
+    private fun commitChange(context: Context, scope: String, change: (SharedPreferences.Editor) -> Unit): Boolean {
         val prefs: SharedPreferences
         val previous: Map<String, *>
         try {
             prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            previous = unconfirmedWriteSnapshot ?: prefs.all.toMap()
+            val scopedKeys = storedKeys.map { scope + it }.toSet()
+            previous = unconfirmedWrites[scope] ?: prefs.all.filterKeys { it in scopedKeys }
         } catch (_: Exception) {
             _issue.value = "기기 저장소에 접근하지 못했어요. 마지막으로 확인한 입력값을 유지해요."
             return false
         }
         val committed = runCatching { prefs.edit().let { change(it); it.commit() } }.getOrDefault(false)
         if (committed) {
-            unconfirmedWriteSnapshot = null
+            unconfirmedWrites.remove(scope)
             return true
         }
-        unconfirmedWriteSnapshot = previous
+        unconfirmedWrites[scope] = previous
         // Best-effort compensation restores the cached map too. Disk durability remains
         // unconfirmed on I/O failure; never report this attempt as saved or deleted.
         runCatching {
-            val rollback = prefs.edit().clear()
+            val rollback = prefs.edit()
+            storedKeys.forEach { rollback.remove(scope + it) }
             previous.forEach { (key, value) ->
                 when (value) {
                     is Boolean -> rollback.putBoolean(key, value)

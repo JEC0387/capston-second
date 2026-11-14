@@ -119,8 +119,18 @@ object AvatarProfileStore {
                 } } else emptyMap(),if(schema==3)AvatarCentimeters.fromJson(json.getJSONObject("centimeters")) else null).takeIf { it.valid() }
         }.getOrNull()
 
+    @Synchronized
     fun load(context: Context) {
-        val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY,null)}.getOrElse {
+        loadScope(context, BodyMeasurementScope.current())
+    }
+
+    private fun loadScope(context: Context, scope: String?) {
+        if (scope == null) {
+            _current.value = null
+            _issue.value = null
+            return
+        }
+        val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(scope + KEY,null)}.getOrElse {
             _current.value=null;_issue.value="저장된 3D 형식을 읽지 못했어요. 원본을 보존했어요.";return
         }
         if(raw==null) {_current.value=null;_issue.value=null;return}
@@ -143,23 +153,28 @@ object AvatarProfileStore {
         return json.toString()
     }
 
+    @Synchronized
     fun save(context: Context, profile: AvatarProfile): Boolean {
-        load(context)
+        val scope = BodyMeasurementScope.current() ?: return false
+        loadScope(context, scope)
         if (!profile.valid() || _issue.value != null) return false
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
-        val original=prefs.getString(KEY,null)
+        val original=prefs.getString(scope + KEY,null)
         val edit=prefs.edit()
-        if(original!=null && JSONObject(original).getInt("schema")==1 && !prefs.contains("profile_v1_preserved"))
-            edit.putString("profile_v1_preserved",original)
-        if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains("profile_pre_cm_preserved"))
-            edit.putString("profile_pre_cm_preserved",original)
-        val ok = edit.putString(KEY, encode(profile)).commit()
+        if(original!=null && JSONObject(original).getInt("schema")==1 && !prefs.contains(scope + "profile_v1_preserved"))
+            edit.putString(scope + "profile_v1_preserved",original)
+        if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains(scope + "profile_pre_cm_preserved"))
+            edit.putString(scope + "profile_pre_cm_preserved",original)
+        val ok = edit.putString(scope + KEY, encode(profile)).commit()
         if (ok) _current.value = profile
         return ok
     }
 
+    @Synchronized
     fun clear(context: Context): Boolean {
-        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove("profile_v1_preserved").remove("profile_pre_cm_preserved").commit()
+        val scope = BodyMeasurementScope.current() ?: return false
+        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(scope + KEY)
+            .remove(scope + "profile_v1_preserved").remove(scope + "profile_pre_cm_preserved").commit()
         if (ok) { _current.value = null; _issue.value = null }
         return ok
     }

@@ -44,6 +44,7 @@ import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
@@ -103,6 +104,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
     val manualBody by ManualBodyStore.current.collectAsState()
+    val avatarBody by AvatarProfileStore.current.collectAsState()
     LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
     LaunchedEffect(sessionMeasurements,manualBody) {
@@ -110,7 +112,7 @@ fun HomeScreen(
         if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
+    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements,avatarBody)
         ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()

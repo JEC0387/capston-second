@@ -67,7 +67,8 @@ fun BodyAnalysisScreen(
     onCameraClick: () -> Unit,
     viewModel: BodyAnalysisViewModel,
     onHistory: () -> Unit = {},
-    onFitting: (() -> Unit)? = null
+    onFitting: (() -> Unit)? = null,
+    onAvatarSetup: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -343,7 +344,7 @@ fun BodyAnalysisScreen(
                     Card(Modifier.fillMaxWidth(), shape = FashionCardShape,
                         colors = CardDefaults.cardColors(containerColor = CreamDark)) {
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("사진 분석 요약", style = MaterialTheme.typography.labelLarge, color = FashionMuted)
+                            Text("사진 기반 분석", style = MaterialTheme.typography.labelLarge, color = FashionMuted)
                             Text(result.bodyTypeKo, style = MaterialTheme.typography.headlineMedium,
                                 color = CharcoalBlack, fontWeight = FontWeight.Bold)
                             result.characteristics.take(2).forEach { Text(it, color = CharcoalBlack) }
@@ -606,6 +607,7 @@ fun BodyAnalysisScreen(
                     }
                     Button(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.CAMERA) }) { Text("다시 촬영하기") }
                     OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.GALLERY) }) { Text("사진 다시 선택하기") }
+                    onAvatarSetup?.let { BodyAvatarFallback(it) }
                 }
                 is BodyAnalysisUiState.Error -> {
                     Box(
@@ -640,6 +642,7 @@ fun BodyAnalysisScreen(
                     }
                     OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.CAMERA) }) { Text("다시 촬영하기") }
                     OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.GALLERY) }) { Text("사진 다시 선택하기") }
+                    onAvatarSetup?.let { BodyAvatarFallback(it) }
 
                 }
             }
@@ -648,10 +651,16 @@ fun BodyAnalysisScreen(
         }
     }
 }
-
-/** 촬영 버튼 아래 한 줄 안내 — 사진은 폰 안에서만 분석 */
 }
 
+@Composable
+private fun BodyAvatarFallback(onClick: () -> Unit) {
+    OutlinedButton(onClick, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("bodyPhotoAvatarFallback")) {
+        Text("3D 모델로 체형 설정하기")
+    }
+}
+
+/** 촬영 버튼 아래 한 줄 안내 — 사진은 폰 안에서만 분석 */
 @Composable
 private fun PrivacyNote() {
     Row(

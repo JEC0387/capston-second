@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ShoppingBag
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -27,8 +28,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import com.jeiu.fashionproject.data.AuthStore
+import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.DataAuth
+import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.ui.screens.*
 import com.jeiu.fashionproject.ui.theme.Camel
 import com.jeiu.fashionproject.ui.viewmodel.BodyAnalysisUiState
@@ -69,6 +73,13 @@ fun AppNavigation() {
     val navController = rememberNavController()
     LoginRedirectNavigation(navController)
     val context = LocalContext.current
+    val authMode by AuthStore.mode.collectAsState()
+    val authAccount by AuthStore.account.collectAsState()
+    val dataAuthState by DataAuth.state.collectAsState()
+    LaunchedEffect(authMode, authAccount, dataAuthState) {
+        AvatarProfileStore.load(context)
+        ManualBodyStore.load(context)
+    }
     val weatherViewModel: WeatherViewModel = viewModel()
     val bodyAnalysisViewModel: BodyAnalysisViewModel = viewModel()
     val bodyAnalysisState by bodyAnalysisViewModel.state.collectAsState()
@@ -270,7 +281,8 @@ fun AppNavigation() {
                     onCameraClick = { navController.navigate(Screen.Camera.route) },
                     viewModel = bodyAnalysisViewModel,
                     onHistory = { navController.navigate(Screen.BodyHistory.route) },
-                    onFitting = { navController.navigate(Screen.VirtualFitting.route + "?avatar=true") }
+                    onFitting = { navController.navigate(Screen.VirtualFitting.route + "?avatar=true") },
+                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) }
                 )
             }
             composable(Screen.Camera.route) {

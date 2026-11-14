@@ -15,17 +15,27 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
 import com.jeiu.fashionproject.ui.components.AvatarSetupCard
+import com.jeiu.fashionproject.ui.components.AvatarBodyResultCard
+import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.AuthStore
+import com.jeiu.fashionproject.data.BodyMeasurementScope
+import com.jeiu.fashionproject.data.DataAuth
 import com.jeiu.fashionproject.ui.theme.*
 
 /** Start with a clear user choice rather than showing photo and avatar controls together. */
@@ -132,7 +142,20 @@ private fun BodyMethodCard(
 /** Phase-one avatar entry reuses existing manual measurements and 3D preview. */
 @Composable
 fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitting:(()->Unit)?=null) {
+    val context = LocalContext.current
+    val saved by AvatarProfileStore.current.collectAsState()
+    val mode by AuthStore.mode.collectAsState()
+    val account by AuthStore.account.collectAsState()
+    val connection by DataAuth.state.collectAsState()
+    val owner = remember(mode, account, connection) { BodyMeasurementScope.current() }
+    var loaded by remember(owner) { mutableStateOf(false) }
+    LaunchedEffect(owner) {
+        AvatarProfileStore.load(context)
+        loaded = true
+    }
     var manualExpanded by rememberSaveable { mutableStateOf(false) }
+    var showAnalysis by rememberSaveable(owner) { mutableStateOf(true) }
+    val showResult = owner != null && loaded && showAnalysis && saved != null
     FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -143,21 +166,37 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit,onFitt
             Text("내 3D 체형", style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold, color = CharcoalBlack)
         }
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("치수를 확인하고 아바타를 저장하면 옷을 입혀볼 수 있어요.",
-                style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
-            AvatarSetupCard(onApplyToFitting=onFitting)
-            OutlinedButton(onClick = { manualExpanded = !manualExpanded },
-                modifier = Modifier.fillMaxWidth().testTag("avatarManualExpand")) {
-                Text(if (manualExpanded) "직접 입력한 치수 접기" else "신체 치수 직접 입력")
+        key(owner, showResult) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                when {
+                    showResult -> AvatarBodyResultCard(
+                        checkNotNull(saved), onEdit = { showAnalysis = false }, onFitting = onFitting
+                    )
+                    !loaded -> Unit
+                    owner == null -> Text("계정 연결을 확인한 뒤 3D 치수를 열어주세요.")
+                    else -> {
+                        Text("3D 체형을 저장하면 직접 잰 치수로 체형과 추천 핏을 확인할 수 있어요.",
+                            style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                        AvatarSetupCard(onSavedForAnalysis = { showAnalysis = true })
+                        if (saved != null) TextButton(onClick = { showAnalysis = true }) { Text("저장한 분석 결과 보기") }
+                        else if (mode == AuthStore.Mode.SIGNED_IN) Text(
+                            "계정별로 치수를 저장해요. 이전 게스트 치수는 게스트에서 확인할 수 있어요.",
+                            style = MaterialTheme.typography.bodySmall, color = FashionMuted
+                        )
+                        OutlinedButton(onClick = { manualExpanded = !manualExpanded },
+                            modifier = Modifier.fillMaxWidth().testTag("avatarManualExpand")) {
+                            Text(if (manualExpanded) "직접 입력한 치수 접기" else "신체 치수 직접 입력")
+                        }
+                        if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = {}, onAvatarSaved = { showAnalysis = true })
+                    }
+                }
+                OutlinedButton(onClick = onPhotoAnalysis, modifier = Modifier.fillMaxWidth()) {
+                    Text("사진으로 체형 분석하기")
+                }
+                Spacer(Modifier.height(16.dp))
             }
-            if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = {})
-            OutlinedButton(onClick = onPhotoAnalysis, modifier = Modifier.fillMaxWidth()) {
-                Text("사진으로 체형 분석하기")
-            }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }

@@ -28,8 +28,10 @@ import java.util.Locale
 /** All edits are an unsaved draft. Comparison/approval and persistence remain separate actions. */
 @Composable
 fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:()->Unit,
-    onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null) {
+    onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null,
+    onSavedForAnalysis:(()->Unit)?=null) {
     val context = LocalContext.current
+    val owner = remember { BodyMeasurementScope.current() }
     LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     var measuredProposal by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
     var measurementBaseline by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
@@ -57,7 +59,8 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             title = { Text("원본 실측값에 별도로 저장할까요?") },
             text = { Text("방금 직접 잰 값으로 입력한 ${measuredPart?.label}만 실측 기록에 저장해요. 체형 분석·사이즈 비교에도 사용돼요. 3D 표시 조절과 별개이며 취소하면 원본 실측값은 유지돼요.") },
             confirmButton = { TextButton(onClick = {
-                if (ManualBodyStore.current.value == measurementBaseline && ManualBodyStore.update(context, proposed, true)) {
+                if (owner != null && owner == BodyMeasurementScope.current() &&
+                    ManualBodyStore.current.value == measurementBaseline && ManualBodyStore.update(context, proposed, true)) {
                     message = "직접 잰 값을 실측 기록에 저장했어요."
                 } else message = "실측값이 바뀌었거나 저장하지 못했어요. 기존 기록을 유지했어요."
                 measuredProposal = null
@@ -77,6 +80,8 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.testTag("rulerInputField"))
             Text("표시 범위 ${range.start}~${range.endInclusive} cm. 눈금과 같은 0.5cm 단위로 입력해요.")
             Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it},modifier=Modifier.testTag("rulerMeasured"));Text("줄자로 직접 잰 값이에요 (선택)")}
+            if (onSavedForAnalysis != null) Text("직접 잰 값은 3D 설정을 저장하면 체형 분석에 쓰여요.",
+                style = MaterialTheme.typography.bodySmall)
             if(CmRulerMath.parse(text,range)==null)Text("유효한 범위의 0.5cm 단위 숫자를 입력해주세요.",color=Brown)
         }
     },confirmButton={TextButton(enabled=CmRulerMath.parse(text,range)!=null,onClick={
@@ -84,7 +89,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         if(next!=null) {
             update(if(measured)next.copy(values=next.values+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL)),
                 references=next.references+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL))) else next)
-            if (measured) {
+            if (measured && onSavedForAnalysis == null) {
                 measurementBaseline = ManualBodyStore.current.value
                 measuredPart = selected
                 measuredProposal = ManualAvatarMeasurements.proposed(measurementBaseline, body.heightCm, selected, value, System.currentTimeMillis())
@@ -97,7 +102,8 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         val stamped=candidate.copy(centimeters=body.copy(updatedAt=maxOf(System.currentTimeMillis(),body.createdAt)))
         if(onSave(stamped)) {
             lastSaved=json;message="cm 치수와 출처를 이 기기에 저장했어요."
-            if(applyAfterSave) {onDismiss();onApplyToFitting?.invoke()}
+            if(onSavedForAnalysis != null) { onDismiss(); onSavedForAnalysis() }
+            else if(applyAfterSave) {onDismiss();onApplyToFitting?.invoke()}
         } else message="저장하지 못했어요. 기존 자료는 보존했고, 손상 안내와 입력 범위를 확인해주세요."
     })
     if(askReset) AlertDialog(onDismissRequest={askReset=false},title={Text("자동 초기 추정값으로 복원할까요?")},
@@ -153,7 +159,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                             TextButton(onClick={askReset=true}) {Text("초기 추정값 복원")}
                             TextButton(onClick={json=initialJson;message=null}) {Text("불러온 설정 복원")}
                         }
-                        if(onApplyToFitting!=null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
+                        if(onApplyToFitting!=null && onSavedForAnalysis==null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
                             modifier=Modifier.fillMaxWidth().testTag("cmApplyFitting")) {Text("저장 후 가상피팅에 적용")}
                         Text("키 ${body.heightCm} cm · 몸무게 ${body.weightKg} kg. 자동 초기값은 검증된 평균이 아닌 임시 형상이에요.")
                         Text("깊이는 타원 가정이며 실제 신체 스캔·의복 물리·정확한 착용 핏이 아니에요.")

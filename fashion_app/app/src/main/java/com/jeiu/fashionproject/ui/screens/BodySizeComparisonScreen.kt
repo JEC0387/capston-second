@@ -16,8 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.data.ManualBodyStore
+import com.jeiu.fashionproject.recommend.AvatarBodyAnalysis
 import com.jeiu.fashionproject.ui.components.ManualBodyEntryCard
+import com.jeiu.fashionproject.ui.components.MeasuredSizeCard
 import com.jeiu.fashionproject.ui.theme.*
 
 /** A direct route to the existing source-aware measured-size flow. */
@@ -25,6 +28,8 @@ import com.jeiu.fashionproject.ui.theme.*
 fun BodySizeComparisonScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
     val photo by BodyAnalysisSessionStore.measurements.collectAsState()
     val manual by ManualBodyStore.current.collectAsState()
+    val avatar by AvatarProfileStore.current.collectAsState()
+    val avatarDimensions = avatar?.let(AvatarBodyAnalysis::measuredDimensions)
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -40,7 +45,7 @@ fun BodySizeComparisonScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("내 치수와 의류 실측표", style = MaterialTheme.typography.titleMedium,
                         color = CharcoalBlack)
-                    Text(if (manual != null || photo != null)
+                    Text(if (manual != null || photo != null || avatarDimensions?.values?.isNotEmpty() == true)
                         "아래의 의류 실측 비교에서 상품표와 내 치수의 출처를 함께 확인하세요."
                         else "비교에 사용할 치수가 없어요. 사진 분석을 하거나 직접 잰 치수를 입력하세요.",
                         style = MaterialTheme.typography.bodySmall, color = MediumGray,
@@ -51,6 +56,10 @@ fun BodySizeComparisonScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
                         Text("사진으로 체형 분석하기")
                     }
                 }
+            }
+            if (avatarDimensions?.values?.isNotEmpty() == true) {
+                Text("저장된 3D 실측으로 비교", style = MaterialTheme.typography.titleMedium)
+                MeasuredSizeCard(avatarDimensions)
             }
             ManualBodyEntryCard(photo = photo, onUseHeight = {})
             Spacer(Modifier.height(16.dp))

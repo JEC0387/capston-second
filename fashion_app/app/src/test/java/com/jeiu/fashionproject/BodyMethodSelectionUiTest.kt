@@ -14,6 +14,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.AvatarProfile
+import com.jeiu.fashionproject.data.AvatarPart
+import com.jeiu.fashionproject.data.AvatarCentimeters
+import com.jeiu.fashionproject.data.AvatarCm
+import com.jeiu.fashionproject.data.AvatarValueOrigin
 import com.jeiu.fashionproject.ui.screens.BodyMethodSelectionScreen
 import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
 import com.jeiu.fashionproject.ui.screens.BodySizeComparisonScreen
@@ -126,8 +131,76 @@ class BodyMethodSelectionUiTest {
             assertEquals(175f, AvatarProfileStore.current.value?.heightCm)
             assertEquals(72f, AvatarProfileStore.current.value?.weightKg)
         }
+        compose.onNodeWithTag("avatarBodyResult").assertIsDisplayed()
+        compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
         compose.onNodeWithTag("avatarShow").performScrollTo().performClick()
         compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
         AvatarProfileStore.clear(app)
+    }
+
+    @Test fun savedMeasuredAvatarRestoresAnalysisAndOpensFittingWithoutPhoto() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val cm = checkNotNull(AvatarCentimeters.generate(170f, 65f, 1L))
+        val references = mapOf(AvatarPart.SHOULDER to 41f, AvatarPart.CHEST to 96f, AvatarPart.WAIST to 68f, AvatarPart.HIP to 99f)
+            .mapValues { (_, value) -> AvatarCm(value, AvatarValueOrigin.MANUAL) }
+        org.junit.Assert.assertTrue(AvatarProfileStore.save(app, AvatarProfile(
+            170f, 65f, centimeters = cm.copy(references = references))))
+        try {
+            var fitting = 0
+            compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") },
+                onFitting = { fitting++ }) }
+            compose.onNodeWithText("3D 입력 기반 분석").assertIsDisplayed()
+            compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
+            compose.onNodeWithText("허리 둘레 68.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyFitting").performScrollTo().performClick()
+            compose.runOnIdle { assertEquals(1, fitting) }
+            compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+            compose.onNodeWithTag("openCmAvatar").performScrollTo().assertIsDisplayed()
+        } finally {
+            AvatarProfileStore.clear(app)
+        }
+    }
+
+    @Test fun aPhotoFreeRulerSaveOpensAnalysisAndResavingUpdatesIt() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
+        try {
+            compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") }) }
+            compose.onNodeWithTag("avatarHeight").performScrollTo().performTextReplacement("170")
+            compose.onNodeWithTag("avatarWeight").performScrollTo().performTextReplacement("65")
+            compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
+            inputMeasured(AvatarPart.CHEST, "96")
+            inputMeasured(AvatarPart.WAIST, "70")
+            inputMeasured(AvatarPart.HIP, "99")
+            compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
+            compose.onNodeWithTag("cmEditorSave").performClick()
+            compose.onNodeWithTag("avatarApplyApprove").performClick()
+            compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
+
+            compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+            compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
+            inputMeasured(AvatarPart.WAIST, "88")
+            inputMeasured(AvatarPart.SHOULDER, "44")
+            inputMeasured(AvatarPart.HIP, "110")
+            compose.onNodeWithTag("cmEditorSave").performClick()
+            compose.onNodeWithTag("avatarApplyApprove").performClick()
+            compose.onNodeWithText("엉덩이 둘레가 더 큰 체형").assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
+            compose.onNodeWithText("어깨 너비 44.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("허리 둘레 88.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("엉덩이 둘레 110.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+        } finally {
+            AvatarProfileStore.clear(app)
+        }
+    }
+
+    private fun inputMeasured(part: AvatarPart, value: String) {
+        compose.onNodeWithTag("cmPart-${part.name}").performScrollTo().performClick()
+        compose.onNodeWithTag("rulerDirectInput").performScrollTo().performClick()
+        compose.onNodeWithTag("rulerInputField").performTextReplacement(value)
+        compose.onNodeWithTag("rulerMeasured").performClick()
+        compose.onNodeWithTag("rulerInputConfirm").performClick()
     }
 }

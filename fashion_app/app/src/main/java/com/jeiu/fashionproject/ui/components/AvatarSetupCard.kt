@@ -15,8 +15,9 @@ import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 
 @Composable
 fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = false,onApplyToFitting:(()->Unit)?=null,
-    autoImportManual: Boolean = false) {
+    autoImportManual: Boolean = false, onSavedForAnalysis: (() -> Unit)? = null) {
     val context = LocalContext.current
+    val owner = remember { BodyMeasurementScope.current() }
     var storesLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { AvatarProfileStore.load(context);ManualBodyStore.load(context);storesLoaded=true }
     val saved by AvatarProfileStore.current.collectAsState()
@@ -65,8 +66,9 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     val photoProposal = draft.takeIf { it.valid() }?.let { AvatarMeasurementImport.photo(photo ?: sessionPhoto, it) }
     cmEditingRaw?.let {raw->AvatarProfileStore.decode(raw)?.let {base->
         PremiumAvatarEditor(base,saved,onDismiss={cmEditingRaw=null},onSave={profile->
-            AvatarProfileStore.save(context,profile).also {ok->if(ok) {adopt(profile);draftEdited=false}}
-        },onApplyToFitting=onApplyToFitting)
+            (owner != null && owner == BodyMeasurementScope.current() && AvatarProfileStore.save(context,profile))
+                .also {ok->if(ok) {adopt(profile);draftEdited=false}}
+        },onApplyToFitting=onApplyToFitting, onSavedForAnalysis=onSavedForAnalysis)
     }}
     LaunchedEffect(autoImportPhoto, storesLoaded, photoProposal) {
         if (autoImportPhoto && storesLoaded && !initialImportHandled) {
@@ -85,7 +87,7 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
     if (askClear) AlertDialog(onDismissRequest={askClear=false},title={Text("3D 설정 초기화")},
         text={Text("저장된 3D 표시 프로필과 보존해 둔 구버전 3D 복사본만 지워요. 직접 입력한 원본 치수와 사진 분석 기록은 유지해요.")},
         confirmButton={TextButton(onClick={
-            if (AvatarProfileStore.clear(context)) {
+            if (owner != null && owner == BodyMeasurementScope.current() && AvatarProfileStore.clear(context)) {
                 height="";weight="";shoulder=1f;waist=1f;hip=1f;thigh=1f;leg=1f;chest=1f;torso=1f;importedJson=null;draftEdited=true
                 message="3D 설정을 초기화했어요."
             } else message="3D 설정을 지우지 못했어요."
@@ -178,8 +180,10 @@ fun AvatarSetupCard(photo: BodyMeasurements? = null, autoImportPhoto: Boolean = 
             }
             Text("저장하면 선택한 치수의 숫자·출처 복사본도 이 기기에 남아요. 원본 분석 기록과 별도이며 서버로 전송하지 않아요.",
                 style=MaterialTheme.typography.bodySmall)
-            Button(onClick={message=if(AvatarProfileStore.save(context,draft)) {
-                adopt(draft);draftEdited=false;"이 기기에 3D 설정을 저장했어요."
+            Button(onClick={message=if(owner != null && owner == BodyMeasurementScope.current() && AvatarProfileStore.save(context,draft)) {
+                adopt(draft);draftEdited=false
+                onSavedForAnalysis?.invoke()
+                "이 기기에 3D 설정을 저장했어요."
             } else "3D 설정을 저장하지 못했어요. 입력값이나 기존 저장값을 확인해주세요."},
                 enabled=draft.valid(),modifier=Modifier.fillMaxWidth().testTag("avatarSave")) { Text("3D 설정 저장") }
             if (saved != null || issue != null) TextButton(onClick={askClear=true}) { Text("3D 설정 초기화") }

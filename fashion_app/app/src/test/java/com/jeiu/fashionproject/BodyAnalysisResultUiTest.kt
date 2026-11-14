@@ -55,7 +55,7 @@ class BodyAnalysisResultUiTest {
     @Test fun resultStartsWithSummaryAndRevealsPhotoAndMeasurementsOnDemand() {
         showResult(measurements)
         compose.onNodeWithContentDescription("분석한 사진").assertDoesNotExist()
-        compose.onNodeWithText("사진 분석 요약").assertExists()
+        compose.onNodeWithText("사진 기반 분석").assertExists()
         compose.onNodeWithText("균형형").assertExists()
         compose.onNodeWithText("기본 핏 참고").assertExists()
         compose.onNodeWithText("두 번째 스타일 참고").assertDoesNotExist()
@@ -103,5 +103,21 @@ class BodyAnalysisResultUiTest {
         compose.onNodeWithTag("bodyAvatarFromPhoto").assertDoesNotExist()
         compose.onNodeWithText("유효한 cm 측정값이 없어 이 사진으로 3D 모델을 만들 수 없어요.")
             .performScrollTo().assertIsDisplayed()
+    }
+
+    @Test fun aFailedPhotoOffersTheIndependentAvatarRoute() {
+        val model = BodyAnalysisViewModel(app)
+        val field = BodyAnalysisViewModel::class.java.getDeclaredField("_state")
+        field.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        (field.get(model) as MutableStateFlow<BodyAnalysisUiState>).value =
+            BodyAnalysisUiState.Error("사진을 분석하지 못했어요.")
+        var avatar = 0
+        compose.setContent {
+            BodyAnalysisScreen(onBack = {}, onStyleSuggestion = {}, onCameraClick = {},
+                viewModel = model, onAvatarSetup = { avatar++ })
+        }
+        compose.onNodeWithTag("bodyPhotoAvatarFallback").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1, avatar) }
     }
 }

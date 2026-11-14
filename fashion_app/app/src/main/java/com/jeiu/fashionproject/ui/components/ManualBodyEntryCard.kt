@@ -16,13 +16,16 @@ import androidx.compose.ui.window.DialogProperties
 import com.jeiu.fashionproject.data.ManualBodyMeasurements
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.BodyDimensions
+import com.jeiu.fashionproject.data.BodyMeasurementScope
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 import java.util.Locale
 
 /** User-entered measurements stay distinct from the photo classifier and server records. */
 @Composable
-fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit) {
+fun ManualBodyEntryCard(photo: BodyMeasurements?, onAvatarSaved: (() -> Unit)? = null,
+    onUseHeight: (String) -> Unit) {
     val context = LocalContext.current
+    val owner = remember { BodyMeasurementScope.current() }
     LaunchedEffect(Unit) { ManualBodyStore.load(context) }
     val current by ManualBodyStore.current.collectAsState()
     val saved by ManualBodyStore.saved.collectAsState()
@@ -33,7 +36,9 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.systemBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp)) {
                 TextButton(onClick = { showEditor = false }, modifier = Modifier.testTag("manualAvatarBack")) { Text("치수 화면으로 돌아가기") }
-                AvatarSetupCard(autoImportManual = true)
+                AvatarSetupCard(autoImportManual = true, onSavedForAnalysis = onAvatarSaved?.let { callback ->
+                    { showEditor = false; callback() }
+                })
             }
         }
     }
@@ -102,7 +107,8 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                         height, numbers[1], numbers[2], numbers[3], numbers[4],
                         numbers[5], numbers[6], System.currentTimeMillis()) }
                     if (incompleteNumber || value == null || !value.isValid()) message = "입력 범위를 확인해주세요. 키 100~230 cm, 어깨 15~75 cm, 둘레 40~200 cm이며 다리·상체 길이는 키와 비례해야 해요."
-                    else if (!ManualBodyStore.update(context, value, saveOnDevice)) message = "기기에 입력값을 저장하지 못했어요. 다시 시도해주세요."
+                    else if (owner == null || owner != BodyMeasurementScope.current() ||
+                        !ManualBodyStore.update(context, value, saveOnDevice)) message = "기기에 입력값을 저장하지 못했어요. 다시 시도해주세요."
                     else {
                         onUseHeight(fields[0])
                         editing = false
@@ -112,7 +118,7 @@ fun ManualBodyEntryCard(photo: BodyMeasurements?, onUseHeight: (String) -> Unit)
                 }, modifier = Modifier.fillMaxWidth().testTag("manualBodyApply")) { Text("적용하고 3D 미리보기") }
             }
             if (current != null) TextButton(onClick = {
-                message = if (ManualBodyStore.clear(context)) "직접 입력한 치수를 삭제했어요."
+                message = if (owner != null && owner == BodyMeasurementScope.current() && ManualBodyStore.clear(context)) "직접 입력한 치수를 삭제했어요."
                     else "직접 입력값을 삭제하지 못했어요. 다시 시도해주세요."
             }, modifier = Modifier.testTag("manualBodyClear")) { Text("직접 입력값 삭제") }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
