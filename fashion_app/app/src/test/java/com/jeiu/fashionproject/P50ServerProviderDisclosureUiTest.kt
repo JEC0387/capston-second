@@ -51,14 +51,17 @@ class P50ServerProviderDisclosureUiTest {
         }
         var posts = 0
         var cancelRequests = 0
+        var disconnected = false
         val gateway = object : OutfitServerGateway {
             override fun session() = session
             override suspend fun config(session: OutfitServerSession) = config
             override suspend fun submit(session: OutfitServerSession, ticket: OutfitServerTicket, body: ByteArray): OutfitServerStatus {
                 posts++; error("Unexpected POST")
             }
-            override suspend fun status(session: OutfitServerSession, ticket: OutfitServerTicket) =
-                OutfitServerStatus("running", null, .1, false, null, System.currentTimeMillis()+300000)
+            override suspend fun status(session: OutfitServerSession, ticket: OutfitServerTicket): OutfitServerStatus {
+                if (disconnected) throw java.io.IOException("synthetic disconnect")
+                return OutfitServerStatus("running", null, .1, false, null, System.currentTimeMillis()+300000)
+            }
             override suspend fun cancel(session: OutfitServerSession, ticket: OutfitServerTicket): OutfitServerStatus {
                 cancelRequests++
                 return OutfitServerStatus("interrupted", "remote_execution_unconfirmed", .1, false, null, System.currentTimeMillis()+300000)
@@ -74,8 +77,9 @@ class P50ServerProviderDisclosureUiTest {
             }
         }
         val vm = ServerOutfitVtonViewModel(gateway, { store })
+        var exits = 0
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides documents) {
-            MaterialTheme { ServerOutfitVtonScreen(completeSelection(), {}, vm) }
+            MaterialTheme { ServerOutfitVtonScreen(completeSelection(), { exits++ }, vm) }
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo != null && !vm.state.busy }
@@ -92,11 +96,14 @@ class P50ServerProviderDisclosureUiTest {
         await { vm.state.config?.providerInfo?.notice == "Revised synthetic processing disclosure." && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitCancel").assertTextEquals("대기 종료").performClick()
-        await { vm.state.phase == "interrupted" && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitError").performScrollTo()
-            .assertTextEquals("요청 상태를 확인하지 못했어요. 기존 요청만 조회할 수 있어요.")
-        assertEquals(1, cancelRequests)
+        compose.onNodeWithTag("serverOutfitCancel").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitBrowse").assertTextEquals("다른 화면 둘러보기").performClick()
+        assertEquals(1, exits)
+        disconnected = true
+        compose.onNodeWithTag("serverOutfitResume").performClick()
+        await { vm.state.failureCode == "status_request_failed" && !vm.state.busy }
+        compose.onNodeWithText("연결이 잠시 끊겼어요.", substring = true).performScrollTo().assertIsDisplayed()
+        assertEquals(0, cancelRequests)
         assertEquals(0, posts)
         assertNull(vm.state.result)
     }

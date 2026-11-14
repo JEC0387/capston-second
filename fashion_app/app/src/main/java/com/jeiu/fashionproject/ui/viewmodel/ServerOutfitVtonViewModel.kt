@@ -29,7 +29,8 @@ data class ServerOutfitUiState(val phase: String = "idle", val busy: Boolean = f
     val ticket: OutfitServerTicket? = null,
     val status: OutfitServerStatus? = null, val result: OutfitServerImage? = null,
     val previous: Boolean = false, val error: String? = null,
-    val failureCode: String? = null, val failureStage: String? = null)
+    val failureCode: String? = null, val failureStage: String? = null,
+    val requestedGarments: List<DeviceGarmentInput> = emptyList())
 
 /** Durable metadata precedes POST. Recovery ONLY queries the existing request; never re-POSTs. */
 class ServerOutfitVtonViewModel(
@@ -94,6 +95,28 @@ class ServerOutfitVtonViewModel(
 
     fun canDisplay(): Boolean = state.result != null && runCatching { sessionFor(); true }.getOrDefault(false)
 
+    fun canResumeCurrentRequest(): Boolean =
+        state.ticket?.let { runCatching { sessionFor(it); true }.getOrDefault(false) } == true &&
+            (state.result != null || !startAllowedByPreviousJob() || state.status?.resultAvailable == true)
+
+    fun requestedGarmentsForCurrentAccount(): List<DeviceGarmentInput> {
+        val account = state.configBinding ?: return emptyList()
+        return state.requestedGarments.takeIf {
+            it.isNotEmpty() && runCatching { sessionFor().accountKey == account }.getOrDefault(false)
+        }.orEmpty()
+    }
+
+    /** On screen entry, resume a journaled request using GET only. Leave ready config
+     * available for selecting another outfit once that request is resolved. */
+    fun onAuthorizedScreenEntry() {
+        if (state.ticket != null && state.result == null &&
+            (!startAllowedByPreviousJob() || state.status?.resultAvailable == true)) {
+            resume()
+        } else {
+            refreshConfig()
+        }
+    }
+
     fun startAllowedByPreviousJob(): Boolean {
         val ticket = state.ticket ?: return true
         val status = state.status ?: return false
@@ -130,7 +153,7 @@ class ServerOutfitVtonViewModel(
     fun invalidateConnection() {
         if (operation != null) return
         state = state.copy(config = null, configBinding = null, configHost = null, status = null,
-            result = null, error = null, previous = state.ticket != null,
+            result = null, error = null, previous = state.ticket != null, requestedGarments = emptyList(),
             phase = if (state.ticket == null) "idle" else "recovered")
     }
 
@@ -231,7 +254,7 @@ class ServerOutfitVtonViewModel(
                 throw OutfitServerFailure("account_changed")
             }
             val id = UUID.randomUUID().toString()
-            state = state.copy(phase = "preparing")
+            state = state.copy(phase = "preparing", requestedGarments = frozen.garments.toList())
             markStage("image_preparation")
             val job = preparer(context.applicationContext, id, frozen,
                 config.imageSpec())
@@ -269,6 +292,14 @@ class ServerOutfitVtonViewModel(
         sessionFor(ticket)
         applyStatus(first)
         poll(session, ticket, first)
+        sessionFor(ticket)
+        if (state.configBinding != session.accountKey) {
+            markStage("config")
+            val config = gateway.config(session)
+            sessionFor(ticket)
+            state = state.copy(config = config, configBinding = session.accountKey,
+                configHost = java.net.URI(session.base).host)
+        }
     }
 
     fun cancel() {

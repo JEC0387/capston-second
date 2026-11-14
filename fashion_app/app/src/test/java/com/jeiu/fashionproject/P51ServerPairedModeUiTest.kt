@@ -103,7 +103,8 @@ class P51ServerPairedModeUiTest {
         await { vm.state.config?.providerInfo?.mode == "clothing-pair-then-shoes" && !vm.state.busy }
         compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
         compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
-        compose.onNodeWithTag("serverOutfitCancel").assertExists()
+        compose.onNodeWithTag("serverOutfitCancel").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitBrowse").assertExists()
 
         compose.onNodeWithTag("serverOutfitResume").performClick()
         await { vm.state.result != null && !vm.state.busy }

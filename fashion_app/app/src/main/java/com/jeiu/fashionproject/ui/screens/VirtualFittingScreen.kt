@@ -419,6 +419,7 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
     val aiModel = sharedTryOnViewModel()
     val deviceModel: OnDeviceVtonViewModel = viewModel(factory = remember { viewModelFactory { initializer { OnDeviceVtonViewModel() } } })
     val serverOutfitModel: com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel = viewModel()
+    LaunchedEffect(serverOutfitModel) { serverOutfitModel.initialize(context) }
     var bodyPhoto by manual::bodyPhoto
     var photoGeneration by manual::photoGeneration
     var body by manual::body
@@ -892,9 +893,10 @@ fun VirtualFittingScreen(onAvatarSetup: () -> Unit = {},startAvatar:Boolean=fals
 
         val generateAction: @Composable (Modifier) -> Unit = { actionModifier ->
             if (!avatarMode) Button(onClick = {
-                if (!manual.openServerOutfit(currentDeviceSelection))
+                if (serverOutfitModel.canResumeCurrentRequest()) manual.showServerOutfitAi = true
+                else if (!manual.openServerOutfit(currentDeviceSelection))
                     inputNotice = "전신 사진과 상의·하의·신발을 하나씩 선택해주세요."
-            }, enabled = currentDeviceSelection?.hasCompleteOutfit() == true,
+            }, enabled = currentDeviceSelection?.hasCompleteOutfit() == true || serverOutfitModel.canResumeCurrentRequest(),
                 modifier = actionModifier.heightIn(min = 48.dp).testTag("aiTryOnWand"),
                 shape = FashionActionShape) {
                 if (!compact) {

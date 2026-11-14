@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.net.Uri
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -14,16 +15,23 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -34,6 +42,7 @@ import coil.compose.AsyncImage
 import com.jeiu.fashionproject.BuildConfig
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.viewmodel.ServerOutfitVtonViewModel
+import com.jeiu.fashionproject.ui.viewmodel.ServerOutfitUiState
 import com.jeiu.fashionproject.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -56,38 +65,42 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
     val state = model.state
     val inputsReady = model.inputReady(selection)
     val thirdParty = state.config?.providerInfo
-    val externalCancellation = state.ticket?.let(ServerOutfitVtonRepository::isGenlook)
-        ?: (thirdParty?.remoteCancellationSupported == false)
     var consentDialog by remember(selection, state.config, state.configBinding, accountState, testAccountState,
         ServerOutfitQaConnection.revision) { mutableStateOf(false) }
     var consentGiven by remember(selection, state.config, state.configBinding, accountState, testAccountState,
         ServerOutfitQaConnection.revision) { mutableStateOf(false) }
     var policyDetails by remember { mutableStateOf(false) }
+    var confirmCancel by remember { mutableStateOf(false) }
     var linkingAccount by remember { mutableStateOf(false) }
-    var pendingSave by remember { mutableStateOf<ByteArray?>(null) }
+    var pendingSave by rememberSaveable { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf(false) }
-    var savedUri by remember(model.state.result) { mutableStateOf<Uri?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
+    var savedUri by rememberSaveable(state.ticket?.id) { mutableStateOf<Uri?>(null) }
+    var message by rememberSaveable(state.ticket?.id) { mutableStateOf<String?>(null) }
     var reopened by remember { mutableStateOf<ByteArray?>(null) }
     var reviewPrevious by remember { mutableStateOf(false) }
     var reviewedPrevious by remember { mutableStateOf(false) }
     val visible = state.result?.takeIf { model.canDisplay() }
     val original = remember(visible) { visible?.original }
     val resultPng = remember(visible) { visible?.png }
-    var showOriginal by remember(visible) { mutableStateOf(false) }
+    var showOriginal by rememberSaveable(state.ticket?.id) { mutableStateOf(false) }
     var zoomPhoto by remember(visible) { mutableStateOf(false) }
+    var imageFailed by remember(visible, showOriginal) { mutableStateOf(false) }
+    var imageAttempt by remember(visible, showOriginal) { mutableIntStateOf(0) }
+    var imageDisplayed by remember(visible) { mutableStateOf(false) }
     var garmentPicker by remember { mutableStateOf<DeviceGarmentRole?>(null) }
 
     LaunchedEffect(model, accountReady) {
         model.initialize(context)
-        if (accountReady) model.refreshConfig() // Read-only readiness request, never creates a paid job.
+        if (accountReady) model.onAuthorizedScreenEntry()
     }
-    LaunchedEffect(selection) { model.selectionChanged(selection); message = null }
+    LaunchedEffect(selection) { model.selectionChanged(selection) }
     BackHandler(onBack = onBack)
 
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
-        val bytes = pendingSave
+        val request = pendingSave
+        val bytes = model.state.result?.takeIf { request != null && model.state.ticket?.id == request &&
+            model.canDisplay() }?.png
         pendingSave = null
         if (uri != null && bytes != null && !saving) {
             saving = true
@@ -98,7 +111,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                     message = "사진을 저장했어요."
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: OutOfMemoryError) { message = "메모리가 부족해 저장하지 못했어요." }
-                catch (_: Exception) { message = "저장하지 못했어요. 기존 파일은 변경하지 않았어요." }
+                catch (_: Exception) { message = "사진을 저장하지 못했어요. 다시 저장해 주세요." }
                 finally { saving = false }
             }
         } else if (uri != null) message = "저장할 결과를 찾지 못했어요."
@@ -124,15 +137,19 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
         state.config?.ready == true && !state.busy && !saving && !linkingAccount && pendingSave == null &&
         model.startAllowedByPreviousJob()
 
-    val generating = state.busy && (state.ticket != null || state.phase == "preparing")
     val awaitingJob = state.ticket != null && !model.startAllowedByPreviousJob()
     val hasResult = visible != null && resultPng != null && !(state.busy && state.phase == "preparing")
     val completedWithoutImage = state.status?.status == "completed" && state.status?.resultAvailable == true
+    val generating = state.busy && (state.phase == "preparing" ||
+        state.ticket != null && (awaitingJob || completedWithoutImage)) && !hasResult
     val recovering = awaitingJob || completedWithoutImage && !hasResult && state.failureStage in
         setOf("result_download", "result_png", "job_status")
+    val accepted = state.ticket != null && state.status?.status in setOf("queued", "running", "completed", "cancelling")
+    val cancellable = state.ticket?.let { !ServerOutfitVtonRepository.isGenlook(it) } == true &&
+        thirdParty?.remoteCancellationSupported != false && state.status?.status in setOf("queued", "running")
     val title = when {
         hasResult -> "피팅 결과"
-        generating || recovering -> "착장 만들기"
+        generating || recovering -> "AI 가상피팅"
         else -> "AI로 입어보기"
     }
 
@@ -142,19 +159,20 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             val largeText = LocalDensity.current.fontScale >= 1.4f
             val scrollActions = largeText || maxHeight < 560.dp
             val imageHeight = (maxHeight * if (hasResult) .58f else .37f).coerceIn(160.dp, 640.dp)
-            val displayedPhoto = if (showOriginal) original ?: resultPng else resultPng
+            val displayingOriginal = showOriginal && original != null
+            val displayedPhoto = if (displayingOriginal) original else resultPng
             val actions: @Composable () -> Unit = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     when {
                         hasResult -> {
                             Button(onClick = {
                                 if (saving || pendingSave != null) return@Button
-                                pendingSave = resultPng
+                                pendingSave = state.ticket?.id ?: return@Button
                                 try { save.launch("fashionfit-tryon-${System.currentTimeMillis()}.png") }
                                 catch (_: Exception) { pendingSave = null; message = "저장 화면을 열지 못했어요." }
                             }, enabled = !saving && pendingSave == null,
                                 shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                                    .testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "사진 저장") }
+                                    .testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "사진 저장하기") }
                             OutlinedButton(onClick = onBack, enabled = !saving && pendingSave == null,
                                 shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                     .testTag("serverOutfitChangeClothes")) { Text("다른 옷 입어보기") }
@@ -166,10 +184,18 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                             if (state.phase == "preparing" && generating) OutlinedButton(onClick = model::cancel,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                     .testTag("serverOutfitCancelPreparation")) { Text("준비 취소") }
-                            if (state.ticket != null && (state.status?.status !in ServerOutfitVtonRepository.terminal) &&
-                                !(generating && state.phase == "preparing"))
-                                OutlinedButton(onClick = model::cancel, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                                    .testTag("serverOutfitCancel")) { Text(if (externalCancellation) "대기 종료" else "요청 취소") }
+                            if (state.ticket != null && state.phase != "preparing") {
+                                val browseModifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("serverOutfitBrowse")
+                                if (state.busy) Button(onClick = onBack, modifier = browseModifier, shape = FashionActionShape) {
+                                    Text("다른 화면 둘러보기")
+                                } else OutlinedButton(onClick = onBack, modifier = browseModifier, shape = FashionActionShape) {
+                                    Text("다른 화면 둘러보기")
+                                }
+                                if (cancellable) TextButton(onClick = { confirmCancel = true },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("serverOutfitCancel")) {
+                                    Text("생성 취소")
+                                }
+                            }
                         }
                         else -> {
                             Button(onClick = { consentDialog = true; consentGiven = false; policyDetails = false },
@@ -198,19 +224,12 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                         verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         when {
                             hasResult -> {
-                                if (state.previous) Text("이전에 요청한 착장이에요.",
-                                    style = MaterialTheme.typography.bodyMedium, color = FashionMuted,
-                                    modifier = Modifier.testTag("serverOutfitResultLabel"))
-                                Surface(onClick = { zoomPhoto = true }, shape = FashionCardShape, color = CreamDark,
-                                    modifier = Modifier.fillMaxWidth().height(imageHeight).testTag("serverOutfitPhotoZoom")) {
-                                    AsyncImage(displayedPhoto, if (showOriginal) "원본 사진, 눌러서 확대" else "AI 착장 사진, 눌러서 확대",
-                                        contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize()
-                                            .testTag(if (showOriginal) "serverOutfitOriginalImage" else "serverOutfitResultImage"))
-                                }
+                                if (imageDisplayed) OutfitCompletedHeader(state.previous)
+                                else if (!imageFailed) LinearProgressIndicator(Modifier.fillMaxWidth())
                                 if (original != null) Row(Modifier.fillMaxWidth().testTag("serverOutfitToggle"),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(false to "AI 결과", true to "원본").forEach { (isOriginal, label) ->
-                                        val selected = showOriginal == isOriginal
+                                    listOf(false to "✨ AI 결과", true to "원본 사진").forEach { (isOriginal, label) ->
+                                        val selected = displayingOriginal == isOriginal
                                         Surface(shape = FashionActionShape, color = if (selected) CamelLight else Cream,
                                             border = BorderStroke(if (selected) 2.dp else 1.dp, FashionBorder),
                                             modifier = Modifier.weight(1f).selectable(selected, role = Role.RadioButton,
@@ -224,27 +243,32 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                                         }
                                     }
                                 }
-                            }
-                            generating || recovering -> {
-                                Card(shape = FashionCardShape, colors = CardDefaults.cardColors(containerColor = CreamDark)) {
-                                    Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                        Text(when {
-                                            !state.busy -> "이전 요청을 확인할 수 있어요"
-                                            state.phase == "preparing" -> "사진과 옷을 준비하고 있어요"
-                                            state.status?.status == "completed" -> "완성된 사진을 불러오고 있어요"
-                                            state.status?.status == "queued" -> "접수된 요청이 차례를 기다리고 있어요"
-                                            state.status?.status == "cancelling" -> "대기 종료를 확인하고 있어요"
-                                            state.status?.providerProgress?.phase == "uploading" -> "동의한 사진과 옷을 보내고 있어요"
-                                            state.status?.providerProgress?.phase in setOf("validating_result", "finalizing") ->
-                                                "완성된 착장 사진을 확인하고 있어요"
-                                            else -> "선택한 옷으로 착장을 만들고 있어요"
-                                        }, style = MaterialTheme.typography.titleLarge, modifier = Modifier.testTag("serverOutfitProgress"))
-                                        Text(if (state.busy) "화면을 나가도 접수된 요청은 다시 확인할 수 있어요."
-                                            else "같은 요청의 상태와 결과를 불러와요.",
-                                            color = FashionMuted, style = MaterialTheme.typography.bodyMedium)
+                                if (imageFailed) Card(
+                                    modifier = Modifier.fillMaxWidth(), shape = FashionCardShape,
+                                    colors = CardDefaults.cardColors(containerColor = CreamDark)
+                                ) {
+                                    Column(Modifier.padding(20.dp)) {
+                                        Text("사진을 화면에 불러오지 못했어요.")
+                                        TextButton(onClick = { imageAttempt++; imageFailed = false },
+                                            modifier = Modifier.heightIn(min = 48.dp).testTag("serverOutfitReloadImage")) {
+                                            Text("사진 다시 보기")
+                                        }
+                                    }
+                                } else Surface(onClick = { zoomPhoto = true }, shape = FashionCardShape, color = CreamDark,
+                                    modifier = Modifier.fillMaxWidth().height(imageHeight).testTag("serverOutfitPhotoZoom")) {
+                                    key(imageAttempt) {
+                                        AsyncImage(displayedPhoto, if (displayingOriginal) "원본 사진, 눌러서 확대" else "AI 착장 사진, 눌러서 확대",
+                                            onSuccess = { imageDisplayed = true },
+                                            onError = { imageFailed = true; imageDisplayed = false }, contentScale = ContentScale.Fit,
+                                            modifier = Modifier.fillMaxSize()
+                                                .testTag(if (displayingOriginal) "serverOutfitOriginalImage" else "serverOutfitResultImage"))
                                     }
                                 }
+                            }
+                            generating || recovering -> {
+                                OutfitProgressCard(state, accepted)
+                                val garments = model.requestedGarmentsForCurrentAccount()
+                                if (garments.isNotEmpty()) OutfitRequestGarments(garments)
                             }
                             else -> {
                                 Surface(shape = FashionCardShape, color = CreamDark,
@@ -327,7 +351,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                         }
                         if (hasResult && savedUri != null) TextButton(onClick = { openSavedPhoto() },
                             enabled = !reading, modifier = Modifier.heightIn(min = 48.dp).testTag("serverOutfitOpen")) {
-                            Text("저장한 사진 열기")
+                            Text("저장한 사진 보기")
                         }
                         if (scrollActions) actions()
                     }
@@ -414,6 +438,14 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             onClick = { model.archiveReviewedQaJob(reviewedPrevious); consentGiven = false; reviewPrevious = false },
             modifier = Modifier.testTag("serverOutfitArchivePrevious")) { Text("보관") } })
 
+    if (confirmCancel && cancellable) AlertDialog(
+        onDismissRequest = { confirmCancel = false },
+        title = { Text("생성 취소를 요청할까요?") },
+        text = { Text("서버에서 취소를 확인하면 작업이 종료돼요.") },
+        confirmButton = { TextButton(onClick = { confirmCancel = false; model.cancel() }) { Text("취소 요청") } },
+        dismissButton = { TextButton(onClick = { confirmCancel = false }) { Text("계속 기다리기") } }
+    )
+
     if (zoomPhoto && resultPng != null) OutfitPhotoZoom(
         if (showOriginal) original ?: resultPng else resultPng, "피팅 사진 확대", onClose = { zoomPhoto = false })
 
@@ -423,6 +455,100 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
             modifier = Modifier.fillMaxWidth().height(280.dp)) },
         confirmButton = { TextButton(onClick = { reopened = null }) { Text("닫기") } }) }
 }
+}
+
+@Composable
+private fun OutfitProgressCard(state: ServerOutfitUiState, accepted: Boolean) {
+    val status = state.status?.status
+    val preparing = state.phase == "preparing"
+    val recovering = !state.busy
+    val message = when {
+        recovering && state.failureCode in setOf("connection_failed", "status_request_failed", "job_status_unavailable",
+            "result_download_failed", "network_or_transport", "network_unavailable") -> "연결이 잠시 끊겼어요. 기존 요청을 다시 확인해 주세요."
+        recovering && state.phase == "waiting" -> "아직 결과를 확인하지 못했어요. 같은 요청을 다시 확인할 수 있어요."
+        recovering -> "같은 요청의 상태와 결과를 다시 확인할 수 있어요."
+        preparing -> "사진과 옷을 준비하고 있어요."
+        status == null && state.phase == "submitting" -> "요청이 접수됐는지 확인하고 있어요."
+        status == null -> "이전에 보낸 요청을 확인하고 있어요."
+        status == "queued" -> "서버에서 생성할 차례를 기다리고 있어요."
+        status == "completed" -> "완성된 사진을 불러오고 있어요."
+        status == "cancelling" -> "서버에 보낸 취소 요청을 확인하고 있어요."
+        state.status?.providerProgress?.phase == "uploading" -> "동의한 사진과 옷을 보내고 있어요."
+        state.status?.providerProgress?.phase in setOf("validating_result", "finalizing") -> "완성된 착장 사진을 확인하고 있어요."
+        else -> "AI 착장 이미지 생성 중"
+    }
+    val pulse = if (state.busy) {
+        val shimmer = rememberInfiniteTransition(label = "fitting")
+        shimmer.animateFloat(.65f, 1f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "sparkle").value
+    } else 1f
+    Card(Modifier.fillMaxWidth(), shape = FashionCardShape, colors = CardDefaults.cardColors(containerColor = CreamDark)) {
+        Column(Modifier.padding(20.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Filled.AutoAwesome, null, Modifier.size(28.dp).alpha(pulse), tint = BrownDark)
+                Surface(shape = FashionActionShape, color = Cream) {
+                    Text(when {
+                        recovering -> "상태 확인"
+                        preparing -> "준비 중"
+                        status == "running" -> "생성 중"
+                        status == "queued" -> "대기 중"
+                        else -> "확인 중"
+                    }, Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelLarge, color = BrownDark)
+                }
+            }
+            Text(if (recovering) "이전 요청을 확인해 주세요" else "새로운 스타일을 만들고 있어요",
+                style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, modifier = Modifier.testTag("serverOutfitProgress"))
+            if (!recovering && (preparing || status in setOf("queued", "running")))
+                Text("선택한 옷을 자연스럽게 입혀드릴게요.", color = FashionMuted)
+            if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (accepted && status in setOf("queued", "running")) Text("사진과 옷 준비 완료", color = BrownDark)
+            Text(message, color = FashionMuted)
+            if (accepted && !recovering && status in setOf("queued", "running")) {
+                Text("다른 화면을 이용해도 진행 상태를 다시 확인할 수 있어요.", color = FashionMuted,
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OutfitRequestGarments(garments: List<DeviceGarmentInput>) {
+    Text("선택한 옷", color = CharcoalBlack, style = MaterialTheme.typography.titleMedium)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        garments.sortedBy { it.role.ordinal }.forEach { garment ->
+            Card(Modifier.weight(1f), shape = FashionActionShape,
+                colors = CardDefaults.cardColors(containerColor = CreamDark)) {
+                Column(Modifier.fillMaxWidth().padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    var unavailable by remember(garment.source) { mutableStateOf(false) }
+                    Box(Modifier.fillMaxWidth().height(68.dp), contentAlignment = Alignment.Center) {
+                        if (unavailable) Icon(Icons.Filled.Checkroom, null, tint = BrownDark)
+                        else AsyncImage(garment.source, "${garment.role.userLabel()} 미리보기",
+                            Modifier.fillMaxSize(), onError = { unavailable = true }, contentScale = ContentScale.Fit)
+                    }
+                    Text(garment.role.userLabel(), style = MaterialTheme.typography.labelLarge, color = CharcoalBlack,
+                        modifier = Modifier.testTag("serverOutfitRequested_${garment.role.name}"))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OutfitCompletedHeader(previous: Boolean) {
+    Card(Modifier.fillMaxWidth(), shape = FashionCardShape, colors = CardDefaults.cardColors(containerColor = CreamDark)) {
+        Row(Modifier.padding(14.dp).semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.Check, null, tint = BrownDark)
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("새로운 착장이 완성됐어요!", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack,
+                    modifier = Modifier.testTag("serverOutfitCompleted"))
+                Text(if (previous) "이전에 요청한 착장이에요." else "AI가 만들어준 스타일을 확인해 보세요.",
+                    style = MaterialTheme.typography.bodySmall, color = FashionMuted,
+                    modifier = if (previous) Modifier.testTag("serverOutfitResultLabel") else Modifier)
+            }
+        }
+    }
 }
 
 @Composable
@@ -437,7 +563,7 @@ private fun OutfitPhotoZoom(bytes: ByteArray, title: String, onClose: () -> Unit
                     Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                     TextButton(onClick = onClose) { Text("닫기") }
                 }
-                Box(Modifier.weight(1f).fillMaxWidth().clip(FashionCardShape).background(CreamDark)
+                Box(Modifier.weight(1f).fillMaxWidth().clip(FashionCardShape).background(CreamDark).testTag("serverOutfitZoomImage")
                     .pointerInput(bytes) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             scale = (scale * zoom).coerceIn(1f, 4f)
