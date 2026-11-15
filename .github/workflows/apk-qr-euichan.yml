@@ -15,8 +15,8 @@ jobs:
       - name: Make QR and attach to the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: apk-demo-20261115-71fd07b
-          URL: https://github.com/JEC0387/capston-second/releases/download/apk-demo-20261115-71fd07b/FashionFit.apk
+          TAG: apk-demo-20261115-e8b6f4e
+          URL: https://github.com/JEC0387/capston-second/releases/download/apk-demo-20261115-e8b6f4e/FashionFit.apk
         run: |
           python - <<'PY'
           import os, segno
