@@ -80,7 +80,8 @@ fun OutfitCard(
             }
         }
 
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(12.dp).then(if (uniform) Modifier.weight(1f) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(
                     modifier = Modifier
@@ -120,6 +121,8 @@ fun OutfitCard(
                     Text(reason, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack)
                 }
             }
+            // 나란히 놓인 카드끼리 버튼 줄을 맨 아래에 맞춘다
+            if (uniform) Spacer(Modifier.weight(1f))
             // 오늘 이거 입었어요 — 내 옷으로만 만든 코디일 때만 (관심 옷은 아직 갖고 있지 않으므로 착용 기록에 넣지 않음)
             if (wear != null && outfit.items.none { it.id in interestedItemIds || !it.isOwned }) {
                 val worn = wear.isWorn(outfit)
