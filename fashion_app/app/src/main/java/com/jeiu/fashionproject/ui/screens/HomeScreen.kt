@@ -309,7 +309,7 @@ fun HomeScreen(
                             rated = ratings[outfit.id],
                             modifier = Modifier.width(260.dp),
                             onRate = { like ->
-                                TastePreferenceStore.rateOutfit(context, outfit, like)
+                                TastePreferenceStore.toggleOutfitRating(context, outfit, like)
                             },
                             wear = wearToday,
                             saved = book.isSaved(savedOutfits, outfit),
@@ -329,7 +329,7 @@ fun HomeScreen(
                 plan = plan,
                 rated = ratings,
                 onRate = { outfit, like ->
-                    TastePreferenceStore.rateOutfit(context, outfit, like)
+                    TastePreferenceStore.toggleOutfitRating(context, outfit, like)
                 },
                 onMore = onForecastClick
             )
