@@ -99,6 +99,42 @@ class P48ServerOutfitControllerTest {
         assertEquals("ticket_write", vm.state.failureStage)
     }
 
+    @Test fun explicitAnotherOutfitLeavesCompletedJournalButDoesNotReopenOldResultOrPost() {
+        val store = Store(); val g = Gateway(store); val vm = vm(g, store)
+        ready(vm); vm.start(app, selection(), true); scheduler.runCurrent()
+        val old = store.ticket
+        assertNotNull(vm.state.result)
+        assertTrue(vm.chooseAnotherOutfit())
+        assertEquals(old, store.ticket)
+        vm.selectionChanged(selection(2)); vm.onAuthorizedScreenEntry(); scheduler.runCurrent()
+        assertNull(vm.state.result); assertFalse(vm.canResumeCurrentRequest())
+        assertEquals(1, g.posts); assertEquals(1, g.resultReads)
+        vm.start(app, selection(2), false); scheduler.runCurrent()
+        assertEquals(1, g.posts)
+        vm.start(app, selection(2), true); scheduler.runCurrent()
+        assertEquals(2, g.posts); assertNotEquals(old?.id, store.ticket?.id)
+        assertNotNull(vm.state.result); assertFalse(vm.state.choosingAnotherOutfit)
+    }
+
+    @Test fun anotherOutfitCannotUnlockUnknownRequestOrWrongAccount() {
+        val store = Store(); val g = Gateway(store).apply { lost = true }; val vm = vm(g, store)
+        ready(vm); vm.start(app, selection(), true); scheduler.runCurrent()
+        assertFalse(vm.chooseAnotherOutfit()); assertEquals(1, g.posts)
+        g.lost = false; vm.resume(); scheduler.runCurrent()
+        g.current = OutfitServerSession("https://synthetic.example", "different-synthetic-account")
+        assertFalse(vm.chooseAnotherOutfit()); assertNotNull(store.ticket)
+    }
+
+    @Test fun processRestartAfterChoosingAnotherStillRecoversOldJobWithoutPosting() {
+        val store = Store(); val g = Gateway(store); val vm = vm(g, store)
+        ready(vm); vm.start(app, selection(), true); scheduler.runCurrent()
+        assertTrue(vm.chooseAnotherOutfit())
+        val restored = vm(g, store)
+        restored.onAuthorizedScreenEntry(); scheduler.runCurrent()
+        assertNotNull(restored.state.result); assertEquals(1, g.posts)
+        assertEquals(store.ticket?.id, restored.state.ticket?.id)
+    }
+
     @Test fun serverPreparationUsesItsNegotiatedImageSpecAndKeepsOnDeviceDefaultSeparate() {
         val store = Store()
         val g = Gateway(store).apply { config = cfg.copy(maxInputSide = 1536) }

@@ -188,7 +188,8 @@ fun WardrobeScreen(
                     result = unworn,
                     onDelete = { WardrobeStore.remove(context, it.id) },
                     onKeep = { WardrobeStore.keep(context, it.id) },
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(bottom = 4.dp),
+                    onOpen = { detailItemId = it.id }
                 )
 
                 // "이것만 사면 코디 완성" 요약 (계획 4 — 5단계). 계산은 화면이 멈추지 않게 따로 한다

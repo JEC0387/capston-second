@@ -42,6 +42,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
+import com.jeiu.fashionproject.data.outfitRatings
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
 import com.jeiu.fashionproject.data.AvatarProfileStore
@@ -159,7 +160,8 @@ fun HomeScreen(
             RecommendationLog.record(context, WearDates.today(), "home", "OWNED", it.outfits)
         }
     }
-    var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
+    val tasteEvents by TastePreferenceStore.events.collectAsState()
+    val ratings = remember(tasteEvents) { outfitRatings(tasteEvents) }
     val wearToday = rememberWearToday(wearLogs)
     // 🔖 저장한 코디 · 📅 코디 일정
     val book = rememberOutfitBookActions()
@@ -303,7 +305,6 @@ fun HomeScreen(
                             rated = ratings[outfit.id],
                             modifier = Modifier.width(260.dp),
                             onRate = { like ->
-                                ratings = ratings + (outfit.id to like)
                                 TastePreferenceStore.rateOutfit(context, outfit, like)
                             },
                             wear = wearToday,
@@ -323,7 +324,6 @@ fun HomeScreen(
                 plan = plan,
                 rated = ratings,
                 onRate = { outfit, like ->
-                    ratings = ratings + (outfit.id to like)
                     TastePreferenceStore.rateOutfit(context, outfit, like)
                 },
                 onMore = onForecastClick

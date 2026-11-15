@@ -150,6 +150,10 @@ class BodyAnalysisViewModel(application: Application) : AndroidViewModel(applica
                     }
                     ensureActive()
                     val widths = silhouette.widths
+                    // Fixed enums only: never log the photo, URI, measurements, landmarks or identity.
+                    silhouette.issue?.let { issue ->
+                        android.util.Log.i("FashionFitBody", "stage=silhouette code=${issue.name} region=${silhouette.diagnostic?.name ?: "OTHER"}")
+                    }
                     val cm = BodyMeasurementCalculator.calculate(heightCm,widths,System.currentTimeMillis())
                     val classification = BodyTypeClassifier.classify(widths)
                     requestGate.publish(request) {

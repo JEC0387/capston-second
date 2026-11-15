@@ -73,7 +73,10 @@ class SilhouetteReliabilityTest {
             val half=if(y%2==0)10 else 45
             for(x in 100-half until 100+half)a[y*200+x]=.99f
         }
-        assertNull(measure(a))
+        val result=SilhouetteMeasurer.inspect(a,200,400,1000,2000,pose())
+        assertNull(result.widths)
+        assertEquals(SilhouetteIssue.UNSTABLE_BOUNDARY,result.issue)
+        assertEquals(SilhouetteDiagnostic.WAIST_BAND,result.diagnostic)
     }
     @Test fun lowerButUsableLandmarkLikelihoodDoesNotAutomaticallyFail() {
         val points=pose().mapValues { (_,p)->p.copy(confidence=.70f) }

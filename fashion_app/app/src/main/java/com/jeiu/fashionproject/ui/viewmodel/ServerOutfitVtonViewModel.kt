@@ -30,7 +30,8 @@ data class ServerOutfitUiState(val phase: String = "idle", val busy: Boolean = f
     val status: OutfitServerStatus? = null, val result: OutfitServerImage? = null,
     val previous: Boolean = false, val error: String? = null,
     val failureCode: String? = null, val failureStage: String? = null,
-    val requestedGarments: List<DeviceGarmentInput> = emptyList())
+    val requestedGarments: List<DeviceGarmentInput> = emptyList(),
+    val choosingAnotherOutfit: Boolean = false)
 
 /** Durable metadata precedes POST. Recovery ONLY queries the existing request; never re-POSTs. */
 class ServerOutfitVtonViewModel(
@@ -96,8 +97,18 @@ class ServerOutfitVtonViewModel(
     fun canDisplay(): Boolean = state.result != null && runCatching { sessionFor(); true }.getOrDefault(false)
 
     fun canResumeCurrentRequest(): Boolean =
-        state.ticket?.let { runCatching { sessionFor(it); true }.getOrDefault(false) } == true &&
+        !state.choosingAnotherOutfit && state.ticket?.let { runCatching { sessionFor(it); true }.getOrDefault(false) } == true &&
             (state.result != null || !startAllowedByPreviousJob() || state.status?.resultAvailable == true)
+
+    /** Explicit navigation only, never a submission or journal deletion. A completed,
+     * verified result may yield to another outfit; uncertain requests remain recovery-only. */
+    fun chooseAnotherOutfit(): Boolean {
+        if (locked || operation != null || state.busy || !canDisplay() || !startAllowedByPreviousJob()) return false
+        original = null
+        state = state.copy(result = null, previous = true, choosingAnotherOutfit = true,
+            phase = "idle", error = null, failureCode = null, failureStage = null, requestedGarments = emptyList())
+        return true
+    }
 
     fun requestedGarmentsForCurrentAccount(): List<DeviceGarmentInput> {
         val account = state.configBinding ?: return emptyList()
@@ -109,7 +120,7 @@ class ServerOutfitVtonViewModel(
     /** On screen entry, resume a journaled request using GET only. Leave ready config
      * available for selecting another outfit once that request is resolved. */
     fun onAuthorizedScreenEntry() {
-        if (state.ticket != null && state.result == null &&
+        if (!state.choosingAnotherOutfit && state.ticket != null && state.result == null &&
             (!startAllowedByPreviousJob() || state.status?.resultAvailable == true)) {
             resume()
         } else {
@@ -274,7 +285,8 @@ class ServerOutfitVtonViewModel(
             markStage("ticket_write")
             store!!.write(ticket) // Synchronous atomic metadata commit, before first byte of POST.
             original = job.person.bytes
-            state = state.copy(ticket = ticket, status = null, phase = "submitting", result = null, previous = false)
+            state = state.copy(ticket = ticket, status = null, phase = "submitting", result = null, previous = false,
+                choosingAnotherOutfit = false)
             markStage("submit_request")
             val first = gateway.submit(session, ticket, body)
             sessionFor(ticket)

@@ -217,7 +217,12 @@ class P48ServerOutfitUiTest {
             compose.onNodeWithText("닫기").performClick()
             compose.onNodeWithTag("serverOutfitChangeClothes").performClick()
             compose.runOnIdle { showing.value = true }
-            compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).assertExists()
+            await { !vm.state.busy }
+            compose.onNodeWithTag("serverOutfitResultImage", useUnmergedTree = true).assertDoesNotExist()
+            compose.onNodeWithTag("serverOutfitGenerate").assertIsDisplayed().performClick()
+            compose.onNodeWithTag("serverOutfitConsent").assertIsOff()
+            compose.onNodeWithTag("serverOutfitConsentConfirm").assertIsNotEnabled()
+            assertNotNull(ticket) // Previous request remains recoverable until another explicit approval.
             assertEquals(1, posts)
         } finally { target.delete() }
     }

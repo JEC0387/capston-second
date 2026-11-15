@@ -139,7 +139,7 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
 
     val awaitingJob = state.ticket != null && !model.startAllowedByPreviousJob()
     val hasResult = visible != null && resultPng != null && !(state.busy && state.phase == "preparing")
-    val completedWithoutImage = state.status?.status == "completed" && state.status?.resultAvailable == true
+    val completedWithoutImage = !state.choosingAnotherOutfit && state.status?.status == "completed" && state.status?.resultAvailable == true
     val generating = state.busy && (state.phase == "preparing" ||
         state.ticket != null && (awaitingJob || completedWithoutImage)) && !hasResult
     val recovering = awaitingJob || completedWithoutImage && !hasResult && state.failureStage in
@@ -173,7 +173,8 @@ internal fun ServerOutfitVtonScreen(selection: DeviceVtonSelection?, onBack: () 
                             }, enabled = !saving && pendingSave == null,
                                 shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                                     .testTag("serverOutfitSave")) { Text(if (saving) "저장 중" else "사진 저장하기") }
-                            OutlinedButton(onClick = onBack, enabled = !saving && pendingSave == null,
+                            OutlinedButton(onClick = { if (model.chooseAnotherOutfit()) onBack() },
+                                enabled = !state.busy && !saving && pendingSave == null,
                                 shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                                     .testTag("serverOutfitChangeClothes")) { Text("다른 옷 입어보기") }
                         }

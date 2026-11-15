@@ -139,14 +139,7 @@ fun OutfitCard(
                         Icon(Icons.Filled.EventAvailable, contentDescription = "코디 일정에 넣기", tint = MediumGray)
                     }
                 }
-                if (rated != null) {
-                    Text(
-                        if (rated) "좋아요를 취향에 반영했어요" else "다음엔 다른 스타일도 보여드릴게요",
-                        style = MaterialTheme.typography.bodySmall, color = MediumGray, modifier = Modifier.weight(1f)
-                    )
-                } else {
-                    Spacer(Modifier.weight(1f))
-                }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = { onRate(true) }, enabled = rated == null) {
                     Icon(
                         if (rated == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
@@ -159,6 +152,13 @@ fun OutfitCard(
                         contentDescription = "별로예요", tint = if (rated == false) Brown else MediumGray
                     )
                 }
+            }
+            if (rated != null) {
+                Text(
+                    if (rated) "좋아요를 반영했어요" else "다른 스타일을 추천할게요",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray,
+                    modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
