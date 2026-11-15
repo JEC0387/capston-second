@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -158,11 +159,12 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
     }
     var showAnalysis by rememberSaveable(owner) { mutableStateOf(false) }
     val showResult = owner != null && loaded && showAnalysis && saved != null
+    BackHandler { if (showResult) showAnalysis = false else onBack() }
     FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = { if (showResult) showAnalysis = false else onBack() }) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로")
             }
             Text("내 3D 체형", style = MaterialTheme.typography.titleLarge,

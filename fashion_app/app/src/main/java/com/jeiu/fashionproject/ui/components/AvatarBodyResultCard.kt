@@ -11,12 +11,20 @@ import com.jeiu.fashionproject.data.AvatarProfile
 import com.jeiu.fashionproject.data.BodyDimension
 import com.jeiu.fashionproject.recommend.AvatarBodyAnalysis
 import com.jeiu.fashionproject.recommend.CircumferenceShape
+import com.jeiu.fashionproject.recommend.AvatarAnalysisPath
+import com.jeiu.fashionproject.recommend.AvatarModelAnalysis
+import com.jeiu.fashionproject.recommend.ModelShape
 import com.jeiu.fashionproject.ui.theme.*
 import java.util.Locale
 import kotlin.math.abs
 
 @Composable
 internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit) {
+    val path = remember(profile) { AvatarModelAnalysis.path(profile) }
+    if (path != AvatarAnalysisPath.MEASURED) {
+        AvatarModelResultCard(profile, onEdit)
+        return
+    }
     val result = remember(profile) { AvatarBodyAnalysis.analyze(profile) }
     var details by rememberSaveable { mutableStateOf(false) }
     fun number(value: Float): String = String.format(Locale.KOREA, "%.1f", value)
@@ -77,6 +85,53 @@ internal fun AvatarBodyResultCard(profile: AvatarProfile, onEdit: () -> Unit) {
                 Text("치수 수정하기")
             }
 
+        }
+    }
+}
+
+@Composable
+private fun AvatarModelResultCard(profile: AvatarProfile, onEdit: () -> Unit) {
+    val result = remember(profile) { AvatarModelAnalysis.analyze(profile) }
+    var details by rememberSaveable { mutableStateOf(false) }
+    fun percent(ratio: Float) = String.format(Locale.KOREA, "%.1f", ratio * 100f)
+    Card(Modifier.fillMaxWidth().testTag("avatarBodyResult"), shape = FashionCardShape,
+        colors = CardDefaults.cardColors(containerColor = CreamDark)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("3D 모델 기반 추정", style = MaterialTheme.typography.labelLarge,
+                color = FashionMuted, modifier = Modifier.testTag("avatarModelSource"))
+            if (result == null) {
+                Text("저장한 체형을 다시 확인해 주세요.")
+            } else {
+                val dimension = if (result.usesModelCircumferences) "둘레" else "너비"
+                Text(result.shape.label, style = MaterialTheme.typography.titleLarge, color = CharcoalBlack)
+                Text("저장한 모델의 비율을 살펴본 결과예요. 실제 신체 측정은 아니에요.", color = FashionMuted)
+                Text("모델의 가슴 ${dimension}는 엉덩이 ${dimension}의 ${percent(result.chestToHip)}%예요.",
+                    modifier = Modifier.testTag("avatarModelEvidence"))
+                Text("모델의 허리 ${dimension}는 가슴·엉덩이 평균의 ${percent(result.waistToTorso)}%예요.",
+                    modifier = Modifier.testTag("avatarModelWaistEvidence"))
+                Text("추천 핏", style = MaterialTheme.typography.titleMedium)
+                Text("상의 · " + when (result.shape) {
+                    ModelShape.UPPER_EMPHASIS -> "가슴과 어깨가 편안한 기본핏을 비교해 보세요."
+                    ModelShape.DEFINED_WAIST -> "허리선이 있는 핏과 기본핏을 비교해 보세요."
+                    else -> "어깨선이 자연스러운 기본핏을 비교해 보세요."
+                })
+                Text("하의 · " + when (result.shape) {
+                    ModelShape.LOWER_EMPHASIS -> "엉덩이에 여유가 있는 스트레이트핏을 비교해 보세요."
+                    else -> "허리 조절이 가능한 스트레이트핏을 비교해 보세요."
+                })
+                Text("사이즈는 직접 잰 치수와 상품 실측표로 확인해 주세요.", color = FashionMuted)
+                OutlinedButton({ details = !details }, Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .testTag("avatarModelDetails")) { Text(if (details) "모델 비율 접기" else "모델 비율 보기") }
+                if (details) {
+                    Text("모델의 어깨 너비 / 엉덩이 너비 · ${percent(result.shoulderToHip)}%",
+                        modifier = Modifier.testTag("avatarModelShoulderEvidence"))
+                    Text("모델의 다리 길이 / 키 · ${percent(result.legToHeight)}%")
+                    result.thighToHip?.let { Text("모델의 허벅지 둘레 / 엉덩이 둘레 · ${percent(it)}%") }
+                }
+            }
+            OutlinedButton(onEdit, Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("avatarBodyEdit")) {
+                Text("치수 수정하기")
+            }
         }
     }
 }
