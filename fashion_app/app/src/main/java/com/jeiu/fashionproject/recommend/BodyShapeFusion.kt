@@ -18,7 +18,8 @@ object BodyShapeFusion {
 
     /** 직접 입력한 가슴 · 허리 · 엉덩이 둘레로 본 체형. 셋 중 하나라도 없으면 null */
     fun fromManual(m: ManualBodyMeasurements?): String? {
-        val bust = m?.chestCircumferenceCm ?: return null
+        if (m == null) return null
+        val bust = m.chestCircumferenceCm ?: return null
         val waist = m.waistCircumferenceCm ?: return null
         val hip = m.hipCircumferenceCm ?: return null
         if (listOf(bust, waist, hip).any { !it.isFinite() || it <= 0f }) return null
