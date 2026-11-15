@@ -59,6 +59,37 @@ def test_optional_provider_selection_does_not_enable_or_fallback(monkeypatch):
     assert type(configured_provider()).__name__ == "GenlookProvider"
 
 
+def test_deployed_factory_preserves_explicit_paired_operator_review(monkeypatch):
+    monkeypatch.setenv("OUTFIT_VTON_PROVIDER", "genlook")
+    monkeypatch.setenv("GENLOOK_ENABLED", "false")
+    monkeypatch.setenv("GENLOOK_MODE", "clothing-pair-then-shoes")
+    monkeypatch.setenv("GENLOOK_TIMEOUT_SECONDS", "900")
+    monkeypatch.delenv("GENLOOK_OPERATOR_REVIEW_SECONDS", raising=False)
+    baseline = configured_provider()
+    monkeypatch.setenv("GENLOOK_OPERATOR_REVIEW_SECONDS", "300")
+    reviewed = configured_provider()
+    assert reviewed._review_timeout == 300
+    assert reviewed.settings.enabled is False  # Configuration is not spending approval.
+    assert reviewed.contract_sha != baseline.contract_sha  # Never adopt a differently approved ledger.
+
+
+@pytest.mark.parametrize("review,mode,timeout", [
+    ("invalid", "clothing-pair-then-shoes", "900"),
+    ("-1", "clothing-pair-then-shoes", "900"),
+    ("1801", "clothing-pair-then-shoes", "1800"),
+    ("300", "clothing-pair-then-shoes", "240"),
+    ("300", "sequential-3", "900"),
+])
+def test_invalid_operator_review_is_blocked_before_provider_creation(monkeypatch, review, mode, timeout):
+    monkeypatch.setenv("OUTFIT_VTON_PROVIDER", "genlook")
+    monkeypatch.setenv("GENLOOK_OPERATOR_REVIEW_SECONDS", review)
+    monkeypatch.setenv("GENLOOK_MODE", mode)
+    monkeypatch.setenv("GENLOOK_TIMEOUT_SECONDS", timeout)
+    provider = configured_provider()
+    assert type(provider).__name__ == "DisabledProvider"
+    assert provider.reason == "genlook_policy_unreviewed"
+
+
 def test_source_receipt_owner_binding_duplicate_and_restart(tmp_path):
     provider = RemoteFixture()
     config = settings(tmp_path)

@@ -15,7 +15,12 @@ AUTH_REGISTRATION_ENABLED=true        # 앱이 Bearer 계정을 만들 수 있�
 ```
 
 `SOCIAL_LOGIN_ENABLED` 가 없거나 `false` 면 로그인 API 전부가 503 으로 꺼진다 (기존 동작).
-DB 표(`user_logins`)는 `005_user_logins.sql` 로 이미 있으므로 새 마이그레이션은 없다.
+위 값은 운영 승인 후의 설정 예시이며, 지금 바로 가입을 열라는 의미가 아니다.
+배포 DB에 `user_logins`가 이미 있다고 가정하지 않는다. `backend/MIGRATION_PREFLIGHT.md`와
+`backend/migrations/README.md`에 따라 실제 적용 이력과 계보를 먼저 확인한다.
+팀 계보의 `005_user_logins.sql`, `006_auth_credentials.sql`, `007_auth_hardening.sql` 적용 여부와
+기존 개인 계보의 005/006 번호 충돌을 대조한 뒤 담당자가 승인한 후속 변경만 적용한다.
+`DB_AUTO_CREATE=false`를 유지하고 기존 적용 SQL·이력·사용자 데이터를 덮어쓰지 않는다.
 
 # A. Google
 
@@ -26,8 +31,9 @@ DB 표(`user_logins`)는 `005_user_logins.sql` 로 이미 있으므로 새 마�
 3. **사용자 인증 정보 → OAuth 클라이언트 ID** 를 두 종류 만든다
    - **웹 애플리케이션** 1개 → `xxxx.apps.googleusercontent.com` 이 **웹 클라이언트 ID**
    - **Android** (APK 에 서명한 키마다 1개) — 패키지 이름 `com.jeiu.fashionproject`, SHA-1 은
-     `cd fashion_app && ./gradlew signingReport` 의 debug SHA1.
-     GitHub Actions 가 만든 APK 를 쓰면 그 APK 서명 키의 SHA-1 도 등록한다.
+     최종 승인된 **정식 APK**의 인증서 SHA-1/SHA-256을 사용한다. 개발용 debug 인증서 등록과
+     정식 Release 인증서 등록을 구분한다. QA/Preview 키를 정식 키로 전용하지 않는다.
+     Google Play App Signing을 사용한다면 설치본에 쓰이는 앱 서명 인증서도 담당자가 확인한다.
 
 ## 2. 앱
 

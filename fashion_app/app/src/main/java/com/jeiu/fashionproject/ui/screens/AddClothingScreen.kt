@@ -220,7 +220,7 @@ fun AddClothingScreen(
 
                     // AI 분류 결과 배지
                     s.classificationUri?.let { photo ->
-                        Text("사진 선택만으로는 서버에 전송하지 않아요. 종류를 직접 선택하거나 별도로 서버 분류를 요청할 수 있어요.",
+                        Text("사진은 서버로 보내지 않아요. 종류를 직접 고르거나 AI 분류를 요청하세요.",
                             style = MaterialTheme.typography.bodySmall, color = MediumGray)
                         OutlinedButton(enabled = !s.classifying && !s.garmentLoading,
                             modifier = Modifier.testTag("requestClothingClassification"),
@@ -374,7 +374,7 @@ fun AddClothingScreen(
                         }
                     }
                     if (styleOverride == null) {
-                        Text("옷 종류와 색을 보고 자동으로 골랐어요. 다른 스타일을 눌러 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                        Text("자동으로 골랐어요. 눌러서 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                     }
 
                     // 구매 정보 (선택) — 넣으면 착용 달력에서 '착용당 비용'을 계산해 줘요

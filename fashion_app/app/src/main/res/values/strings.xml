@@ -1,3 +1,4 @@
 <resources>
-    <string name="app_name">FashionProject</string>
+    <string name="app_name">패션핏</string>
+    <string name="brand_name" translatable="false">FashionFit</string>
 </resources>

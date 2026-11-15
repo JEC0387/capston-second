@@ -63,6 +63,11 @@ def test_new_accounts_are_isolated_and_recovery_rotates_access(monkeypatch):
     client, factory, engine = client_and_db(monkeypatch)
     try:
         a, b = register(client), register(client)
+        assert a["accountId"] != b["accountId"]
+        status = client.get("/api/auth/status", headers=bearer(a["accessToken"]))
+        assert status.status_code == 200 and status.headers["cache-control"] == "no-store"
+        assert status.json()["accountId"] == a["accountId"]
+        assert client.get("/api/auth/status").status_code == 401
         item = {"id": "one", "name": "내 옷", "category": "상의", "colorName": "검정",
                 "colorValue": 0xFF000000, "imageUri": "file:///private"}
         assert client.post("/api/wardrobe/sync", json={"items": [item]},
@@ -71,6 +76,8 @@ def test_new_accounts_are_isolated_and_recovery_rotates_access(monkeypatch):
         assert client.get("/api/wardrobe/photos/one", headers=bearer(b["accessToken"])).status_code == 404
         rotated = client.post("/api/auth/recover", json={"recoveryCode": a["recoveryCode"]})
         assert rotated.status_code == 200
+        assert rotated.json()["accountId"] == a["accountId"]
+        assert client.get("/api/auth/status", headers=bearer(rotated.json()["accessToken"])).json()["accountId"] == a["accountId"]
         assert client.get("/api/wardrobe", headers=bearer(a["accessToken"])).status_code == 401
         assert client.get("/api/wardrobe", headers=bearer(rotated.json()["accessToken"])).json()["totalCount"] == 1
         assert client.post("/api/auth/recover", json={"recoveryCode": b["accessToken"]}).status_code == 401

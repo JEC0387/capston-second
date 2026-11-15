@@ -97,6 +97,7 @@ object AvatarMeasurementImport {
 object AvatarProfileStore {
     private const val PREFS = "avatar_visual_profile_v1"
     private const val KEY = "profile"
+    private val storedKeys = listOf(KEY, "profile_v1_preserved", "profile_pre_cm_preserved")
     private val _current = MutableStateFlow<AvatarProfile?>(null)
     val current: StateFlow<AvatarProfile?> = _current
     private val _issue = MutableStateFlow<String?>(null)
@@ -119,12 +120,28 @@ object AvatarProfileStore {
                 } } else emptyMap(),if(schema==3)AvatarCentimeters.fromJson(json.getJSONObject("centimeters")) else null).takeIf { it.valid() }
         }.getOrNull()
 
+    @Synchronized
     fun load(context: Context) {
-        val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(KEY,null)}.getOrElse {
+        loadScope(context, BodyMeasurementScope.current())
+    }
+
+    private fun loadScope(context: Context, scope: String?) {
+        if (scope == null) {
+            _current.value = null
+            _issue.value = null
+            return
+        }
+        if (!BodyMeasurementScope.prepare(context, PREFS, storedKeys, scope)) {
+            _current.value = null
+            _issue.value = "기존 체형 기록을 확인하지 못했어요. 원본은 그대로 보존했어요."
+            return
+        }
+        val raw = runCatching {context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).getString(scope + KEY,null)}.getOrElse {
             _current.value=null;_issue.value="저장된 3D 형식을 읽지 못했어요. 원본을 보존했어요.";return
         }
         if(raw==null) {_current.value=null;_issue.value=null;return}
         val parsed=decode(raw)
+        if (BodyMeasurementScope.current() != scope) { _current.value=null; _issue.value=null; return }
         _current.value = parsed
         _issue.value = if (parsed == null) "저장된 3D 표시값을 읽지 못했어요. 원본을 보존했어요." else null
     }
@@ -143,23 +160,30 @@ object AvatarProfileStore {
         return json.toString()
     }
 
+    @Synchronized
     fun save(context: Context, profile: AvatarProfile): Boolean {
-        load(context)
+        val scope = BodyMeasurementScope.current() ?: return false
+        loadScope(context, scope)
         if (!profile.valid() || _issue.value != null) return false
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
-        val original=prefs.getString(KEY,null)
+        val original=prefs.getString(scope + KEY,null)
         val edit=prefs.edit()
-        if(original!=null && JSONObject(original).getInt("schema")==1 && !prefs.contains("profile_v1_preserved"))
-            edit.putString("profile_v1_preserved",original)
-        if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains("profile_pre_cm_preserved"))
-            edit.putString("profile_pre_cm_preserved",original)
-        val ok = edit.putString(KEY, encode(profile)).commit()
+        if(original!=null && JSONObject(original).getInt("schema")==1 && !prefs.contains(scope + "profile_v1_preserved"))
+            edit.putString(scope + "profile_v1_preserved",original)
+        if(original!=null && JSONObject(original).getInt("schema")<=2 && profile.centimeters!=null && !prefs.contains(scope + "profile_pre_cm_preserved"))
+            edit.putString(scope + "profile_pre_cm_preserved",original)
+        val ok = edit.putString(scope + KEY, encode(profile)).commit()
+        if (BodyMeasurementScope.current() != scope) { _current.value=null; return false }
         if (ok) _current.value = profile
         return ok
     }
 
+    @Synchronized
     fun clear(context: Context): Boolean {
-        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).remove("profile_v1_preserved").remove("profile_pre_cm_preserved").commit()
+        val scope = BodyMeasurementScope.current() ?: return false
+        if (!BodyMeasurementScope.prepare(context, PREFS, storedKeys, scope)) return false
+        val ok = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(scope + KEY)
+            .remove(scope + "profile_v1_preserved").remove(scope + "profile_pre_cm_preserved").commit()
         if (ok) { _current.value = null; _issue.value = null }
         return ok
     }

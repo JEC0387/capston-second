@@ -105,7 +105,7 @@ fun OnboardingScreen(onStart: () -> Unit) {
                     .background(Camel)
                     .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
-                Text("STYLE AI", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name), color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
 

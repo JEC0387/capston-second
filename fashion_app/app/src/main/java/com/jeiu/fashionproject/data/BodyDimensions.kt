@@ -65,7 +65,30 @@ object BodyDimensions {
                 put(key,cm,MeasurementOrigin.USER_ENTERED,entered.enteredAt)
             }
         }
+        calibrationFactor(comparisons)?.let { f ->
+            // 직접 잰 어깨 · 다리 · 상체 길이와 사진 추정값의 비율로, 직접 재지 않은 정면 너비도 같은 비율로 보정한다.
+            listOf(BodyDimension.WAIST_FRONT_WIDTH, BodyDimension.HIP_FRONT_WIDTH).forEach { key ->
+                values[key]?.takeIf { it.origin == MeasurementOrigin.PHOTO_ESTIMATE }?.let { v ->
+                    values[key] = v.copy(cm = v.cm * f)
+                }
+            }
+            notes += "직접 입력한 치수로 사진 추정값을 보정했어요 (×${"%.2f".format(f)})."
+        }
         return BodyDimensionProfile(values,comparisons,notes)
+    }
+
+    /** 직접 입력값 / 사진 추정값 비율의 중앙값 (0.85~1.15로 제한). 차이가 1% 미만이거나 비교값이 없으면 null */
+    fun calibrationFactor(comparisons: List<DimensionComparison>): Float? {
+        val ratios = comparisons
+            .filter { it.dimension in setOf(BodyDimension.SHOULDER_WIDTH, BodyDimension.LEG_LENGTH, BodyDimension.TORSO_LENGTH) }
+            .filter { it.enteredCm.isFinite() && it.photoCm.isFinite() && it.enteredCm > 0f && it.photoCm > 0f }
+            .map { it.enteredCm / it.photoCm }
+            .sorted()
+        if (ratios.isEmpty()) return null
+        val median = if (ratios.size % 2 == 1) ratios[ratios.size / 2]
+            else (ratios[ratios.size / 2 - 1] + ratios[ratios.size / 2]) / 2f
+        val f = median.coerceIn(0.85f, 1.15f)
+        return f.takeIf { abs(it - 1f) >= 0.01f }
     }
 }
 

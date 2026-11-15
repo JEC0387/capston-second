@@ -47,6 +47,8 @@ class BodyPhotoEntryUiTest {
     }
     @Before fun setup() {
         val app=ApplicationProvider.getApplicationContext<Application>()
+        com.jeiu.fashionproject.data.ManualBodyStore.clear(app)
+        com.jeiu.fashionproject.data.AvatarProfileStore.clear(app)
         PrivacyConsent.withdraw(app)
         model=BodyAnalysisViewModel(app)
         compose.setContent {
@@ -56,14 +58,38 @@ class BodyPhotoEntryUiTest {
                 }
             }
         }
-        compose.onNodeWithText("키 (cm)").performTextInput("170")
+        compose.onNodeWithTag("bodyPhotoExpand").performClick()
+        compose.onNodeWithText("키 (cm)").performScrollTo().performTextInput("170")
+    }
+    @Test fun primaryChoicesHidePhotoToolsAndHistoryUntilRequested() {
+        compose.onNodeWithTag("bodyPhotoExpand").performScrollTo().performClick()
+        compose.onNodeWithText("사진으로 분석하기").assertExists()
+        compose.onNodeWithText("신체 치수 직접 입력").assertExists()
+        compose.onNodeWithTag("bodyCameraButton").assertDoesNotExist()
+        compose.onNodeWithTag("bodyGalleryButton").assertDoesNotExist()
+        compose.onNodeWithText("분석 기록 보기").assertDoesNotExist()
+        compose.onNodeWithTag("bodyExtrasToggle").performScrollTo().performClick()
+        compose.onNodeWithText("분석 기록 보기").assertExists()
+        compose.runOnIdle { Assert.assertEquals(0, cameraLaunches); Assert.assertEquals(0, galleryLaunches) }
+    }
+    @Test fun savedMeasurementsAreExplicitlyOpenedWithoutChangingTheOriginal() {
+        val app=ApplicationProvider.getApplicationContext<Application>()
+        val original=com.jeiu.fashionproject.data.ManualBodyMeasurements(174f,43f,96f,82f,100f,80f,46f,10L)
+        compose.runOnIdle { Assert.assertTrue(com.jeiu.fashionproject.data.ManualBodyStore.update(app, original, true)) }
+        compose.onNodeWithTag("analysisManualSummary").assertDoesNotExist()
+        compose.onNodeWithTag("bodySavedToggle").performScrollTo().performClick()
+        compose.onNodeWithTag("analysisManualSummary").assertExists()
+        compose.onNodeWithTag("bodySavedToggle").performClick()
+        compose.onNodeWithTag("analysisManualSummary").assertDoesNotExist()
+        compose.runOnIdle { Assert.assertEquals(original,com.jeiu.fashionproject.data.ManualBodyStore.current.value) }
     }
     @After fun cleanup() { compose.runOnIdle { model.reset();model.viewModelScope.cancel() } }
-    @Test fun defaultAvatarIsOptionalAndLeavesTheExistingPhotoEntryAvailable() {
+    @Test fun latestAvatarIsOptionalAndLeavesTheExistingPhotoEntryAvailable() {
         compose.onNodeWithTag("bodyManualExpand").performScrollTo().performClick()
-        compose.onNodeWithText("3D 기본 모델").performScrollTo().performClick()
-        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
-        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithText("3D 기본 모델").assertDoesNotExist()
+        compose.onNodeWithTag("manualBodyAvatar").performScrollTo().performClick()
+        compose.onNodeWithTag("openCmAvatar").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("manualAvatarBack").performScrollTo().performClick()
         compose.onNodeWithTag("bodyGalleryButton").performScrollTo().performClick()
         compose.onNodeWithText("체형 사진 이용 안내").assertIsDisplayed()
     }
@@ -132,10 +158,10 @@ class BodyPhotoEntryUiTest {
 
     @Test fun requiredHeightHelpAndKeyboardDoneLeadToEnabledCamera() {
         compose.onNodeWithTag("bodyHeightInput").performTextClearance()
-        compose.onNodeWithTag("bodyHeightHelp", useUnmergedTree = true).assertTextContains("키는 cm 환산에 필요해요.", substring = true)
+        compose.onNodeWithTag("bodyHeightHelp", useUnmergedTree = true).assertTextContains("키 100~230 cm를 입력해주세요.", substring = true)
         compose.onNodeWithTag("bodyHeightInput").performTextInput("170.5")
         compose.onNodeWithTag("bodyHeightInput").performImeAction()
-        compose.onNodeWithTag("bodyHeightHelp", useUnmergedTree = true).assertTextContains("아래 촬영 또는 사진 선택", substring = true)
+        compose.onNodeWithTag("bodyHeightHelp", useUnmergedTree = true).assertTextContains("입력한 키를 기준으로 사진을 분석해요.", substring = true)
         compose.onNodeWithTag("bodyCameraButton").performScrollTo().assertIsEnabled().performClick()
         compose.onNodeWithText("동의하고 시작").performClick()
         compose.runOnIdle { Assert.assertEquals(1, cameraLaunches) }
@@ -162,12 +188,13 @@ class BodyPhotoEntryUiTest {
         compose.onNodeWithTag("bodyGalleryButton").performScrollTo().assertIsDisplayed().assertIsEnabled()
     }
 
-    @Test fun smallViewportOpensDefault3dWithoutHeightOrPhotos() {
+    @Test fun smallViewportNeverInventsDefaultBodyWithoutHeightOrPhotos() {
         compose.runOnIdle { viewportHeight = 320.dp; model.updateHeightInput("") }
         compose.onNodeWithTag("bodyManualExpand").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("3D 기본 모델").performScrollTo().assertIsDisplayed().performClick()
-        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
-        compose.onNodeWithText("3D 닫기").performClick()
+        compose.onNodeWithText("3D 기본 모델").assertDoesNotExist()
+        compose.onNodeWithTag("manualBodyAvatar").performScrollTo().performClick()
+        compose.onNodeWithTag("openCmAvatar").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("manualAvatarBack").performScrollTo().performClick()
         compose.onNodeWithTag("bodyCameraButton").performScrollTo().assertIsDisplayed()
     }
 

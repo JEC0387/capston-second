@@ -1,8 +1,12 @@
 package com.jeiu.fashionproject
 
 import android.app.Application
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -11,7 +15,7 @@ import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.components.PremiumAvatarEditor
-import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
+import com.jeiu.fashionproject.ui.components.AvatarSetupCard
 import org.junit.*
 import org.junit.Assert.*
 import org.junit.runner.RunWith
@@ -43,10 +47,10 @@ class P9EditorUiTest {
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().performTouchInput {swipeLeft()}
         val final=value();assertTrue(final>77.5f)
         compose.onNodeWithTag("rulerCurrentValue").assertTextContains(String.format(Locale.KOREA,"%.1f cm",final))
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.runOnIdle {assertEquals(0,writes);assertEquals(previous,AvatarProfileStore.current.value)}
         compose.onNodeWithTag("avatarApplyCancel").performClick()
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.onNodeWithTag("avatarApplyApprove").performClick()
         compose.runOnIdle {assertEquals(1,writes);assertEquals(final,captured!!.centimeters!![AvatarPart.WAIST])}
     }
@@ -70,7 +74,7 @@ class P9EditorUiTest {
         assertEquals(shoulder,value())
         compose.onNodeWithTag("cmPart-CHEST").performScrollTo().performClick()
         assertEquals(chest,value())
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().performClick()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().performClick()
         compose.onNodeWithTag("avatarApplyApprove").performClick()
         compose.runOnIdle {
             val saved=checkNotNull(captured?.centimeters)
@@ -103,7 +107,7 @@ class P9EditorUiTest {
         compose.onNodeWithTag("rulerDirectInput").performScrollTo().performClick()
         compose.onNodeWithTag("rulerInputField").performTextReplacement("77.3")
         compose.onNodeWithTag("rulerInputConfirm").assertIsNotEnabled()
-        compose.onNodeWithText("취소").performClick()
+        compose.onNodeWithTag("rulerInputCancel").performClick()
         assertEquals(body[AvatarPart.WAIST],value())
     }
     @Test fun savedInstanceStateRestoresDraftAndSelectedPartWithoutWriting() {
@@ -121,9 +125,10 @@ class P9EditorUiTest {
             PremiumAvatarEditor(initial,null,{},onSave={false},onApplyToFitting={})
         }}
         compose.onNodeWithTag("cmAvatarViewport").assertIsDisplayed()
+        compose.onNodeWithTag("cmEditorCancel").assertIsDisplayed()
         compose.onNodeWithTag("cmPart-TORSO").performScrollTo().performClick()
         compose.onNodeWithTag("avatarCmRuler").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("cmEditorSave").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("cmEditorSave").assertIsDisplayed().assertIsDisplayed()
         compose.onNodeWithTag("cmApplyFitting").assertDoesNotExist()
         compose.onNodeWithText("초기 추정값 복원").assertDoesNotExist()
         compose.onNodeWithTag("cmEditorAdvancedToggle").performScrollTo().performClick()
@@ -140,7 +145,7 @@ class P9EditorUiTest {
     }
     @Test fun setupAndLegacySaveDoNotDropACmProfile() {
         AvatarProfileStore.save(app,initial)
-        compose.setContent {BodyAvatarSetupScreen({}, {})}
+        compose.setContent { Column(Modifier.verticalScroll(rememberScrollState())) { AvatarSetupCard() } }
         compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
         compose.onNodeWithTag("premiumAvatarEditor").assertIsDisplayed()
         compose.onNodeWithContentDescription("3D 조절 닫기").performClick()

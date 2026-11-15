@@ -4,8 +4,18 @@ import com.jeiu.fashionproject.data.BodyRecord
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurementCalculator
 import com.jeiu.fashionproject.ui.viewmodel.BodyMeasurements
 
-/** 사진에서 실제로 얻은 길이만 사용한다. 너비를 둘레나 옷의 핏으로 해석하지 않는다. */
-data class BodyProfile(val legToHeightRatio: Double, val torsoToLegRatio: Double)
+/**
+ * 추천에 쓰는 체형 정보. 길이 비율은 사진 · 직접 입력에서 얻은 값만 쓴다(없으면 NaN).
+ * bodyType 은 사진 분석과 직접 입력한 둘레를 합친 4가지 분류(BodyShapeFusion), gender 는 체형별 제안을 고를 때 쓴다.
+ */
+data class BodyProfile(
+    val legToHeightRatio: Double,
+    val torsoToLegRatio: Double,
+    val bodyType: String? = null,
+    val gender: com.jeiu.fashionproject.data.Gender? = null
+) {
+    val hasLengths: Boolean get() = legToHeightRatio.isFinite() && torsoToLegRatio.isFinite() && torsoToLegRatio > 0.0
+}
 
 object BodyProfileAnalyzer {
     fun fromDimensions(profile: com.jeiu.fashionproject.data.BodyDimensionProfile): BodyProfile? = fromLengths(

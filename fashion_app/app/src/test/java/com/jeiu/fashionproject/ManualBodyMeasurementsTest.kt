@@ -1,19 +1,27 @@
 package com.jeiu.fashionproject
 
+import android.app.Application
 import com.jeiu.fashionproject.data.ManualBodyMeasurements
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.recommend.BodyProfileAnalyzer
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class ManualBodyMeasurementsTest {
     private val context get() = RuntimeEnvironment.getApplication()
     private val valid = ManualBodyMeasurements(170f, 40f, 90f, 75f, 95f, 88f, 52f, 1L)
+
+    @Before fun storageFixtureMustNotStartProductionNetworkWorkers() {
+        assertEquals(Application::class.java, context.javaClass)
+    }
 
     @After fun cleanup() { ManualBodyStore.clear(context) }
 

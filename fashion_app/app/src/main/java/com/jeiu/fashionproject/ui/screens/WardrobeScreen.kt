@@ -188,7 +188,8 @@ fun WardrobeScreen(
                     result = unworn,
                     onDelete = { WardrobeStore.remove(context, it.id) },
                     onKeep = { WardrobeStore.keep(context, it.id) },
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(bottom = 4.dp),
+                    onOpen = { detailItemId = it.id }
                 )
 
                 // "이것만 사면 코디 완성" 요약 (계획 4 — 5단계). 계산은 화면이 멈추지 않게 따로 한다
@@ -611,7 +612,8 @@ private fun BuyThisCard(report: MissingItemFinder.Report, onClick: () -> Unit, m
                 top?.let {
                     Text(
                         "${it.item.name} 하나만 사면 코디 ${it.gain}개가 더 생겨요",
-                        style = MaterialTheme.typography.bodyMedium, color = BrownDark, fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.bodyMedium, color = BrownDark, fontWeight = FontWeight.SemiBold,
+                        maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )
                 }
                 if (report.orphans.isNotEmpty()) {

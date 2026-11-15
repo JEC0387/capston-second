@@ -113,10 +113,12 @@ class P36DragUiTest {
 
     @Test fun wardrobeCardDropsReplaceSameSlotAndUndoRestoresPreviousGarment() {
         drag("top-a")
-        compose.waitUntil(10000) {vm.worn[FitSlot.TOP]?.item?.id=="top-a"}
+        // The decode resumes on Main. Drain the UI queue before inspecting Compose state;
+        // polling it only from the test thread can leave that completion queued in Robolectric.
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]?.item?.id=="top-a"}}
         compose.onNodeWithTag("fittingInputNotice").assertTextContains("수동 배치",substring=true)
         drag("top-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.TOP]?.item?.id=="top-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]?.item?.id=="top-b"}}
         assertEquals(1,vm.worn.size)
         compose.onNodeWithTag("photoDropUndo").performScrollTo().performClick()
         compose.runOnIdle {assertEquals("top-a",vm.worn[FitSlot.TOP]?.item?.id);assertTrue(vm.avatarWorn.isEmpty())}
@@ -146,17 +148,41 @@ class P36DragUiTest {
     fun narrowScreenDropsAllCategoriesAndReplacingOnePreservesTheOthers() {
         for ((id,slot) in listOf("top-a" to FitSlot.TOP,"pants-a" to FitSlot.BOTTOM,"shoes-a" to FitSlot.SHOES)) {
             drag(id)
-            compose.waitUntil(10000) {vm.worn[slot]?.item?.id==id}
+            // Decoding resumes on Main; drain that queue just as the other drag cases do.
+            compose.waitUntil(10000) {compose.runOnIdle {vm.worn[slot]?.item?.id==id}}
         }
         val top=vm.worn.getValue(FitSlot.TOP); val shoes=vm.worn.getValue(FitSlot.SHOES)
         drag("pants-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.BOTTOM]?.item?.id=="pants-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.BOTTOM]?.item?.id=="pants-b"}}
         compose.runOnIdle {assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(shoes,vm.worn[FitSlot.SHOES])}
         val pants=vm.worn.getValue(FitSlot.BOTTOM)
         drag("shoes-b")
-        compose.waitUntil(10000) {vm.worn[FitSlot.SHOES]?.item?.id=="shoes-b"}
+        compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.SHOES]?.item?.id=="shoes-b"}}
         compose.runOnIdle {assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertEquals(3,vm.worn.size)}
         compose.onNodeWithTag("photoDropUndo").performScrollTo().performClick()
         compose.runOnIdle {assertEquals(shoes,vm.worn[FitSlot.SHOES]);assertEquals(top,vm.worn[FitSlot.TOP]);assertEquals(pants,vm.worn[FitSlot.BOTTOM]);assertTrue(vm.avatarWorn.isEmpty())}
     }
+    @Test fun pinnedSlidersOnlyScaleSelectedGarmentAndKeepOpacityAcrossSelection() {
+        drag("top-a"); compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.TOP]!=null}}
+        drag("pants-a"); compose.waitUntil(10000) {compose.runOnIdle {vm.worn[FitSlot.BOTTOM]!=null}}
+        val top=vm.worn.getValue(FitSlot.TOP)
+        val pants=vm.worn.getValue(FitSlot.BOTTOM)
+        compose.onNodeWithTag("fittingAdjustToggle").performClick()
+        compose.onNodeWithTag("manualScale").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("manualScaleUp").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithTag("manualAlpha").performScrollTo().assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(.55f) }
+        compose.runOnIdle {
+            assertEquals(top,vm.worn[FitSlot.TOP])
+            assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])
+            assertEquals(.55f,vm.overlayAlpha,.001f)
+            vm.activeSlot=FitSlot.TOP
+        }
+        compose.onNodeWithTag("manualScaleDown").performScrollTo().assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            assertEquals(top.copy(scale=.9f),vm.worn[FitSlot.TOP])
+            assertEquals(pants.copy(scale=1.1f),vm.worn[FitSlot.BOTTOM])
+            assertEquals(.55f,vm.overlayAlpha,.001f)
+        }
+    }
+
 }

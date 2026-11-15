@@ -20,6 +20,12 @@ class DeviceVtonSelection(val person: String, val revision: Long, garments: List
     val garments: List<DeviceGarmentInput> get() = frozenGarments.toList()
     fun copy(person: String = this.person, revision: Long = this.revision,
         garments: List<DeviceGarmentInput> = this.garments) = DeviceVtonSelection(person, revision, garments)
+    /** The server try-on route requires one selected item from each supported role. */
+    fun hasCompleteOutfit(): Boolean = person.isNotBlank() &&
+        frozenGarments.size == DeviceGarmentRole.entries.size &&
+        frozenGarments.map { it.role }.toSet() == DeviceGarmentRole.entries.toSet() &&
+        frozenGarments.map { it.id }.toSet().size == frozenGarments.size &&
+        frozenGarments.all { it.id.isNotBlank() && it.source.isNotBlank() }
     override fun equals(other: Any?) = other is DeviceVtonSelection && person == other.person &&
         revision == other.revision && frozenGarments == other.frozenGarments
     override fun hashCode() = 31 * (31 * person.hashCode() + revision.hashCode()) + frozenGarments.hashCode()
@@ -88,7 +94,10 @@ object UnavailableDeviceVtonEngine : DeviceVtonEngine {
         throw DeviceVtonFailure("온디바이스 생성형 엔진이 준비되지 않았어요.")
 }
 
-class DeviceVtonFailure(message: String) : IllegalArgumentException(message)
+open class DeviceVtonFailure(message: String) : IllegalArgumentException(message)
+
+/** Allowlisted preparation reason; never contains the selected URI, image bytes or provider exception. */
+class DeviceVtonPreparationFailure(val safeCode: String, message: String) : DeviceVtonFailure(message)
 
 fun deviceSha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
     .joinToString("") { "%02x".format(it) }

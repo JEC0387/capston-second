@@ -32,6 +32,10 @@ import org.robolectric.annotation.GraphicsMode
 class P50ServerProviderDisclosureUiTest {
     @get:Rule val compose = createComposeRule()
     private fun await(condition: () -> Boolean) = compose.waitUntil(15000) { shadowOf(Looper.getMainLooper()).idle(); condition() }
+    private fun completeSelection() = DeviceVtonSelection("content://synthetic/person", 1, listOf(
+        DeviceGarmentInput("top", DeviceGarmentRole.TOP, "content://synthetic/top"),
+        DeviceGarmentInput("bottom", DeviceGarmentRole.BOTTOM, "content://synthetic/bottom"),
+        DeviceGarmentInput("shoes", DeviceGarmentRole.SHOES, "content://synthetic/shoes")))
 
     @Test fun externalDisclosureConsentResetAndCancellationAreVisibleWithoutPosting() {
         val session = OutfitServerSession("https://synthetic.example", "synthetic-only")
@@ -47,14 +51,17 @@ class P50ServerProviderDisclosureUiTest {
         }
         var posts = 0
         var cancelRequests = 0
+        var disconnected = false
         val gateway = object : OutfitServerGateway {
             override fun session() = session
             override suspend fun config(session: OutfitServerSession) = config
             override suspend fun submit(session: OutfitServerSession, ticket: OutfitServerTicket, body: ByteArray): OutfitServerStatus {
                 posts++; error("Unexpected POST")
             }
-            override suspend fun status(session: OutfitServerSession, ticket: OutfitServerTicket) =
-                OutfitServerStatus("running", null, .1, false, null, System.currentTimeMillis()+300000)
+            override suspend fun status(session: OutfitServerSession, ticket: OutfitServerTicket): OutfitServerStatus {
+                if (disconnected) throw java.io.IOException("synthetic disconnect")
+                return OutfitServerStatus("running", null, .1, false, null, System.currentTimeMillis()+300000)
+            }
             override suspend fun cancel(session: OutfitServerSession, ticket: OutfitServerTicket): OutfitServerStatus {
                 cancelRequests++
                 return OutfitServerStatus("interrupted", "remote_execution_unconfirmed", .1, false, null, System.currentTimeMillis()+300000)
@@ -70,33 +77,33 @@ class P50ServerProviderDisclosureUiTest {
             }
         }
         val vm = ServerOutfitVtonViewModel(gateway, { store })
+        var exits = 0
         compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides documents) {
-            MaterialTheme { ServerOutfitVtonScreen(null, {}, vm) }
+            MaterialTheme { ServerOutfitVtonScreen(completeSelection(), { exits++ }, vm) }
         } }
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo != null && !vm.state.busy }
-        // Assert the complete disclosure. assertTextContains defaults to matching a
-        // complete semantics text element, not an arbitrary substring of it.
-        compose.onNodeWithTag("serverOutfitProvider").performScrollTo()
-            .assertTextEquals("외부 처리: Genlook · 스마트폰이 아닌 제3자 서버에서 실행")
-        compose.onNodeWithTag("serverOutfitCost").performScrollTo()
-            .assertTextEquals("요청당 최대 3크레딧을 예약해요. 실제 청구액·환불 확정이 아니며 자동 충전하지 않아요.")
-        compose.onNodeWithTag("serverOutfitExternalRetention").performScrollTo()
-            .assertTextEquals("Genlook 이미지 보관 설정 1일 · 앱 서버 결과 보관 시간과 별도예요. 생성 기록·동의·백업 보관 및 삭제 제한은 아래 정책을 확인해주세요.")
-        compose.onNodeWithTag("serverOutfitConsentText").performScrollTo()
-            .assertTextEquals("선택한 인물·상의·하의·신발 4장의 이미지와 중간 생성 결과를 승인된 앱 서버를 통해 Genlook으로 전송하고 표시된 비용·보관 정책으로 처리하는 데 동의해요.")
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().performClick().assertIsOn()
+        // Policy and cost are intentionally shown at the final consent point, not on the main screen.
+        compose.onNodeWithTag("serverOutfitProvider").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitConsentText").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitPolicyDetails").assertDoesNotExist()
+        assertEquals("An unresolved prior request prevents a second paid generation", ticket, vm.state.ticket)
         // Changing the disclosed provider policy resets consent even if the API policy ID is unchanged.
         config = config.copy(providerInfo = info.copy(notice = "Revised synthetic processing disclosure."))
+        vm.invalidateConnection()
         compose.onNodeWithTag("serverOutfitCheck").performScrollTo().performClick()
         await { vm.state.config?.providerInfo?.notice == "Revised synthetic processing disclosure." && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitConsent").performScrollTo().assertIsOff()
-        compose.onNodeWithTag("serverOutfitGenerate").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("serverOutfitCancel").performScrollTo().assertTextEquals("대기 종료·후속 생성 중단").performClick()
-        await { vm.state.phase == "interrupted" && !vm.state.busy }
-        compose.onNodeWithTag("serverOutfitError").performScrollTo()
-            .assertTextEquals("Genlook 작업 종료·과금 여부를 확인하지 못했어요. 후속 생성을 차단했으며 외부 작업 취소·환불·삭제 완료를 뜻하지 않아요.")
-        assertEquals(1, cancelRequests)
+        compose.onNodeWithTag("serverOutfitGenerate").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitConsent").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitCancel").assertDoesNotExist()
+        compose.onNodeWithTag("serverOutfitBrowse").assertTextEquals("다른 화면 둘러보기").performClick()
+        assertEquals(1, exits)
+        disconnected = true
+        compose.onNodeWithTag("serverOutfitResume").performClick()
+        await { vm.state.failureCode == "status_request_failed" && !vm.state.busy }
+        compose.onNodeWithText("연결이 잠시 끊겼어요.", substring = true).performScrollTo().assertIsDisplayed()
+        assertEquals(0, cancelRequests)
         assertEquals(0, posts)
         assertNull(vm.state.result)
     }

@@ -77,7 +77,7 @@ fun StyleSuggestionScreen(
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if (suggestion.personalized) "이번 사진의 추정 분류" else "개인화 보류", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.8f))
                         Text(suggestion.bodyType?.label ?: "일반 스타일 예시", style = MaterialTheme.typography.headlineSmall, color = White, fontWeight = FontWeight.Bold)
-                        Text("실측 핏을 보장하지 않는 스타일 참고", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
+                        Text("스타일 참고용", style = MaterialTheme.typography.bodySmall, color = White.copy(alpha = 0.85f))
                     }
                     Box(
                         modifier = Modifier
@@ -151,7 +151,7 @@ fun StyleSuggestionScreen(
 
             Text("등록된 옷장과 비교", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
             if (suggestion.wardrobeReasons.isEmpty()) {
-                Text("확인된 체형·의류 정보로 연결할 옷장 후보가 없어요. 위 설명을 보유 의류에 대한 개인화 추천으로 보지 마세요.",
+                Text("옷장에서 이 체형에 맞는 옷을 찾지 못했어요.",
                     style = MaterialTheme.typography.bodySmall, color = MediumGray)
             } else {
                 suggestion.wardrobeReasons.forEach { reason ->
@@ -162,7 +162,7 @@ fun StyleSuggestionScreen(
             // Browsing catalog entries is separate from personalized wardrobe evidence.
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("카탈로그 둘러보기", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                Text("체형별 적합성을 검증하지 않은 카탈로그 상품이에요. 표시 가격은 실시간 정보가 아니며 판매처에서 확인하세요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                Text("가격 · 재고는 판매처에서 확인해 주세요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 LazyRow(
                     modifier = Modifier.testTag("styleCatalog"),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),

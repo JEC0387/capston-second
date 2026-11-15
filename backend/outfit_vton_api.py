@@ -747,10 +747,11 @@ def create_router(service: OutfitService, auth_dependency=current_user):
     return router
 
 
-def create_app(settings=None, provider=None, auth_dependency=current_user):
-    service = OutfitService(settings, provider)
-    @asynccontextmanager
-    async def lifespan(app):
+@asynccontextmanager
+async def service_lifespan(service):
+    """One journal owner/cleaner, shared by the full API and optional sidecar."""
+    cleanup = None
+    try:
         await service.start()
         async def cleaner():
             while True:
@@ -760,12 +761,20 @@ def create_app(settings=None, provider=None, auth_dependency=current_user):
                 except Exception:
                     service.journal_ready = False
         cleanup = asyncio.create_task(cleaner())
-        try:
-            yield
-        finally:
+        yield
+    finally:
+        if cleanup is not None:
             cleanup.cancel()
             await asyncio.gather(cleanup, return_exceptions=True)
-            await service.close()
+        await service.close()
+
+
+def create_app(settings=None, provider=None, auth_dependency=current_user):
+    service = OutfitService(settings, provider)
+    @asynccontextmanager
+    async def lifespan(app):
+        async with service_lifespan(service):
+            yield
     app = FastAPI(title="FashionAI approved three-garment server", lifespan=lifespan)
     app.state.outfit_vton = service
     app.include_router(create_router(service, auth_dependency))

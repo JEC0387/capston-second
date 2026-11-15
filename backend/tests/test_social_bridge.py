@@ -89,13 +89,16 @@ def test_first_google_login_links_current_account_and_keeps_data(env):
 
 def test_same_google_on_new_phone_switches_and_rotates_token(env):
     client, factory = env
-    a = register(client)["accessToken"]
+    first = register(client)
+    a = first["accessToken"]
     client.post("/api/wardrobe/sync", json={"items": [ITEM]}, headers=bearer(a))
     google(client, "tok-a", a)
     phone2 = register(client)["accessToken"]
     r = google(client, "tok-a", phone2).json()
     assert r["switched"] and not r["isNewAccount"]
+    assert r["accountId"] == first["accountId"]
     new = r["accessToken"]
+    assert client.get("/api/auth/status", headers=bearer(new)).json()["accountId"] == first["accountId"]
     assert client.get("/api/wardrobe", headers=bearer(new)).json()["totalCount"] == 1
     assert client.get("/api/wardrobe", headers=bearer(a)).status_code == 401      # one active device per account
     assert client.get("/api/wardrobe", headers=bearer(phone2)).json()["totalCount"] == 0  # phone2's own account untouched

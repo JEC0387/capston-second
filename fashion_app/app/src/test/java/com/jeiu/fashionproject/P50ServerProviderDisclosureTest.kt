@@ -49,8 +49,12 @@ class P50ServerProviderDisclosureTest {
         assertEquals(false, value.providerInfo?.remoteCancellationSupported)
         val legacy = config().put("model_id", "synthetic-local").apply { remove("provider_info") }
         assertNull(repo.parseConfig(legacy).providerInfo)
-        assertFalse(BuildConfig.SERVER_OUTFIT_APPROVED)
-        assertEquals("deployment_not_approved", assertThrows(OutfitServerFailure::class.java) { repo.session() }.code)
+        // Opt-in installtest keeps the same authentication gate even when deployment is enabled.
+        assertFalse(DataAuth.canSync)
+        assertNull(InstallTestAccount.sessionOrNull())
+        val expected = if (BuildConfig.SERVER_OUTFIT_APPROVED && !BuildConfig.PREVIEW_BUILD)
+            "authentication_required" else "deployment_not_approved"
+        assertEquals(expected, assertThrows(OutfitServerFailure::class.java) { repo.session() }.code)
     }
 
     @Test fun missingAndMisleadingProviderDisclosureFailsClosed() {

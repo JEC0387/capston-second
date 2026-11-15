@@ -1,5 +1,6 @@
 package com.jeiu.fashionproject.ui.viewmodel
 
+import android.util.Log
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +28,10 @@ data class ServerOutfitUiState(val phase: String = "idle", val busy: Boolean = f
     val config: OutfitServerConfig? = null, val configBinding: String? = null, val configHost: String? = null,
     val ticket: OutfitServerTicket? = null,
     val status: OutfitServerStatus? = null, val result: OutfitServerImage? = null,
-    val previous: Boolean = false, val error: String? = null)
+    val previous: Boolean = false, val error: String? = null,
+    val failureCode: String? = null, val failureStage: String? = null,
+    val requestedGarments: List<DeviceGarmentInput> = emptyList(),
+    val choosingAnotherOutfit: Boolean = false)
 
 /** Durable metadata precedes POST. Recovery ONLY queries the existing request; never re-POSTs. */
 class ServerOutfitVtonViewModel(
@@ -39,6 +43,13 @@ class ServerOutfitVtonViewModel(
     private val localWaitMillis: Long = 120_000,
     private val qaRecoveryAvailable: () -> Boolean = { ServerOutfitQaConnection.supported }
 ) : ViewModel() {
+    private fun logFailure(stage: String, code: String, httpStatus: Int? = null) {
+        // Codes and stages are allowlisted internal diagnostics; never log URLs, tokens,
+        // selected URIs, provider bodies, or exception messages.
+        val safeStage = stage.takeIf { it.matches(Regex("[a-z_]{1,32}")) } ?: "unknown"
+        val safeCode = code.takeIf { it.matches(Regex("[a-z0-9_]{1,64}")) } ?: "unknown"
+        Log.w("FashionFitTryOn", "stage=$safeStage code=$safeCode http=${httpStatus?.takeIf { it in 100..599 } ?: 0}")
+    }
     var state by mutableStateOf(ServerOutfitUiState())
         private set
     private var store: OutfitTicketStore? = null
@@ -50,6 +61,8 @@ class ServerOutfitVtonViewModel(
     private var cancelWanted = false
     private var lastProviderProgress: Pair<String, OutfitServerProgress>? = null
     private var unresolvedRequestId: String? = null
+    private var activeStage = "idle"
+    private fun markStage(stage: String) { activeStage = stage }
     private val uncertainExecutionErrors = setOf("remote_execution_unconfirmed", "worker_stop_unconfirmed",
         "genlook_reconciliation_required", "genlook_journal_unavailable")
 
@@ -82,6 +95,38 @@ class ServerOutfitVtonViewModel(
     }
 
     fun canDisplay(): Boolean = state.result != null && runCatching { sessionFor(); true }.getOrDefault(false)
+
+    fun canResumeCurrentRequest(): Boolean =
+        !state.choosingAnotherOutfit && state.ticket?.let { runCatching { sessionFor(it); true }.getOrDefault(false) } == true &&
+            (state.result != null || !startAllowedByPreviousJob() || state.status?.resultAvailable == true)
+
+    /** Explicit navigation only, never a submission or journal deletion. A completed,
+     * verified result may yield to another outfit; uncertain requests remain recovery-only. */
+    fun chooseAnotherOutfit(): Boolean {
+        if (locked || operation != null || state.busy || !canDisplay() || !startAllowedByPreviousJob()) return false
+        original = null
+        state = state.copy(result = null, previous = true, choosingAnotherOutfit = true,
+            phase = "idle", error = null, failureCode = null, failureStage = null, requestedGarments = emptyList())
+        return true
+    }
+
+    fun requestedGarmentsForCurrentAccount(): List<DeviceGarmentInput> {
+        val account = state.configBinding ?: return emptyList()
+        return state.requestedGarments.takeIf {
+            it.isNotEmpty() && runCatching { sessionFor().accountKey == account }.getOrDefault(false)
+        }.orEmpty()
+    }
+
+    /** On screen entry, resume a journaled request using GET only. Leave ready config
+     * available for selecting another outfit once that request is resolved. */
+    fun onAuthorizedScreenEntry() {
+        if (!state.choosingAnotherOutfit && state.ticket != null && state.result == null &&
+            (!startAllowedByPreviousJob() || state.status?.resultAvailable == true)) {
+            resume()
+        } else {
+            refreshConfig()
+        }
+    }
 
     fun startAllowedByPreviousJob(): Boolean {
         val ticket = state.ticket ?: return true
@@ -119,7 +164,7 @@ class ServerOutfitVtonViewModel(
     fun invalidateConnection() {
         if (operation != null) return
         state = state.copy(config = null, configBinding = null, configHost = null, status = null,
-            result = null, error = null, previous = state.ticket != null,
+            result = null, error = null, previous = state.ticket != null, requestedGarments = emptyList(),
             phase = if (state.ticket == null) "idle" else "recovered")
     }
 
@@ -135,19 +180,47 @@ class ServerOutfitVtonViewModel(
 
     private fun launchExclusive(block: suspend () -> Unit) {
         if (operation != null || locked) return
-        state = state.copy(busy = true, error = null)
+        markStage("connection")
+        state = state.copy(busy = true, error = null, failureCode = null, failureStage = null)
         val task = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try { block() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: OutfitServerFailure) {
+            catch (failure: DeviceVtonPreparationFailure) {
+                logFailure("image_preparation", failure.safeCode)
+                state = state.copy(phase = "failed", error = failure.message,
+                    failureCode = failure.safeCode, failureStage = "image_preparation")
+            } catch (failure: DeviceVtonFailure) {
+                logFailure(activeStage, "input_validation")
+                state = state.copy(phase = "failed",
+                    error = if (activeStage == "result_png") "받은 결과 PNG가 손상됐어요. 같은 작업 번호로 상태만 다시 확인해주세요." else failure.message,
+                    failureCode = if (activeStage == "result_png") "result_png_invalid" else "input_validation",
+                    failureStage = activeStage)
+            } catch (failure: OutfitServerFailure) {
+                logFailure(activeStage, failure.code, failure.httpStatus)
                 if (failure.code in uncertainExecutionErrors) unresolvedRequestId = state.ticket?.id
-                state = state.copy(phase = "blocked", result = null,
-                    error = ServerOutfitVtonRepository.friendly(failure.code))
+                state = state.copy(phase = "blocked",
+                    error = ServerOutfitVtonRepository.friendlyFailure(failure),
+                    failureCode = failure.code, failureStage = activeStage)
             } catch (_: OutOfMemoryError) {
-                state = state.copy(phase = "failed", result = null, error = "메모리가 부족해 중단했어요. 기존 작업 번호는 유지하며 자동 재전송하지 않아요.")
+                state = state.copy(phase = "failed", result = null,
+                    error = "메모리가 부족해 중단했어요. 기존 작업 번호는 유지하며 자동 재전송하지 않아요.",
+                    failureCode = "operation_memory", failureStage = activeStage)
             } catch (_: Exception) {
-                state = state.copy(phase = "unknown", result = null,
-                    error = "통신 또는 파일 처리가 중단됐어요. 생성 여부가 불명확하므로 상태 조회만 다시 하세요. 자동 재전송하지 않아요.")
+                val code = when (activeStage) {
+                    "connection", "config" -> "config_request_failed"
+                    "request_body" -> "request_encoding_failed"
+                    "ticket_write" -> "ticket_storage_failed"
+                    "submit_request" -> "submit_unconfirmed"
+                    "job_status", "cancel_request" -> "status_request_failed"
+                    "result_download" -> "result_download_failed"
+                    "result_png" -> "result_png_invalid"
+                    else -> "operation_failed"
+                }
+                logFailure(activeStage, code)
+                if (activeStage == "submit_request") unresolvedRequestId = state.ticket?.id
+                state = state.copy(phase = "blocked",
+                    error = ServerOutfitVtonRepository.friendly(code),
+                    failureCode = code, failureStage = activeStage)
             }
         }
         operation = task
@@ -158,6 +231,7 @@ class ServerOutfitVtonViewModel(
     }
 
     fun refreshConfig() = launchExclusive {
+        markStage("config")
         val current = gateway.session()
         val config = gateway.config(current)
         sessionFor(null).also { if (it.accountKey != current.accountKey || it.base != current.base) throw OutfitServerFailure("account_changed") }
@@ -191,7 +265,8 @@ class ServerOutfitVtonViewModel(
                 throw OutfitServerFailure("account_changed")
             }
             val id = UUID.randomUUID().toString()
-            state = state.copy(phase = "preparing", result = null, previous = false)
+            state = state.copy(phase = "preparing", requestedGarments = frozen.garments.toList())
+            markStage("image_preparation")
             val job = preparer(context.applicationContext, id, frozen,
                 config.imageSpec())
             coroutineContext.ensureActive()
@@ -200,15 +275,19 @@ class ServerOutfitVtonViewModel(
                 job.model.revision != config.revision || job.model.sha256 != config.modelSha ||
                 job.model.supportedRoles != DeviceGarmentRole.entries.toSet() || job.model.maxSide != config.maxInputSide)
                 throw OutfitServerFailure("input_changed")
+            markStage("request_body")
             val body = ServerOutfitVtonRepository.requestBody(job, config)
             val created = clock()
             val ticket = OutfitServerTicket(id, deviceSha256(body), config.revision, session.base,
                 session.accountKey, ServerOutfitVtonRepository.selectionSha(frozen), created,
                 created + config.retentionSeconds * 1000, config.modelSha, config.providerInfo?.name.orEmpty())
             sessionFor(null).also { if (it.accountKey != session.accountKey || it.base != session.base) throw OutfitServerFailure("account_changed") }
+            markStage("ticket_write")
             store!!.write(ticket) // Synchronous atomic metadata commit, before first byte of POST.
             original = job.person.bytes
-            state = state.copy(ticket = ticket, status = null, phase = "submitting")
+            state = state.copy(ticket = ticket, status = null, phase = "submitting", result = null, previous = false,
+                choosingAnotherOutfit = false)
+            markStage("submit_request")
             val first = gateway.submit(session, ticket, body)
             sessionFor(ticket)
             applyStatus(first)
@@ -220,10 +299,19 @@ class ServerOutfitVtonViewModel(
     fun resume() = launchExclusive {
         val ticket = state.ticket ?: return@launchExclusive
         val session = sessionFor(ticket)
+        markStage("job_status")
         val first = gateway.status(session, ticket)
         sessionFor(ticket)
         applyStatus(first)
         poll(session, ticket, first)
+        sessionFor(ticket)
+        if (state.configBinding != session.accountKey) {
+            markStage("config")
+            val config = gateway.config(session)
+            sessionFor(ticket)
+            state = state.copy(config = config, configBinding = session.accountKey,
+                configHost = java.net.URI(session.base).host)
+        }
     }
 
     fun cancel() {
@@ -238,6 +326,7 @@ class ServerOutfitVtonViewModel(
         launchExclusive {
             val ticket = state.ticket ?: return@launchExclusive
             val session = sessionFor(ticket)
+            markStage("cancel_request")
             val status = gateway.cancel(session, ticket)
             sessionFor(ticket); applyStatus(status)
             poll(session, ticket, status)
@@ -264,6 +353,7 @@ class ServerOutfitVtonViewModel(
         while (true) {
             coroutineContext.ensureActive(); sessionFor(ticket)
             if (cancelWanted && !cancellationSent && status.status !in ServerOutfitVtonRepository.terminal) {
+                markStage("cancel_request")
                 status = gateway.cancel(session, ticket); cancellationSent = true
                 sessionFor(ticket); applyStatus(status)
             }
@@ -271,8 +361,10 @@ class ServerOutfitVtonViewModel(
                 if (status.status == "completed" && status.resultAvailable && !cancelWanted) {
                     if (clock() >= status.expiresAt) throw OutfitServerFailure("result_expired")
                     ServerOutfitVtonRepository.requireResultSource(ticket, status)
+                    markStage("result_download")
                     val bytes = gateway.result(session, ticket, status)
                     coroutineContext.ensureActive(); sessionFor(ticket)
+                    markStage("result_png")
                     OnDeviceVtonImages.validateResultPng(bytes)
                     if (deviceSha256(bytes) != status.resultSha || original?.let(::deviceSha256) == status.resultSha)
                         throw OutfitServerFailure("result_binding_mismatch")
@@ -288,6 +380,7 @@ class ServerOutfitVtonViewModel(
                 return
             }
             delay(pollMillis)
+            markStage("job_status")
             status = gateway.status(session, ticket); sessionFor(ticket); applyStatus(status)
         }
     }

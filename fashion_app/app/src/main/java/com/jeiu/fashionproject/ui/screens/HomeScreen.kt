@@ -42,8 +42,10 @@ import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.ProfileStore
 import com.jeiu.fashionproject.data.TastePreferenceStore
+import com.jeiu.fashionproject.data.outfitRatings
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
@@ -103,15 +105,20 @@ fun HomeScreen(
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
     val manualBody by ManualBodyStore.current.collectAsState()
-    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
+    val avatarBody by AvatarProfileStore.current.collectAsState()
+    val savedBodyType by com.jeiu.fashionproject.data.BodyTypeStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context); com.jeiu.fashionproject.data.BodyTypeStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
     LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
         if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
-        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
+    // 길이 비율 + 분석한 체형(사진 분석 · 직접 입력 둘레)을 함께 추천에 반영한다.
+    val bodyProfile: BodyProfile? = BodyProfileRepository.withBodyType(
+        BodyProfileRepository.current(manualBody,sessionMeasurements,avatarBody)
+            ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) },
+        manualBody, savedBodyType?.type, gender)
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { weatherViewModel.fetchWeather() }
@@ -157,7 +164,8 @@ fun HomeScreen(
             RecommendationLog.record(context, WearDates.today(), "home", "OWNED", it.outfits)
         }
     }
-    var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
+    val tasteEvents by TastePreferenceStore.events.collectAsState()
+    val ratings = remember(tasteEvents) { outfitRatings(tasteEvents) }
     val wearToday = rememberWearToday(wearLogs)
     // 🔖 저장한 코디 · 📅 코디 일정
     val book = rememberOutfitBookActions()
@@ -219,7 +227,7 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                ServerStatusBadge()
+                if (com.jeiu.fashionproject.BuildConfig.DEBUG) ServerStatusBadge()
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -301,7 +309,6 @@ fun HomeScreen(
                             rated = ratings[outfit.id],
                             modifier = Modifier.width(260.dp),
                             onRate = { like ->
-                                ratings = ratings + (outfit.id to like)
                                 TastePreferenceStore.rateOutfit(context, outfit, like)
                             },
                             wear = wearToday,
@@ -321,7 +328,6 @@ fun HomeScreen(
                 plan = plan,
                 rated = ratings,
                 onRate = { outfit, like ->
-                    ratings = ratings + (outfit.id to like)
                     TastePreferenceStore.rateOutfit(context, outfit, like)
                 },
                 onMore = onForecastClick

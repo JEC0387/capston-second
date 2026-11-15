@@ -88,7 +88,8 @@ fun BodyAvatarDialog(profile: BodyDimensionProfile, configured: AvatarParameters
 /** Reuses the same real GLES mesh inside the fitting canvas. Touch rotates; pinch zooms. */
 @Composable
 fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier: Modifier = Modifier,resetKey:Int=0,
-    cameraYaw:Float?=null,onRotation:((Float)->Unit)?=null,fitModel:Boolean=false,allowTouch:Boolean=true) {
+    cameraYaw:Float?=null,onRotation:((Float)->Unit)?=null,fitModel:Boolean=false,allowTouch:Boolean=true,
+    capture: AvatarFrameCapture? = null) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var yaw by remember { mutableFloatStateOf(0f) }
@@ -108,6 +109,11 @@ fun BodyAvatarViewport(parameters: AvatarParameters, thighScale: Float, modifier
         if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) surface?.onResume()
         onDispose { lifecycle.removeObserver(observer); surface?.onPause() }
     }
+    DisposableEffect(surface, capture) {
+        val owner = surface
+        capture?.reader = owner?.let { { it.captureFrame() } }
+        onDispose { capture?.reader = null }
+    }
     if (!supported || failed) {
         Text("이 기기에서 3D 모델을 표시하지 못했어요. 저장된 설정은 유지돼요.", modifier = modifier)
     } else {
@@ -125,6 +131,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
     // they are visible so the mannequin cannot turn without its 2D garments.
     private var touchEnabled=true
     private var geometry:List<Any>?=null
+    private var renderedGeometry:List<Any>?=null
     private data class Request(val key:List<Any>,val p:AvatarParameters,val s:Float,val w:Float,val h:Float,val thigh:Float)
     private var scope=CoroutineScope(SupervisorJob()+Dispatchers.Default)
     private var requests=Channel<Request>(Channel.CONFLATED)
@@ -136,7 +143,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
                     val mesh=request.p.centimeters?.let {PremiumAvatarMesh.build(it,cancelled={!isActive})}
                         ?: BodyAvatarMesh.build(request.p,request.s,request.w,request.h,request.thigh)
                     val stage=request.p.centimeters?.let {MannequinStage.build(it,mesh)}
-                    if(isActive && latest==request)queueEvent {if(latest==request) {avatar.setGeometry(mesh,stage);requestRender()}}
+                    if(isActive && latest==request)queueEvent {if(latest==request) {avatar.setGeometry(mesh,stage);renderedGeometry=request.key;requestRender()}}
                 } catch(_:java.util.concurrent.CancellationException) {break}
                 catch(_:IllegalArgumentException) {post {onError()}}
                 catch(_:IllegalStateException) {post {onError()}}
@@ -171,6 +178,33 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
         queueEvent { avatar.yaw=yaw;avatar.zoom=zoom;avatar.distance=if(fit)parameters.heightCm/100f/.56f else 3.8f }
         requestRender()
     }
+    suspend fun captureFrame(): android.graphics.Bitmap {
+        // Ownership lives outside withTimeout: timeout can win while dispatching a completed frame.
+        val owned = java.util.concurrent.atomic.AtomicReference<android.graphics.Bitmap?>(null)
+        try {
+            val captured = withTimeout(5000) {
+                check(isAttachedToWindow && holder.surface.isValid && width > 0 && height > 0) { "avatar_surface_unavailable" }
+                val expected = geometry ?: error("avatar_not_ready")
+                val w = width; val h = height
+                val result = CompletableDeferred<android.graphics.Bitmap>()
+                try {
+                    queueEvent {
+                        if (result.isActive) try {
+                            check(renderedGeometry == expected) { "avatar_geometry_pending" }
+                            check(avatar.yaw == 0f && avatar.zoom == 1f) { "avatar_camera_pending" }
+                            val bitmap = avatar.capture(w,h)
+                            owned.set(bitmap)
+                            if (!result.complete(bitmap)) owned.getAndSet(null)?.recycle()
+                        } catch (_: OutOfMemoryError) { result.completeExceptionally(IllegalStateException("avatar_memory")) }
+                        catch (failure: Exception) { result.completeExceptionally(failure) }
+                    }
+                    result.await()
+                } finally { result.cancel() }
+            }
+            owned.compareAndSet(captured, null)
+            return captured
+        } finally { owned.getAndSet(null)?.recycle() }
+    }
     override fun onTouchEvent(event:MotionEvent):Boolean {
         if(!touchEnabled)return false
         parent?.requestDisallowInterceptTouchEvent(true)
@@ -191,6 +225,7 @@ private class AvatarSurface(context:Context,private val onYaw:(Float)->Unit,priv
 private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Renderer {
     var yaw=0f;var zoom=1f
     var distance=3.8f
+    private var surfaceWidth=0; private var surfaceHeight=0
     private var program=0
     private var failed=false
     private var count=0
@@ -256,8 +291,22 @@ private class AvatarRenderer(private val onError:()->Unit):GLSurfaceView.Rendere
         } catch(_:RuntimeException) { failed=true;onError() }
     }
     override fun onSurfaceChanged(gl:GL10?,width:Int,height:Int) {
+        surfaceWidth=width;surfaceHeight=height
         GLES20.glViewport(0,0,width,height)
         Matrix.perspectiveM(projection,0,38f,width.toFloat()/height.coerceAtLeast(1),.1f,10f)
+    }
+    /** Runs on the GLSurfaceView render thread: no Compose/SurfaceView screenshot assumptions. */
+    fun capture(width:Int,height:Int): android.graphics.Bitmap {
+        check(!failed && program != 0 && buffer != null && count > 0) { "avatar_not_ready" }
+        require(width == surfaceWidth && height == surfaceHeight) { "avatar_surface_resizing" }
+        require(width > 0 && height > 0 && width.toLong()*height <= 4_000_000)
+        onDrawFrame(null)
+        check(!failed)
+        val rgba=ByteBuffer.allocateDirect(width*height*4).order(ByteOrder.nativeOrder())
+        GLES20.glReadPixels(0,0,width,height,GLES20.GL_RGBA,GLES20.GL_UNSIGNED_BYTE,rgba)
+        check(GLES20.glGetError()==GLES20.GL_NO_ERROR) { "avatar_read_failed" }
+        val pixels=ByteArray(width*height*4);rgba.rewind();rgba.get(pixels)
+        return AvatarFramePixels.bitmap(width,height,pixels)
     }
     override fun onDrawFrame(gl:GL10?) {
         if(failed)return

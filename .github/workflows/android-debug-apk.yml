@@ -22,6 +22,11 @@ on:
         options:
           - light
           - full
+      validation_only:
+        description: 'Run all selected checks without signing secrets, artifact uploads or cache writes'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -43,7 +48,7 @@ jobs:
           persist-credentials: false
       - name: Lightweight release-tool safety checks (not Android or backend validation)
         working-directory: tools
-        run: python3 -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
+        run: python3 -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy test_ci_signing_scope test_release_build_guards
 
   build:
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.check_level == 'full')
@@ -72,7 +77,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+          cache: ${{ !inputs.validation_only && 'gradle' || '' }}
           cache-dependency-path: |
             fashion_app/**/*.gradle.kts
             fashion_app/gradle.properties
@@ -91,34 +96,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python tools/apk_release.py prepare
-
-      - name: Restore explicitly managed signing key (never cache or regenerate a distribution key)
-        if: github.event_name != 'pull_request'
-        env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
-        run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo '::warning::Distribution signing is not configured. Tests will run; APK publication will be blocked.'
-            exit 0
-          fi
-          umask 077
-          mkdir -p "$RUNNER_TEMP/fashionai-signing"
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fashionai-signing/debug.keystore"
-          echo "ANDROID_DISTRIBUTION_KEYSTORE=$RUNNER_TEMP/fashionai-signing/debug.keystore" >> "$GITHUB_ENV"
-
-      - name: Export signing passwords to Gradle only
-        if: github.event_name != 'pull_request'
-        env:
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
-        run: |
-          if [ -n "$ANDROID_DISTRIBUTION_KEYSTORE" ]; then
-            [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ] || { echo '::error::Signing passwords missing'; exit 1; }
-            echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_ALIAS=${KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
-          fi
 
       - name: Focused P23 preservation and guest regressions
         run: set -o pipefail; bash gradlew :app:testDebugUnitTest --tests '*DataAuthRecoverySafetyTest' --tests '*P23*' --init-script gradle/test-runtime.init.gradle.kts --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/p23-focused.log"
@@ -153,6 +130,36 @@ jobs:
         run: |
           cp -R app/build/test-results/testDebugUnitTest build/primary-test-results
           cp -R app/build/reports/tests/testDebugUnitTest build/primary-test-reports
+
+      # Primary validation must never see the Preview-only distribution signer.
+      # Restore it only when all following Android builds use the isolated package.
+      - name: Restore explicitly managed signing key (never cache or regenerate a distribution key)
+        if: github.event_name != 'pull_request' && !inputs.validation_only
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo '::warning::Distribution signing is not configured. Tests will run; APK publication will be blocked.'
+            exit 0
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/fashionai-signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/fashionai-signing/debug.keystore"
+          echo "ANDROID_DISTRIBUTION_KEYSTORE=$RUNNER_TEMP/fashionai-signing/debug.keystore" >> "$GITHUB_ENV"
+
+      - name: Export signing passwords to Gradle only
+        if: github.event_name != 'pull_request' && !inputs.validation_only
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+        run: |
+          if [ -n "$ANDROID_DISTRIBUTION_KEYSTORE" ]; then
+            [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_PASSWORD" ] || { echo '::error::Signing passwords missing'; exit 1; }
+            echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=${KEY_ALIAS:-androiddebugkey}" >> "$GITHUB_ENV"
+          fi
 
       - name: Build isolated Preview and test isolation, sample photos and body entry
         run: |
@@ -190,7 +197,7 @@ jobs:
 
       - name: Record distribution readiness
         id: distribution
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && !inputs.validation_only
         env:
           EXPECTED_CERTIFICATE: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
         run: |
@@ -241,7 +248,7 @@ jobs:
           PY
 
       - name: Upload APK
-        if: success() && steps.distribution.outputs.ready == 'true'
+        if: success() && steps.distribution.outputs.ready == 'true' && !inputs.validation_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fashionai-preview-apk-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
@@ -253,7 +260,7 @@ jobs:
           compression-level: 0
 
       - name: Upload opt-in Preview instrumentation harness
-        if: success() && steps.distribution.outputs.ready == 'true'
+        if: success() && steps.distribution.outputs.ready == 'true' && !inputs.validation_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fashionai-preview-instrumentation-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
@@ -262,7 +269,7 @@ jobs:
           retention-days: 3
 
       - name: Upload validation metadata (contains no APK or signing key)
-        if: success()
+        if: success() && !inputs.validation_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: validation-info-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
@@ -277,7 +284,7 @@ jobs:
           retention-days: 30
 
       - name: Upload separate device QA app and tests
-        if: success() && steps.distribution.outputs.ready == 'true'
+        if: success() && steps.distribution.outputs.ready == 'true' && !inputs.validation_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: fashionai-device-qa-vc${{ env.FASHION_VERSION_CODE }}-${{ github.sha }}
@@ -291,7 +298,7 @@ jobs:
         run: rm -f -- "$RUNNER_TEMP/fashionai-signing/debug.keystore"
 
       - name: Upload test and lint reports
-        if: always()
+        if: always() && !inputs.validation_only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: test-and-lint-reports
@@ -340,12 +347,12 @@ jobs:
         run: pip install fastapi==0.115.8 python-multipart==0.0.20 "sqlalchemy>=2.0,<3" psycopg2-binary python-dotenv httpx opencv-python-headless Pillow numpy "pytest>=8,<10"
       - name: APK release safety tests
         working-directory: tools
-        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy
+        run: python -m unittest -v test_apk_release test_native_alignment test_artifact_retention test_ci_execution_policy test_ci_signing_scope test_release_build_guards
       - name: Backend unit tests (격리 SQLite, 운영 DB 접근 없음)
         env:
           DATABASE_URL: ''
           DB_AUTO_CREATE: 'false'
-          TEST_POSTGRES_URL: postgresql+psycopg2://fashionai_test:local-test-only@127.0.0.1:5432/fashionai_test
+          TEST_POSTGRES_URL: postgresql://fashionai_test:local-test-only@127.0.0.1:5432/fashionai_test
         run: set -o pipefail; python -m pytest -q 2>&1 | tee "$RUNNER_TEMP/backend.log"
 
       - name: Show backend test errors as annotations (로그인 없이 볼 수 있게)

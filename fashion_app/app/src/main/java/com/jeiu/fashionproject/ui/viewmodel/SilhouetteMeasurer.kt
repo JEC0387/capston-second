@@ -17,7 +17,10 @@ enum class SilhouetteIssue(val message: String) {
     LOW_CONFIDENCE_BOUNDARY("인물 외곽의 신뢰도가 낮아 너비가 달라져요. 몸과 배경이 선명하게 구분되는 사진으로 다시 촬영해주세요."),
     FULL_BODY("머리 꼭대기나 발끝 경계를 확인하지 못했어요. 위아래에 여유를 두고 촬영해주세요.")
 }
-data class SilhouetteMeasurement(val widths: BodyWidths? = null, val issue: SilhouetteIssue? = null)
+enum class SilhouetteDiagnostic { COMPONENT_CONFIDENCE, SHOULDER_BAND, WAIST_BAND, HIP_BAND }
+
+data class SilhouetteMeasurement(val widths: BodyWidths? = null, val issue: SilhouetteIssue? = null,
+    val diagnostic: SilhouetteDiagnostic? = null)
 
 /** Pure mask geometry; all output lengths use the same orientation-normalized bitmap coordinates. */
 object SilhouetteMeasurer {
@@ -27,7 +30,7 @@ object SilhouetteMeasurer {
 
     fun inspect(confidence: FloatArray, maskWidth: Int, maskHeight: Int,
                 imageWidth: Int, imageHeight: Int, points: Map<Joint, GuidePoint>): SilhouetteMeasurement {
-        fun fail(issue: SilhouetteIssue)=SilhouetteMeasurement(issue=issue)
+        fun fail(issue: SilhouetteIssue, diagnostic: SilhouetteDiagnostic? = null)=SilhouetteMeasurement(issue=issue, diagnostic=diagnostic)
         if (maskWidth<32 || maskHeight<32 || maskWidth.toLong()*maskHeight!=confidence.size.toLong() ||
             imageWidth<=0 || imageHeight<=0 || confidence.any { !it.isFinite() || it !in 0f..1f }) return fail(SilhouetteIssue.INVALID_MASK)
         when (PoseQualityRules.evaluate(points,imageWidth.toFloat(),imageHeight.toFloat())) {
@@ -64,7 +67,7 @@ object SilhouetteMeasurer {
         if(count<confidence.size*.03f) return fail(SilhouetteIssue.NO_BODY)
         val extraForegroundAllowance=count*.05f
         if(foreground.count{it}-count>extraForegroundAllowance) return fail(SilhouetteIssue.EXTRA_FOREGROUND)
-        if(confidenceSum/count<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY)
+        if(confidenceSum/count<.75) return fail(SilhouetteIssue.UNSTABLE_BOUNDARY, SilhouetteDiagnostic.COMPONENT_CONFIDENCE)
         // A hand or thin bridge can join a second foreground region to this component.
         // Above the shoulder line, substantial foreground separate from the head must
         // not become the crown used for height calibration. This does not count people.
@@ -125,11 +128,11 @@ object SilhouetteMeasurer {
         }
         val shoulderSpan=abs(ls.x-rs.x)
         val shoulder=representative((-1..10).map { it*.025f },shoulderSpan,true)
-            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.ARM_CONTOUR)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.ARM_CONTOUR, SilhouetteDiagnostic.SHOULDER_BAND)
         val waist=representative((0..8).map { .5f+it*.025f },shoulderSpan)
-            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY, SilhouetteDiagnostic.WAIST_BAND)
         val hip=representative((0..10).map { .8f+it*.03f },shoulderSpan)
-            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY)
+            ?: return fail(if(lowBoundaryConfidence)SilhouetteIssue.LOW_CONFIDENCE_BOUNDARY else SilhouetteIssue.UNSTABLE_BOUNDARY, SilhouetteDiagnostic.HIP_BAND)
         val top=minY*sy;val bottom=(maxY+1)*sy;val bodyHeight=bottom-top
         val marginX=max(2,(maskWidth*.01f).toInt());val marginY=max(2,(maskHeight*.01f).toInt())
         fun covered(point:GuidePoint):Boolean {

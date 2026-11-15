@@ -34,7 +34,8 @@ fun UnwornAlertCard(
     result: WearAnalyzer.UnwornResult,
     onDelete: (WardrobeItem) -> Unit,
     onKeep: (WardrobeItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpen: ((WardrobeItem) -> Unit)? = null
 ) {
     if (result.unworn.isEmpty()) return
     var showList by remember { mutableStateOf(false) }
@@ -77,7 +78,8 @@ fun UnwornAlertCard(
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
                     items(result.unworn, key = { it.item.id }) { u ->
-                        UnwornRow(u, onDelete = { confirmDelete = u.item }, onKeep = { onKeep(u.item) })
+                        UnwornRow(u, onDelete = { confirmDelete = u.item }, onKeep = { onKeep(u.item) },
+                            onOpen = onOpen?.let { open -> { showList = false; open(u.item) } })
                     }
                     if (result.excludedBySeason.isNotEmpty()) {
                         item {
@@ -120,15 +122,16 @@ fun UnwornAlertCard(
 }
 
 @Composable
-private fun UnwornRow(u: WearAnalyzer.Unworn, onDelete: () -> Unit, onKeep: () -> Unit) {
+private fun UnwornRow(u: WearAnalyzer.Unworn, onDelete: () -> Unit, onKeep: () -> Unit, onOpen: (() -> Unit)?) {
+    val detailClick = if (onOpen != null) Modifier.clickable(onClickLabel = "옷 상세 보기", onClick = onOpen) else Modifier
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         ClothingThumb(
             item = u.item, cutoutPadding = 6.dp,
-            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp))
+            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(10.dp)).then(detailClick)
         )
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(u.item.name, style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = detailClick)
             Text(
                 if (u.lastWorn != null) "마지막 착용 ${WearDates.ago(u.lastWorn)}"
                 else "등록 후 한 번도 안 입었어요 (${WearDates.ago(u.addedDate)} 등록)",

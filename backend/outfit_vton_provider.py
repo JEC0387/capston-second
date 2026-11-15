@@ -422,10 +422,19 @@ def configured_provider():
     selected = os.getenv("OUTFIT_VTON_PROVIDER", "local_gpu")
     if selected == "genlook":
         try:
-            from genlook_outfit_provider import GenlookProvider
+            from genlook_outfit_provider import GenlookProvider, GenlookSettings, PAIRED_MODE
         except ImportError:
             return DisabledProvider("runtime_unavailable")
-        return GenlookProvider()
+        # Reuse P54's existing private operator gate; no public approval endpoint.
+        # An explicit invalid setting must never silently disable the requested review.
+        raw_review = os.getenv("GENLOOK_OPERATOR_REVIEW_SECONDS", "0")
+        if not re.fullmatch(r"0|[1-9][0-9]{0,3}", raw_review):
+            return DisabledProvider("genlook_policy_unreviewed")
+        review = int(raw_review)
+        settings = GenlookSettings.environment()
+        if review and (review > 1800 or review > settings.timeout_seconds or settings.mode != PAIRED_MODE):
+            return DisabledProvider("genlook_policy_unreviewed")
+        return GenlookProvider(settings, review_timeout_seconds=review)
     if selected != "local_gpu":
         return DisabledProvider("provider_selection_invalid")
     settings = GpuProviderSettings.environment()

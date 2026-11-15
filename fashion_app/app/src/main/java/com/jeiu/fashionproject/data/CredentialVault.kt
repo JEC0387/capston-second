@@ -14,9 +14,12 @@ import javax.crypto.spec.GCMParameterSpec
 /** Authenticated encryption; an unreadable vault is retained for explicit recovery. */
 internal class CredentialVault(
     context: Context,
+    prefsName: String = "data_auth",
     private val keyProvider: () -> SecretKey = { deviceKey() }
 ) {
-    private val prefs = context.getSharedPreferences("data_auth", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
+
+    private val aad = if (prefsName == "data_auth") "FashionAI.data_auth.v1" else "FashionAI.$prefsName.v1"
 
     fun read(): JSONObject {
         prefs.getString("vault_v1", null)?.let { encoded ->
@@ -24,7 +27,7 @@ internal class CredentialVault(
             require(bytes.size > 28)
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, keyProvider(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-            cipher.updateAAD("FashionAI.data_auth.v1".toByteArray())
+            cipher.updateAAD(aad.toByteArray())
             return JSONObject(String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8))
         }
         val legacy = JSONObject()
@@ -40,7 +43,7 @@ internal class CredentialVault(
     fun write(value: JSONObject): Boolean {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, keyProvider())
-        cipher.updateAAD("FashionAI.data_auth.v1".toByteArray())
+        cipher.updateAAD(aad.toByteArray())
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(value.toString().toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
         return prefs.edit().clear().putString("vault_v1", encoded).commit()
     }

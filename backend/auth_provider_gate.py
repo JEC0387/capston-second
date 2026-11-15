@@ -120,7 +120,7 @@ def link_identity(db: Session, credential: AuthCredential, provider: str, claims
     except SQLAlchemyError:
         db.rollback()
         _fail(503, "auth_schema_unavailable", "서버 DB가 준비되지 않았어요.")
-    result.update(name=user.nickname or "", email=user.email or "")
+    result.update(name=user.nickname or "", email=user.email or "", accountId=str(user.id))
     return result
 
 

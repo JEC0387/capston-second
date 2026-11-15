@@ -14,6 +14,7 @@ import com.jeiu.fashionproject.data.WearDates
  *  ② 온보딩 · 마이페이지에서 고른 선호 스타일에 맞는지
  *  ③ 스타일 취향 학습 점수 (좋아요 · 싫어요)
  *  ④ 좋아하는 색 · 자주 고르는 종류 (취향 카드 · 👍👎 · 착용 기록)
+ *  ⑤ 분석한 체형의 코디 원칙(BodyStyleGuide)에 맞는지 — 맞으면 가산, 피하면 좋은 옷이면 감산
  * 성별에 맞지 않는 상품은 뺀다. 이유는 화면에 그대로 보여 준다.
  */
 object ProductRecommender {
@@ -25,6 +26,7 @@ object ProductRecommender {
     private const val STYLE_WEIGHT = 1.5
     private const val LEARNED_WEIGHT = 1.5
     private const val TASTE_WEIGHT = 0.8
+    private const val BODY_WEIGHT = 1.2
 
     /** 색 정보가 없어도 이름 · 종류로 스타일을 볼 수 있게 만든 비교용 옷 (저장하지 않음) */
     private fun probe(p: ShopProduct): WardrobeItem = WardrobeItem(
@@ -42,8 +44,10 @@ object ProductRecommender {
         preferred: List<String>,
         learned: Map<String, Int>,
         taste: TasteScores,
-        today: String = WearDates.today()
+        today: String = WearDates.today(),
+        bodyType: String? = null
     ): List<Pick> {
+        val guide = BodyStyleGuide.guide(bodyType, gender)
         val owned = GenderFit.filter(wardrobe.filter { it.isOwned }, gender)
         val conditions = OutfitEngine.seasonConditions(today)
         val baseLooks = OutfitEngine.scoreAll(owned, conditions, null, today)
@@ -67,9 +71,11 @@ object ProductRecommender {
                 val color = item.colorName.takeIf { it.isNotBlank() && it in likedColors }
                 val kind = SituationRules.kindOf(item).takeIf { it in likedKinds }
 
+                val bodyFit = guide?.let { BodyStyleGuide.fit(item, it) } ?: 0
                 val score = OUTFIT_WEIGHT * minOf(outfits, MAX_OUTFITS) + STYLE_WEIGHT * styles.size.coerceAtMost(2) +
-                    LEARNED_WEIGHT * affinity + TASTE_WEIGHT * (listOfNotNull(color, kind).size)
+                    LEARNED_WEIGHT * affinity + TASTE_WEIGHT * (listOfNotNull(color, kind).size) + BODY_WEIGHT * bodyFit
                 val reasons = buildList {
+                    if (bodyFit > 0) add("${guide!!.bodyType} 체형에 잘 맞아요")
                     if (outfits > 0) add("내 옷장 옷과 코디 ${outfits}가지")
                     styles.firstOrNull()?.let { add("선호하는 $it 스타일") }
                     if (affinity > 0.3 && styles.isEmpty()) PreferredStyles.canonicalScores(learned)
@@ -81,6 +87,27 @@ object ProductRecommender {
                 Pick(p, score, outfits, reasons.take(2))
             }
             .sortedByDescending { it.score }
+    }
+
+    /**
+     * 스타일 선호도 순위 아래 "이 스타일 쇼핑" — 그 스타일에 맞는 판매 상품.
+     * 성별에 맞는 상품만, 체형 제안에 맞는 상품을 앞에, 피하면 좋은 상품은 뺀다. 같은 종류는 2개까지.
+     */
+    fun forStyle(products: List<ShopProduct>, style: String, gender: Gender?, bodyType: String? = null,
+                 limit: Int = 6): List<ShopProduct> {
+        val guide = BodyStyleGuide.guide(bodyType, gender)
+        return products
+            .filter { GenderFit.allows(it.category, it.subCategory, it.detailType, it.name, gender) }
+            .map { it to probe(it) }
+            .filter { (_, item) -> PreferredStyles.matches(item, style) }
+            .map { (p, item) -> Triple(p, item, guide?.let { BodyStyleGuide.fit(item, it) } ?: 0) }
+            .filter { it.third >= 0 }
+            .sortedByDescending { it.third }
+            .groupBy { it.first.detailType ?: it.first.subCategory ?: it.first.category }
+            .values.flatMap { it.take(2) }
+            .sortedByDescending { it.third }
+            .map { it.first }
+            .take(limit)
     }
 
     private fun look(o: OutfitEngine.Outfit): String =

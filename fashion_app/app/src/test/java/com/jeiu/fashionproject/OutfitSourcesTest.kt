@@ -117,8 +117,13 @@ class OutfitSourcesTest {
     }
     @Test fun realCatalogOnlyExplicitColorVariantsAreCandidates() {
         val ready = ShopCatalog.allProducts.mapNotNull { OutfitSources.candidate(it, at) }
-        assertEquals(3, ready.size)
-        assertEquals(setOf("상의", "하의", "신발"), ready.map { it.category }.toSet())
+        // Exactly the products with an explicit garment colour become candidates (unknown colour stays out).
+        val explicit = ShopCatalog.allProducts.filter { it.clothingColorName != null && it.clothingColorValue != null }
+        assertEquals(explicit.map { OutfitSources.candidateId(it) }.toSet(), ready.map { it.id }.toSet())
+        // The original 8-product demo catalogue still contributes its 3 explicit-colour items.
+        assertEquals(3, ShopCatalog.products.take(8).mapNotNull { OutfitSources.candidate(it, at) }.size)
+        assertTrue(ShopCatalog.allProducts.any { it.clothingColorName == null && OutfitSources.candidate(it, at) == null })
+        assertTrue(ready.map { it.category }.toSet().containsAll(setOf("상의", "하의", "신발")))
         assertTrue(recommendation(ready) is OutfitEngine.Result.Ok)
     }
     @Test fun interestedSandalsStillExcludedInRainAndInterview() {

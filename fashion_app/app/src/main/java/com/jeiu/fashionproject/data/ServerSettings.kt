@@ -4,10 +4,11 @@ import android.content.Context
 import com.jeiu.fashionproject.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 
 /**
  * 서버(FastAPI) 주소 설정 — 마이페이지 > 서버 주소.
@@ -22,14 +23,17 @@ object ServerSettings {
     const val DEFAULT_PORT = 8000
     private const val EMULATOR = "http://10.0.2.2:8000"
 
-    /** 앱에 들어 있는 기본 주소 (local.properties SERVER_URL, 없으면 에뮬레이터 주소) */
+    /** 빌드에 포함된 기본 주소. 개발 빌드에서는 local.properties로 지정할 수 있다. */
     val defaultUrl: String get() = normalize(BuildConfig.SERVER_URL) ?: EMULATOR
 
-    /** 앱 시작 때 한 번 — 저장된 주소(없으면 기본 주소)를 BackendApi 에 넣는다 */
+    /** 앱 시작 때 한 번. 저장된 서버 변경값은 개발 빌드에서만 적용한다. */
     fun load(context: Context) {
         val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
-        BackendApi.BASE_URL = saved?.let { normalize(it) } ?: defaultUrl
+        BackendApi.BASE_URL = startupUrl(saved, BuildConfig.DEBUG)
     }
+
+    internal fun startupUrl(saved: String?, debugBuild: Boolean): String =
+        (if (debugBuild) saved?.let(::normalize) else null) ?: defaultUrl
 
     val current: String get() = BackendApi.BASE_URL
     val isDefault: Boolean get() = current == defaultUrl
@@ -87,24 +91,23 @@ object ServerSettings {
 
     /** 이 주소로 서버 · DB 가 응답하는지 확인 (저장하지 않음) */
     suspend fun check(url: String): Check = withContext(Dispatchers.IO) {
-        val root = get("$url/") ?: return@withContext Check(reachable = false)
+        val root = get("$url/", rootClient) ?: return@withContext Check(reachable = false)
         // 다른 프로그램이 같은 주소에서 응답하는 경우를 걸러 낸다 (우리 서버는 / 에서 service 이름을 돌려줌)
         if (!root.contains("FashionProject")) return@withContext Check(reachable = false)
-        val health = get("$url/api/health/database")?.let { runCatching { JSONObject(it) }.getOrNull() }
+        val health = get("$url/api/health/database", databaseClient)?.let { runCatching { JSONObject(it) }.getOrNull() }
             ?: return@withContext Check(reachable = true, dbStatus = "unknown")
         val missing = health.optJSONArray("missing")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty()
         Check(true, health.optBoolean("ready"), health.optString("status"), missing,
             health.optBoolean("syncReady"), health.optInt("authProtocol"))
     }
 
-    private fun get(url: String): String? = runCatching {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"; connectTimeout = 3_000; readTimeout = 5_000; instanceFollowRedirects = false
-        }
-        try {
-            if (conn.responseCode in 200..299) conn.inputStream.bufferedReader().use { it.readText() } else null
-        } finally {
-            conn.disconnect()
-        }
-    }.getOrNull()
+    // Full-call deadlines include response bodies; no retry, redirects or UI-thread blocking.
+    internal val rootClient = SafeAccountHttp.client(8)
+    internal val databaseClient = SafeAccountHttp.client(25)
+
+    private suspend fun get(url: String, client: OkHttpClient): String? = try {
+        val reply = SafeAccountHttp.send(client, Request.Builder().url(url).get().build())
+        if (reply.code in 200..299) reply.body else null
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
 }

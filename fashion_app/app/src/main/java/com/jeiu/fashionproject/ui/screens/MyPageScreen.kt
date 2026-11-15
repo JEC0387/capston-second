@@ -171,7 +171,7 @@ fun MyPageScreen(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(nickname, style = MaterialTheme.typography.headlineSmall, color = CharcoalBlack, fontWeight = FontWeight.Bold)
                 Text(email, style = MaterialTheme.typography.bodySmall, color = MediumGray)
-                ServerStatusBadge()
+                if (com.jeiu.fashionproject.BuildConfig.DEBUG) ServerStatusBadge()
             }
             // 통계
             Row(
@@ -234,7 +234,7 @@ fun MyPageScreen(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Person, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
-                    Text("체형", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Text("사진 체형", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
                 }
                 Box(
                     modifier = Modifier
@@ -244,7 +244,7 @@ fun MyPageScreen(
                 ) {
                     // 이번 실행에서 분석한 결과가 있으면 그것, 없으면 서버에 저장된 최근 결과 (둘 다 없으면 안내)
                     Text(
-                        shownBodyType ?: "분석 전",
+                        shownBodyType ?: "사진 분석 전",
                         style = MaterialTheme.typography.labelLarge,
                         color = if (shownBodyType != null) Brown else MediumGray,
                         fontWeight = FontWeight.SemiBold
@@ -333,7 +333,7 @@ fun MyPageScreen(
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.CloudUpload, label = "데이터 백업 · 복원", onClick = { showBackupDialog = true })
             HorizontalDivider(color = LightGray)
-            MyMenuItem(icon = Icons.Filled.Dns, label = "서버 주소 (${ServerSettings.current.removePrefix("http://")})",
+            if (com.jeiu.fashionproject.BuildConfig.DEBUG) MyMenuItem(icon = Icons.Filled.Dns, label = "서버 주소 (${ServerSettings.current.removePrefix("http://")})",
                 onClick = { showServerDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.Lock, label = "개인정보 처리 안내", onClick = { showPrivacyDialog = true })
@@ -403,7 +403,7 @@ fun MyPageScreen(
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    if (showServerDialog) {
+    if (showServerDialog && com.jeiu.fashionproject.BuildConfig.DEBUG) {
         ServerAddressDialog(onDismiss = { showServerDialog = false })
     }
 
@@ -511,7 +511,7 @@ fun MyPageScreen(
             title = { Text("앱 정보", fontWeight = FontWeight.Bold) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("FashionAI")
+                    Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name))
                     Text("버전: ${buildInfo.versionName} (${buildInfo.versionCode})", color = MediumGray)
                     Text("빌드: ${buildInfo.buildNumber} · ${buildInfo.shortSha}", color = MediumGray)
                     Text("브랜치: ${buildInfo.branch}", color = MediumGray)

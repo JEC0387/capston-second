@@ -10,6 +10,7 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="db_sync.xml" />
     <exclude domain="sharedpref" path="data_auth.xml" />
+        <exclude domain="sharedpref" path="installtest_account.xml" />
     <exclude domain="sharedpref" path="restore_stage_wardrobe_store.xml" />
     <exclude domain="sharedpref" path="restore_stage_sample_wear_history.xml" />
     <exclude domain="sharedpref" path="restore_stage_wear_log_store.xml" />

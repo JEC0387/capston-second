@@ -39,9 +39,13 @@ class P48ServerOutfitContractTest {
         "c".repeat(64), "d".repeat(64), 1000, 301000, "a".repeat(64))
 
     @Test fun deploymentAndHttpsRemainFailClosed() {
-        assertFalse(BuildConfig.SERVER_OUTFIT_APPROVED)
+        assertFalse(DataAuth.canSync)
+        assertNull(InstallTestAccount.sessionOrNull())
         val failure = assertThrows(OutfitServerFailure::class.java) { repo.session() }
-        assertEquals("deployment_not_approved", failure.code)
+        // The opt-in installtest artifact enables the deployment flag, but never bypasses auth.
+        val expected = if (BuildConfig.SERVER_OUTFIT_APPROVED && !BuildConfig.PREVIEW_BUILD)
+            "authentication_required" else "deployment_not_approved"
+        assertEquals(expected, failure.code)
         listOf("http://localhost", "https://user:pass@example.com", "https://example.com?token=x",
             "https://example.com/path", "https://example.com#x").forEach { assertFalse(repo.validBase(it)) }
         assertTrue(repo.validBase("https://approved.example"))

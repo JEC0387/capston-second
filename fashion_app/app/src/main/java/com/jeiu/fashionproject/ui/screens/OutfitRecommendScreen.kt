@@ -28,6 +28,7 @@ import com.jeiu.fashionproject.data.Gender
 import com.jeiu.fashionproject.data.TastePreferenceStore
 import com.jeiu.fashionproject.data.PrivacyConsent
 import com.jeiu.fashionproject.data.BodyAnalysisSessionStore
+import com.jeiu.fashionproject.data.AvatarProfileStore
 import com.jeiu.fashionproject.data.ManualBodyStore
 import com.jeiu.fashionproject.data.RecommendationLog
 import com.jeiu.fashionproject.data.SavedOutfitStore
@@ -75,15 +76,20 @@ fun OutfitRecommendScreen(
     val context = LocalContext.current
     val sessionMeasurements by BodyAnalysisSessionStore.measurements.collectAsState()
     val manualBody by ManualBodyStore.current.collectAsState()
-    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
+    val avatarBody by AvatarProfileStore.current.collectAsState()
+    val savedBodyType by com.jeiu.fashionproject.data.BodyTypeStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context); com.jeiu.fashionproject.data.BodyTypeStore.load(context) }
     var savedBodyProfile by remember { mutableStateOf<BodyProfile?>(null) }
     LaunchedEffect(sessionMeasurements,manualBody) {
         savedBodyProfile = null
         if (manualBody == null && sessionMeasurements == null)
             savedBodyProfile = BodyProfileRepository.loadLatest(PrivacyConsent.canSaveRecords(context))
     }
-    val bodyProfile: BodyProfile? = BodyProfileRepository.current(manualBody,sessionMeasurements)
-        ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) }
+    // 길이 비율 + 분석한 체형(사진 분석 · 직접 입력 둘레)을 함께 추천에 반영한다.
+    val bodyProfile: BodyProfile? = BodyProfileRepository.withBodyType(
+        BodyProfileRepository.current(manualBody,sessionMeasurements,avatarBody)
+            ?: savedBodyProfile.takeIf { manualBody == null && sessionMeasurements == null && PrivacyConsent.canSaveRecords(context) },
+        manualBody, savedBodyType?.type, gender)
     LaunchedEffect(Unit) {
         WardrobeStore.load(context)
         ProductInterestStore.load(context)

@@ -41,6 +41,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<Provider?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var loginDetails by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
     // Unknown provider configuration must not enable an external authentication action.
     var serverProviders by remember { mutableStateOf<Map<String, Boolean>?>(null) }
@@ -65,9 +66,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
     }
 
     // 카카오 로그인(브라우저)에서 돌아왔을 때
-    val redirect by AuthStore.redirect.collectAsState()
-    LaunchedEffect(redirect) {
-        val uri = AuthStore.consumeRedirect() ?: return@LaunchedEffect
+    LoginRedirectEffect { uri ->
         busy = Provider.of(uri.getQueryParameter("provider")) ?: Provider.KAKAO
         error = null; hint = null
         handle(AuthStore.finishBrowserLogin(context, uri))
@@ -102,7 +101,7 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
             Box(
                 Modifier.padding(20.dp).align(Alignment.TopStart).clip(RoundedCornerShape(8.dp))
                     .background(Camel).padding(horizontal = 12.dp, vertical = 6.dp)
-            ) { Text("STYLE AI", color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            ) { Text(androidx.compose.ui.res.stringResource(com.jeiu.fashionproject.R.string.brand_name), color = White, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
         }
 
         Column(Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -113,11 +112,15 @@ fun LoginScreen(onDone: () -> Unit, allowGuest: Boolean = true) {
                     "지금 ${signedIn!!.provider.label} 계정으로 로그인돼 있어요." + (signedIn!!.email.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""),
                     style = MaterialTheme.typography.bodyMedium, color = MediumGray, modifier = Modifier.testTag("loginCurrent"))
                 serverProviders != null && !anyAvailable -> Text(
-                    AuthStore.UNAVAILABLE, style = MaterialTheme.typography.bodyMedium, color = MediumGray,
+                    "Google·카카오 로그인을 아직 사용할 수 없어요. 게스트로 계속할 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MediumGray,
                     modifier = Modifier.testTag("loginUnconfigured"))
                 else -> Text(
                     "카카오나 Google 계정으로 로그인하면 지금 폰의 옷장 · 기록이 그 계정에 저장되고, 다른 폰에서도 이어서 쓸 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium, color = MediumGray, modifier = Modifier.testTag("loginIntro"))
+            }
+            if (serverProviders != null && !anyAvailable) {
+                TextButton(onClick={loginDetails=!loginDetails}, modifier=Modifier.testTag("loginDetails")) { Text(if(loginDetails) "안내 접기" else "로그인 연결 안내") }
+                if(loginDetails) Text(AuthStore.UNAVAILABLE, style=MaterialTheme.typography.bodySmall, modifier=Modifier.testTag("loginConfigurationReason"))
             }
             Spacer(Modifier.height(6.dp))
 

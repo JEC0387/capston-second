@@ -17,7 +17,8 @@ object GenderFit {
     private val WOMEN_SUBS = setOf("치마", "반팔 원피스", "긴팔 원피스", "민소매 원피스")
     private val WOMEN_KINDS = setOf("블라우스", "미니스커트", "롱스커트", "스커트", "힐", "원피스")
     private val WOMEN_WORDS = listOf(
-        "원피스", "스커트", "치마", "블라우스", "드레스", "하이힐", "펌프스", "메리제인", "뷔스티에", "캐미솔", "브라탑"
+        "원피스", "스커트", "치마", "블라우스", "드레스", "하이힐", "펌프스", "메리제인", "뷔스티에", "캐미솔", "브라탑",
+        "우먼", "여성"   // 상품명의 우먼즈 · 여성 표기 (예: 무신사 스탠다드 우먼, 여성 눕시)
     )
     private val MEN_WORDS = listOf("남성", "남자", "맨즈", "옴므")
     private val MEN_EN = Regex("(?<![a-z])men'?s(?![a-z])")   // men's · mens (women's 는 아님)

@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -27,7 +28,14 @@ import java.util.Locale
 /** All edits are an unsaved draft. Comparison/approval and persistence remain separate actions. */
 @Composable
 fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:()->Unit,
-    onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null) {
+    onSave:(AvatarProfile)->Boolean,onApplyToFitting:(()->Unit)?=null,
+    onSavedForAnalysis:(()->Unit)?=null) {
+    val context = LocalContext.current
+    val owner = remember { BodyMeasurementScope.current() }
+    LaunchedEffect(Unit) { ManualBodyStore.load(context) }
+    var measuredProposal by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measurementBaseline by remember { mutableStateOf<ManualBodyMeasurements?>(null) }
+    var measuredPart by remember { mutableStateOf<AvatarPart?>(null) }
     val initialBody=checkNotNull(initial.centimeters)
     val initialJson=remember(initialBody){initialBody.toJson().toString()}
     var json by rememberSaveable(initialJson) {mutableStateOf(initialJson)}
@@ -46,6 +54,19 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
     var askReset by remember {mutableStateOf(false)}
     var askLeave by remember {mutableStateOf(false)}
     var message by remember {mutableStateOf<String?>(null)}
+    measuredProposal?.let { proposed ->
+        AlertDialog(onDismissRequest = { measuredProposal = null },
+            title = { Text("원본 실측값에 별도로 저장할까요?") },
+            text = { Text("방금 직접 잰 값으로 입력한 ${measuredPart?.label}만 실측 기록에 저장해요. 체형 분석·사이즈 비교에도 사용돼요. 3D 표시 조절과 별개이며 취소하면 원본 실측값은 유지돼요.") },
+            confirmButton = { TextButton(onClick = {
+                if (owner != null && owner == BodyMeasurementScope.current() &&
+                    ManualBodyStore.current.value == measurementBaseline && ManualBodyStore.update(context, proposed, true)) {
+                    message = "직접 잰 값을 실측 기록에 저장했어요."
+                } else message = "실측값이 바뀌었거나 저장하지 못했어요. 기존 기록을 유지했어요."
+                measuredProposal = null
+            }, modifier = Modifier.testTag("confirmMeasuredWriteback")) { Text("실측 기록에 저장") } },
+            dismissButton = { TextButton(onClick = { measuredProposal = null }, modifier = Modifier.testTag("cancelMeasuredWriteback")) { Text("3D 초안에만 유지") } })
+    }
     var details by rememberSaveable {mutableStateOf(false)}
     var lastSaved by rememberSaveable {mutableStateOf<String?>(null)}
     fun update(next:AvatarCentimeters) {json=next.toJson().toString();message=null}
@@ -58,7 +79,9 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             OutlinedTextField(text,{if(it.length<=8)text=it},label={Text("cm · 0.5 단위")},singleLine=true,
                 keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.testTag("rulerInputField"))
             Text("표시 범위 ${range.start}~${range.endInclusive} cm. 눈금과 같은 0.5cm 단위로 입력해요.")
-            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it});Text("줄자로 직접 잰 값이에요 (선택)")}
+            Row(verticalAlignment=Alignment.CenterVertically) {Checkbox(measured,{measured=it},modifier=Modifier.testTag("rulerMeasured"));Text("줄자로 직접 잰 값이에요 (선택)")}
+            if (onSavedForAnalysis != null) Text("직접 잰 값은 3D 설정을 저장하면 체형 분석에 쓰여요.",
+                style = MaterialTheme.typography.bodySmall)
             if(CmRulerMath.parse(text,range)==null)Text("유효한 범위의 0.5cm 단위 숫자를 입력해주세요.",color=Brown)
         }
     },confirmButton={TextButton(enabled=CmRulerMath.parse(text,range)!=null,onClick={
@@ -66,15 +89,21 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
         if(next!=null) {
             update(if(measured)next.copy(values=next.values+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL)),
                 references=next.references+(selected to AvatarCm(value,AvatarValueOrigin.MANUAL))) else next)
+            if (measured && onSavedForAnalysis == null) {
+                measurementBaseline = ManualBodyStore.current.value
+                measuredPart = selected
+                measuredProposal = ManualAvatarMeasurements.proposed(measurementBaseline, body.heightCm, selected, value, System.currentTimeMillis())
+            }
             input=false
         }
-    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false}) {Text("취소")}})
+    },modifier=Modifier.testTag("rulerInputConfirm")) {Text("cm 반영")}},dismissButton={TextButton(onClick={input=false},modifier=Modifier.testTag("rulerInputCancel")) {Text("취소")}})
     if(confirmSave) AvatarApplicationDialog(previous,candidate,onDismiss={confirmSave=false},commitOnApprove=true,onApprove={
         confirmSave=false
         val stamped=candidate.copy(centimeters=body.copy(updatedAt=maxOf(System.currentTimeMillis(),body.createdAt)))
         if(onSave(stamped)) {
             lastSaved=json;message="cm 치수와 출처를 이 기기에 저장했어요."
-            if(applyAfterSave) {onDismiss();onApplyToFitting?.invoke()}
+            if(onSavedForAnalysis != null) { onDismiss(); onSavedForAnalysis() }
+            else if(applyAfterSave) {onDismiss();onApplyToFitting?.invoke()}
         } else message="저장하지 못했어요. 기존 자료는 보존했고, 손상 안내와 입력 범위를 확인해주세요."
     })
     if(askReset) AlertDialog(onDismissRequest={askReset=false},title={Text("자동 초기 추정값으로 복원할까요?")},
@@ -92,9 +121,9 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                     IconButton(onClick=::leave) {Icon(Icons.AutoMirrored.Filled.ArrowBack,contentDescription="3D 조절 닫기")}
-                    Text("3D 체형 조절",style=MaterialTheme.typography.titleLarge,color=Brown)
+                    Text("내 체형 수정",style=MaterialTheme.typography.titleLarge,color=Brown)
                 }
-                Column(Modifier.weight(if(compact).45f else .58f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
+                Column(Modifier.weight(if(compact).45f else .65f).fillMaxWidth(),horizontalAlignment=Alignment.CenterHorizontally) {
                     BodyAvatarViewport(body.parameters(),1f,Modifier.weight(1f).fillMaxWidth().testTag("cmAvatarViewport"),
                         resetKey=cameraReset,cameraYaw=yaw,onRotation={yaw=it},fitModel=true)
                     Row(horizontalArrangement=Arrangement.Center) {
@@ -108,7 +137,7 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                         AvatarPart.entries.forEach {part->FilterChip(selected==part,{selectedName=part.name},label={Text(part.label)},
                             modifier=Modifier.testTag("cmPart-${part.name}"))}
                     }
-                Column(Modifier.weight(if(compact).55f else .42f).fillMaxWidth().verticalScroll(rememberScrollState())
+                Column(Modifier.weight(if(compact).55f else .35f).fillMaxWidth().verticalScroll(rememberScrollState())
                     .padding(horizontal=16.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Text("${selected.label} ${selected.unit}",style=MaterialTheme.typography.titleMedium,color=Brown,
                         modifier=Modifier.testTag("cmPartLabel"))
@@ -120,7 +149,6 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                     },{openInput()})
                     message?.let {Text(it,modifier=Modifier.testTag("cmEditorMessage"))}
                     if(parsed==null)Text("초안 형식을 복원하지 못해 초기 미리보기를 사용해요. 저장된 원본은 유지했어요.")
-                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.fillMaxWidth().testTag("cmEditorSave")) {Text("3D 설정 저장")}
                     TextButton(onClick={details=!details},modifier=Modifier.testTag("cmEditorAdvancedToggle")) {
                         Text(if(details)"고급 설정 접기" else "고급 설정 · 복원 및 출처")
                     }
@@ -131,21 +159,17 @@ fun PremiumAvatarEditor(initial:AvatarProfile,previous:AvatarProfile?,onDismiss:
                             TextButton(onClick={askReset=true}) {Text("초기 추정값 복원")}
                             TextButton(onClick={json=initialJson;message=null}) {Text("불러온 설정 복원")}
                         }
-                        if(onApplyToFitting!=null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
+                        if(onApplyToFitting!=null && onSavedForAnalysis==null)OutlinedButton(enabled=parsed!=null,onClick={applyAfterSave=true;confirmSave=true},
                             modifier=Modifier.fillMaxWidth().testTag("cmApplyFitting")) {Text("저장 후 가상피팅에 적용")}
-                        Text("키 ${body.heightCm} cm · 몸무게 ${body.weightKg} kg. 자동 초기값은 검증된 평균이 아닌 임시 형상이에요.")
-                        Text("깊이는 타원 가정이며 실제 신체 스캔·의복 물리·정확한 착용 핏이 아니에요.")
-                        Text("가슴은 기본 깊이/너비 0.72를 쓰고 어깨 폭을 넘으면 깊이를 늘려 둘레를 맞춰요(최대 1.6). 허리 0.70, 힙 0.76, 허벅지 0.92도 표시 가정이에요.")
-                        if(selected in setOf(AvatarPart.CHEST,AvatarPart.WAIST,AvatarPart.HIP,AvatarPart.THIGH)) {
-                            val radii=body.radii(selected)
-                            Text(String.format(Locale.KOREA,"표시용 타원: 너비 %.1f / 깊이 %.1f / 계산 둘레 %.1f cm. 실제 피부 표면·메시 수치 근사와는 구분해요.",
-                                radii.first*2,radii.second*2,AvatarCentimeters.circumference(radii.first,radii.second)))
-                        } else if(selected==AvatarPart.SHOULDER)Text("어깨는 모델의 좌우 어깨 기준점 간 너비예요. 팔을 포함한 최대 외곽 폭과 달라요.")
-                        Text("모델 표시 범위는 의학적 신체 정상 범위가 아니에요. 지원하지 않는 조합의 원본 치수는 그대로 보존해요.")
+                        Text("키 ${body.heightCm} cm · 몸무게 ${body.weightKg} kg")
                         body.photoFrontWidths.forEach {(key,value)->Text("사진 ${if(key=="waist")"허리" else "힙"} 정면 너비 $value cm · 둘레로 변환하지 않음")}
                         body.references.forEach {(part,value)->if(body[part]!=value.cm)Text("${part.label} 원본 ${value.cm} cm는 표시 단위/범위 차이로 현재 ${body[part]} cm와 달라요.")}
                     }
                     Spacer(Modifier.height(12.dp))
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal=16.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
+                    TextButton(onClick=::leave, modifier=Modifier.testTag("cmEditorCancel")) {Text("취소")}
+                    Button(enabled=parsed!=null,onClick={applyAfterSave=false;confirmSave=true},modifier=Modifier.weight(1f).testTag("cmEditorSave")) {Text("이 체형으로 저장")}
                 }
             }
         }

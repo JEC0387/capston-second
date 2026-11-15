@@ -7,13 +7,14 @@ import com.jeiu.fashionproject.R
  *
  * 옷장에 가상으로 하나씩 넣어 보고, 좋은 코디가 가장 많이 늘어나는 옷을 추천한다.
  *  - 기본템: 어디에나 잘 어울리는 무난한 옷 약 30개 (사진 없음 → 화면에서는 색 칸으로 표시)
- *  - 쇼핑 상품: 쇼핑 화면에 있는 실제 상품 8개 (추천되면 [상품 보기]로 쇼핑몰을 연다)
+ *  - 쇼핑 상품: 처음 8개 상품 + 쇼핑 화면의 색 정보가 있는 실제 판매 상품 (추천되면 [상품 보기])
+ *  - 기본템은 사진이 없어서, 같은 종류의 판매 상품 · 샘플 옷 사진을 "예시"로 보여 준다 (exampleOf)
  * 계절은 규칙(ClothingCategories.season) 대신 옷마다 직접 적었다. (트렌치코트는 봄·가을 등)
  */
 object BasicItems {
 
     /** 쇼핑 상품 후보 — [image]는 앱 안 사진(R.drawable) 또는 사진 주소 */
-    data class ShopCandidate(val item: WardrobeItem, val url: String, val image: Any)
+    data class ShopCandidate(val item: WardrobeItem, val url: String, val image: Any, val productId: String? = null)
 
     private fun basic(
         id: String, name: String, category: String, sub: String, detail: String?,
@@ -84,8 +85,44 @@ object BasicItems {
             "https://www.musinsa.com/products/6068184", R.drawable.shop_sweat_pants),
     )
 
-    /** 후보 전체 (기본템 + 쇼핑 상품) */
+    /** 쇼핑 화면 판매 상품 중 색 정보가 있는 것 (처음 8개와 겹치는 상품은 뺀다) */
+    val catalogItems: List<ShopCandidate> by lazy {
+        val known = shopItems.map { it.url }.toSet()
+        ShopCatalog.products.filter { it.purchaseUrl !in known }.mapNotNull { p ->
+            com.jeiu.fashionproject.recommend.OutfitSources.candidate(p, 1L)?.let { item ->
+                ShopCandidate(item, p.purchaseUrl, if (p.imageRes != 0) p.imageRes else p.imageUrl, p.id)
+            }
+        }
+    }
+
+    /** 후보 전체 (기본템 + 쇼핑 상품 8개) — 상황별 부족 아이템 계산용 (화면에서 바로 계산하므로 가볍게) */
     val all: List<WardrobeItem> get() = basics + shopItems.map { it.item }
 
-    fun shopOf(item: WardrobeItem): ShopCandidate? = shopItems.find { it.item.id == item.id }
+    /** TOP 3 계산용 후보 — 기본템 + 모든 판매 상품 */
+    val allWithCatalog: List<WardrobeItem> get() = all + catalogItems.map { it.item }
+
+    fun shopOf(item: WardrobeItem): ShopCandidate? =
+        shopItems.find { it.item.id == item.id } ?: catalogItems.find { it.item.id == item.id }
+
+    /** 예시 사진 — [productId]가 있으면 그 판매 상품 사진 */
+    data class Example(val image: Any, val productId: String?)
+
+    /**
+     * 사진이 없는 기본템의 예시 사진: 같은 종류 · 같은 색 판매 상품 → 같은 종류 판매 상품 → 같은 종류 샘플 옷.
+     * 판매 상품은 성별에 맞는 것만. 찾지 못하면 null (화면에서 색 칸으로 표시).
+     */
+    fun exampleOf(item: WardrobeItem, gender: Gender? = null): Example? {
+        if (item.imageUri.isNotEmpty() || shopOf(item) != null) return null
+        val kind = item.detailType ?: item.subCategory
+        val products = ShopCatalog.products.filter {
+            it.category == item.category && (it.detailType ?: it.subCategory) == kind &&
+                com.jeiu.fashionproject.recommend.GenderFit.allows(it.category, it.subCategory, it.detailType, it.name, gender)
+        }
+        (products.firstOrNull { it.clothingColorName == item.colorName } ?: products.firstOrNull())?.let {
+            return Example(if (it.imageRes != 0) it.imageRes else it.imageUrl, it.id)
+        }
+        return SampleWardrobe.items().firstOrNull {
+            it.category == item.category && (it.detailType ?: it.subCategory) == kind
+        }?.let { Example(it.imageUri, null) }
+    }
 }

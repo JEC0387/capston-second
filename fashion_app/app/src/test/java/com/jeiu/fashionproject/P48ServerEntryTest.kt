@@ -11,7 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
-import com.jeiu.fashionproject.data.WardrobeItem
+import com.jeiu.fashionproject.data.*
 import com.jeiu.fashionproject.ui.screens.*
 import org.junit.After
 import org.junit.Assert.*
@@ -30,8 +30,8 @@ class P48ServerEntryTest {
     @get:Rule val compose = createComposeRule()
     private val owner = object : ViewModelStoreOwner { override val viewModelStore = ViewModelStore() }
     @After fun clearTestViewModels() { owner.viewModelStore.clear() }
-    private fun garment(id: String) = WornGarment(
-        WardrobeItem(id, id, "상의", "합성 시험", 0, "content://synthetic/$id"),
+    private fun garment(id: String, category: String = "상의") = WornGarment(
+        WardrobeItem(id, id, category, "합성 시험", 0, "content://synthetic/$id"),
         "content://synthetic/$id", 1.5f, Offset(100f, 200f), 80f, 1.2f, 15f)
 
     @Test fun explicitServerEntryRejectsLateDropsAndKeepsPhotoAvatarAndOnDeviceState() {
@@ -41,12 +41,15 @@ class P48ServerEntryTest {
         vm.acceptPhotoDisplaySize(vm.photoGeneration, person, Size(1000f, 2000f))
         vm.resizeCanvas(Size(400f, 800f))
         val photo = garment("photo"); val avatar = garment("avatar")
-        vm.worn[FitSlot.TOP] = photo; vm.avatarWorn[FitSlot.TOP] = avatar
+        vm.worn[FitSlot.TOP] = photo
+        vm.worn[FitSlot.BOTTOM] = garment("bottom", "하의")
+        vm.worn[FitSlot.SHOES] = garment("shoes", "신발")
+        vm.avatarWorn[FitSlot.TOP] = avatar
         val drop = vm.beginPhotoDrop(FitSlot.TOP, Offset(120f, 210f))!!
         vm.selectionRequests[FitSlot.BOTTOM] = 7L
         val selected = onDeviceFittingSelection(person.toString(), vm.photoGeneration,
             vm.worn.values.toList(), vm.canvasSize)!!
-        vm.openServerOutfit(selected)
+        assertTrue(vm.openServerOutfit(selected))
         assertTrue(vm.showServerOutfitAi)
         assertFalse(vm.showOnDeviceAi)
         assertNull(vm.deviceSelection)
@@ -63,15 +66,17 @@ class P48ServerEntryTest {
     }
 
     @Test fun defaultBuildCanOpenExplicitBlockedServerScreenAndReturnWithoutAnInput() {
-        // The ordinary Debug CI also runs this class. Approval defaults off in
-        // every build; Preview/QA additionally force it off in Gradle.
-        assertFalse(BuildConfig.SERVER_OUTFIT_APPROVED)
+        // Both default and opt-in builds must reject missing authentication before upload.
+        assertFalse(DataAuth.canSync)
+        assertNull(InstallTestAccount.sessionOrNull())
+        val expected = if (BuildConfig.SERVER_OUTFIT_APPROVED && !BuildConfig.PREVIEW_BUILD)
+            "authentication_required" else "deployment_not_approved"
+        assertEquals(expected, assertThrows(OutfitServerFailure::class.java) { ServerOutfitVtonRepository.session() }.code)
         compose.setContent { CompositionLocalProvider(LocalViewModelStoreOwner provides owner) {
             MaterialTheme { VirtualFittingScreen(onBack = {}) }
         } }
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().performClick()
-        compose.onNodeWithTag("serverOutfitVtonScreen").assertExists()
-        compose.onNodeWithTag("serverOutfitBack").performScrollTo().performClick()
-        compose.onNodeWithTag("openServerOutfitFromFitting").performScrollTo().assertExists()
+        compose.onNodeWithTag("aiTryOnWand").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithTag("serverOutfitVtonScreen").assertDoesNotExist()
+        compose.onNodeWithTag("aiTryOnWand").assertTextContains("AI로 입어보기")
     }
 }

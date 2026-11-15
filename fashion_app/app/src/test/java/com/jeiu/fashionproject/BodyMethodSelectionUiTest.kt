@@ -14,6 +14,11 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import com.jeiu.fashionproject.data.AvatarProfileStore
+import com.jeiu.fashionproject.data.AvatarProfile
+import com.jeiu.fashionproject.data.AvatarPart
+import com.jeiu.fashionproject.data.AvatarCentimeters
+import com.jeiu.fashionproject.data.AvatarCm
+import com.jeiu.fashionproject.data.AvatarValueOrigin
 import com.jeiu.fashionproject.ui.screens.BodyMethodSelectionScreen
 import com.jeiu.fashionproject.ui.screens.BodyAvatarSetupScreen
 import com.jeiu.fashionproject.ui.screens.BodySizeComparisonScreen
@@ -70,64 +75,125 @@ class BodyMethodSelectionUiTest {
         compose.runOnIdle { assertEquals(1, photo) }
     }
 
-    @Test fun avatarSetupKeepsTheExistingModelAndPhotoEntryAvailable() {
+    @Test fun estimatedBodyCanBeSavedButDoesNotUnlockMeasuredAnalysis() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
         var photo = 0
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { photo++ }) }
-        compose.onNodeWithTag("avatarManualExpand").performScrollTo().performClick()
-        compose.onNodeWithText("3D 기본 모델").performScrollTo().performClick()
-        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
-        compose.onNodeWithText("3D 닫기").performClick()
+        enter("avatarHeight", "170")
+        enter("avatarWeight", "65")
+        compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
+        compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
+        compose.onNodeWithTag("avatarSave").performClick()
+        compose.onNodeWithTag("avatarAnalyze").assertIsNotEnabled()
+        compose.onNodeWithTag("avatarAnalysisMissing").assertExists()
+        compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
+        compose.onNodeWithTag("avatarAdvancedToggle").assertDoesNotExist()
         compose.onNodeWithText("사진으로 체형 분석하기").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(1, photo) }
-    }
-
-    @Test fun avatarSetupGroupsAdjustmentsAndKeepsThreeSourceChoices() {
-        compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
-        compose.onNodeWithTag("openCmAvatar").assertExists()
-        compose.onNodeWithTag("avatarShow").assertDoesNotExist()
-        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarShow").assertExists()
-        compose.onNodeWithTag("avatarImportBmi").assertExists()
-        compose.onNodeWithTag("avatarImportPhoto").assertIsNotEnabled()
-        compose.onNodeWithTag("avatarImportManual").assertIsNotEnabled()
-        compose.onNodeWithTag("avatarShoulder").assertDoesNotExist()
-        compose.onNodeWithTag("avatarAdjustToggle").performScrollTo().performClick()
-        listOf("avatarShoulder", "avatarChest", "avatarWaist", "avatarHip",
-            "avatarThigh", "avatarLeg", "avatarTorso").forEach {
-            compose.onNodeWithTag(it).assertExists()
+        compose.runOnIdle {
+            assertEquals(1, photo)
+            org.junit.Assert.assertTrue(com.jeiu.fashionproject.data.AvatarAnalysisInput.recorded(checkNotNull(AvatarProfileStore.current.value)).isEmpty())
         }
-        compose.onNodeWithTag("avatarAdjustToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarShoulder").assertDoesNotExist()
     }
 
     @Test @Config(qualifiers = "w320dp-h360dp")
-    fun avatarActionsRemainReachableOnShortScreenWithLargeText() {
+    fun formControlsRemainReachableOnShortScreenWithLargeText() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        AvatarProfileStore.clear(app)
         compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(1f, 1.5f)) {
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1.6f)) {
                 BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {})
             }
         }
-        compose.onNodeWithTag("openCmAvatar").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarShow").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("avatarSave").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("avatarManualExpand").performScrollTo().assertIsDisplayed()
+        enter("avatarHeight", "170")
+        enter("avatarWeight", "65")
+        compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
+        compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
+        AvatarPart.entries.filter { it in listOf(AvatarPart.CHEST, AvatarPart.WAIST, AvatarPart.HIP, AvatarPart.SHOULDER) }
+            .forEach { compose.onNodeWithTag("avatarMeasure${it.name}").performScrollTo().assertIsDisplayed() }
+        compose.onNodeWithTag("avatarOptionalMeasures").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarMeasureLEG").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarSave").assertIsDisplayed()
     }
 
-    @Test fun avatarSetupAcceptsHeightWeightAndSavesVisualProfile() {
+    @Test fun savedMeasuredAvatarReopensAnalysisWithoutFittingOrPhoto() {
         val app = ApplicationProvider.getApplicationContext<Application>()
-        AvatarProfileStore.clear(app)
-        compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = {}) }
-        compose.onNodeWithTag("avatarHeight").performTextReplacement("175")
-        compose.onNodeWithTag("avatarWeight").performTextReplacement("72")
-        compose.onNodeWithTag("avatarAdvancedToggle").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
-        compose.runOnIdle {
-            assertEquals(175f, AvatarProfileStore.current.value?.heightCm)
-            assertEquals(72f, AvatarProfileStore.current.value?.weightKg)
+        val cm = checkNotNull(AvatarCentimeters.generate(170f, 65f, 1L))
+        val references = mapOf(AvatarPart.SHOULDER to 41f, AvatarPart.CHEST to 96f, AvatarPart.WAIST to 68f, AvatarPart.HIP to 99f)
+            .mapValues { (_, value) -> AvatarCm(value, AvatarValueOrigin.MANUAL) }
+        org.junit.Assert.assertTrue(AvatarProfileStore.save(app, AvatarProfile(
+            170f, 65f, centimeters = cm.copy(references = references))))
+        try {
+            compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") }) }
+            compose.onNodeWithTag("avatarAnalyze").performClick()
+            compose.onNodeWithText("3D 입력 기반 분석").assertIsDisplayed()
+            compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
+            compose.onNodeWithText("허리 둘레 68.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyFitting").assertDoesNotExist()
+            compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarMeasureWAIST").performScrollTo().assertIsDisplayed()
+        } finally {
+            AvatarProfileStore.clear(app)
         }
-        compose.onNodeWithTag("avatarShow").performScrollTo().performClick()
-        compose.onNodeWithText("3D 비율 아바타 · 참고 모델").assertIsDisplayed()
-        AvatarProfileStore.clear(app)
     }
+
+    @Test fun saveThenAnalyzeKeepsExactMeasurementsAndEditsRequireResaving() {
+        val app = ApplicationProvider.getApplicationContext<Application>()
+        val wardrobe = com.jeiu.fashionproject.data.WardrobeStore.items.value
+        val account = com.jeiu.fashionproject.data.AuthStore.mode.value
+        AvatarProfileStore.clear(app)
+        try {
+            compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") }) }
+            enter("avatarHeight", "170")
+            enter("avatarWeight", "65")
+            compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
+            compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
+            enter("avatarMeasureCHEST", "96")
+            enter("avatarMeasureWAIST", "20")
+            enter("avatarMeasureHIP", "99")
+            compose.onNodeWithTag("avatarSave").performClick()
+            compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
+            compose.onNodeWithTag("avatarAnalysisInputError").assertExists()
+            compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
+            enter("avatarMeasureWAIST", "70.2")
+            enter("avatarMeasureSHOULDER", "41")
+            compose.onNodeWithTag("avatarSave").performClick()
+            compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
+            compose.onNodeWithTag("avatarAnalyze").performClick()
+            compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
+            compose.runOnIdle {
+                val cm = checkNotNull(AvatarProfileStore.current.value?.centimeters)
+                assertEquals(70.2f, cm.references[AvatarPart.WAIST]?.cm)
+                assertEquals(70f, cm[AvatarPart.WAIST])
+            }
+
+            compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
+            enter("avatarMeasureWAIST", "88")
+            compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
+            enter("avatarMeasureSHOULDER", "44")
+            enter("avatarMeasureHIP", "110")
+            compose.onNodeWithTag("avatarSave").performClick()
+            compose.onNodeWithTag("avatarAnalyze").performClick()
+            compose.onNodeWithText("엉덩이 둘레가 더 큰 체형").assertIsDisplayed()
+            compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
+            compose.onNodeWithText("어깨 너비 44.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("허리 둘레 88.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("엉덩이 둘레 110.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()
+            compose.runOnIdle {
+                AvatarProfileStore.load(app)
+                val cm = checkNotNull(AvatarProfileStore.current.value?.centimeters)
+                assertEquals(88f, cm.references[AvatarPart.WAIST]?.cm)
+                assertEquals(wardrobe, com.jeiu.fashionproject.data.WardrobeStore.items.value)
+                assertEquals(account, com.jeiu.fashionproject.data.AuthStore.mode.value)
+            }
+        } finally {
+            AvatarProfileStore.clear(app)
+        }
+    }
+
+    private fun enter(tag: String, number: String) =
+        compose.onNodeWithTag(tag).performScrollTo().performTextReplacement(number)
 }

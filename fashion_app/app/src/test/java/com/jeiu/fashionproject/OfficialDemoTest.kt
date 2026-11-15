@@ -50,7 +50,8 @@ class OfficialDemoTest {
             }
         }
     }
-    @After fun cleanup() { compose.runOnIdle { model.viewModelScope.cancel() } }
+    // Pure contract tests do not mount a Compose root. Cleanup must not wait for one.
+    @After fun cleanup() { compose.runOnUiThread { model.viewModelScope.cancel() } }
     private fun screen() { compose.setContent { CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner) {
         if (visible) OfficialDemoScreen({}, model)
     } } }
