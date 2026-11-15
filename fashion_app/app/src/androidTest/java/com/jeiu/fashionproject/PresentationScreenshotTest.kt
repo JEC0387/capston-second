@@ -111,12 +111,18 @@ class PresentationScreenshotTest {
             compose.onNodeWithText("AI분석").performClick()
             waitTag("bodyMethodAvatar")
             compose.onNodeWithTag("bodyMethodAvatar").performClick()
-            waitTag("avatarShow")
+            waitTag("openCmAvatar")
             settle(1500)
-            compose.onNodeWithTag("avatarShow").performScrollTo().performClick()
-            waitText("3D 닫기")
-            settle(6000)
+            compose.onNodeWithTag("openCmAvatar").performScrollTo().performClick()
+            waitTag("cmAvatarViewport")
+            settle(7000)
             shot("body3d")
+            // Optional extra angle for the slides
+            runCatching {
+                compose.onNodeWithTag("cmCamera-90", useUnmergedTree = true).performClick()
+                settle(4000)
+                shot("body3d_side")
+            }
         }
     }
 }
