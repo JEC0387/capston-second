@@ -1,0 +1,9 @@
+11-15 05:37:51.234  4132  4132 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+11-15 05:37:51.244  4132  4132 I AndroidRuntime: Using default boot image
+11-15 05:37:51.248  4132  4132 I AndroidRuntime: Leaving lock profiling enabled
+11-15 05:37:51.682  4132  4132 D AndroidRuntime: Calling main entry com.android.commands.am.Am
+11-15 05:37:56.488  4198  4522 I TestRunner: run started: 1 tests
+11-15 05:37:56.489  4198  4522 I TestRunner: started: captureHomeOutfitAndBody3d(com.jeiu.fashionproject.PresentationScreenshotTest)
+11-15 05:38:35.542  4198  4522 I TestRunner: finished: captureHomeOutfitAndBody3d(com.jeiu.fashionproject.PresentationScreenshotTest)
+11-15 05:38:35.587  4198  4522 I TestRunner: run finished: 1 tests, 0 failed, 0 ignored
+11-15 05:38:35.711  4132  4132 I AndroidRuntime: VM exiting with result code 0.

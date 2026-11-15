@@ -1,0 +1,4 @@
+body3d.png
+body3d_side.png
+home.png
+outfit.png
