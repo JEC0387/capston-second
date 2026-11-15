@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.collectAsState
 import com.jeiu.fashionproject.data.StylePreferenceStore
@@ -133,6 +134,33 @@ fun MyPageScreen(
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val signedIn by com.jeiu.fashionproject.data.AuthStore.account.collectAsState()
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var loggingOut by remember { mutableStateOf(false) }
+    if (showLogoutDialog) AlertDialog(
+        onDismissRequest = { showLogoutDialog = false },
+        title = { Text("로그아웃할까요?") },
+        text = {
+            Text("내 기록을 서버에 저장한 뒤 이 기기에서 지워요. 같은 계정으로 다시 로그인하면 옷장 · 체형 · 취향 기록을 그대로 불러와요.",
+                style = MaterialTheme.typography.bodyMedium)
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                showLogoutDialog = false
+                loggingOut = true
+                scope.launch {
+                    when (val r = com.jeiu.fashionproject.data.AccountLogout.logout(context)) {
+                        com.jeiu.fashionproject.data.AccountLogout.Result.Done ->
+                            com.jeiu.fashionproject.data.BackupRestore.restartApp(context)
+                        is com.jeiu.fashionproject.data.AccountLogout.Result.Blocked -> {
+                            loggingOut = false
+                            Toast.makeText(context, r.message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }, modifier = Modifier.testTag("myLogoutConfirm")) { Text("로그아웃", color = Camel) }
+        },
+        dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("취소", color = MediumGray) } }
+    )
     val nickname = profile?.nickname ?: signedIn?.name?.takeIf { it.isNotBlank() } ?: "나의 스타일"
     val email = signedIn?.let { a -> "${a.provider.label} 로그인" + (a.email.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") }
         ?: profile?.email?.takeIf { it.isNotBlank() } ?: "로그인 안 함 · 로컬 게스트"
@@ -411,7 +439,16 @@ fun MyPageScreen(
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.AccountCircle, label = "계정 · 게스트 이용", onClick = { showAccountDialog = true })
-            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
+            if (signedIn == null) MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
+            else Row(
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !loggingOut) { showLogoutDialog = true }
+                    .padding(vertical = 14.dp).testTag("myLogout"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = CharcoalBlack, modifier = Modifier.size(20.dp))
+                Text(if (loggingOut) "기록을 저장하고 로그아웃하는 중…" else "로그아웃", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
