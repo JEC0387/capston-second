@@ -4,9 +4,13 @@ import com.jeiu.fashionproject.data.WardrobeItem
 
 /** 코디 상황 (계획 4 — 2단계). 상황을 늘리려면 여기에 하나 추가하고 SituationRules.rule에 규칙을 적는다. */
 enum class Situation(val label: String) {
+    OFFICE("출근"),
+    CAMPUS("등교"),
     INTERVIEW("면접"),
+    WEDDING("하객"),
     DATE("데이트"),
     TRAVEL("여행"),
+    WEEKEND("주말 나들이"),
     EXERCISE("운동")
 }
 
@@ -74,6 +78,37 @@ object SituationRules {
             layeredBonus = 1.0,
             needHints = mapOf("신발" to "운동화나 스니커즈"),
             reason = "오래 걸어도 편한 옷 위주로 골랐어요"
+        )
+        Situation.OFFICE -> Rule(
+            preferred = setOf("셔츠", "블라우스", "니트", "슬랙스", "면바지", "가디건", "자켓", "코트", "로퍼"),
+            excluded = setOf("트레이닝팬츠", "반바지", "미니스커트", "샌들", "후드티", "민소매"),
+            excludedWords = setOf("그래픽", "프린트"),
+            needHints = mapOf("상의" to "셔츠나 니트", "하의" to "슬랙스나 면바지", "신발" to "로퍼나 깔끔한 스니커즈"),
+            reason = "출근하기 좋은 단정한 옷으로 골랐어요"
+        )
+        Situation.CAMPUS -> Rule(
+            preferred = setOf("맨투맨", "후드티", "반팔티", "긴팔티", "청바지", "면바지", "가디건", "점퍼", "스니커즈", "운동화"),
+            excluded = setOf("구두", "힐"),
+            layeredBonus = 0.5,
+            needHints = mapOf("신발" to "스니커즈나 운동화"),
+            reason = "수업 듣기 편한 캐주얼로 골랐어요"
+        )
+        Situation.WEDDING -> Rule(
+            preferred = setOf("셔츠", "블라우스", "니트", "슬랙스", "롱스커트", "긴팔 원피스", "자켓", "코트", "로퍼", "구두", "힐"),
+            excluded = setOf(
+                "후드티", "맨투맨", "반팔티", "트레이닝팬츠", "반바지", "청바지", "미니스커트",
+                "운동화", "스니커즈", "샌들", "점퍼", "패딩"
+            ),
+            excludedWords = setOf("그래픽", "프린트", "카고", "데님"),
+            needHints = mapOf("상의" to "셔츠나 블라우스", "하의" to "슬랙스나 롱스커트", "신발" to "로퍼나 구두"),
+            reason = "하객룩답게 단정하고 차분하게 맞췄어요"
+        )
+        Situation.WEEKEND -> Rule(
+            preferred = setOf("청바지", "면바지", "니트", "맨투맨", "셔츠", "가디건", "반팔티", "스니커즈"),
+            excluded = setOf("트레이닝팬츠"),
+            pointColorBonus = 0.5,
+            tasteMultiplier = 1.5,
+            reason = "가볍게 나가기 좋은 주말 코디예요"
         )
         Situation.EXERCISE -> Rule(
             // 추운 날을 위해 긴팔티·후드티·점퍼도 허용

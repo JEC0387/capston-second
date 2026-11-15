@@ -15,7 +15,11 @@ class BodyDimensionsTest {
         assertEquals(40f,profile[BodyDimension.SHOULDER_WIDTH]!!.cm)
         assertEquals(MeasurementOrigin.USER_ENTERED,profile[BodyDimension.SHOULDER_WIDTH]!!.origin)
         assertEquals(75f,profile[BodyDimension.WAIST_CIRCUMFERENCE]!!.cm)
-        assertEquals(30f,profile[BodyDimension.WAIST_FRONT_WIDTH]!!.cm)
+        // 직접 잰 어깨 · 다리 · 상체 길이 비율의 중앙값(52/50 = 1.04)으로 사진의 허리 정면 너비를 보정한다.
+        assertEquals(31.2f,profile[BodyDimension.WAIST_FRONT_WIDTH]!!.cm,.01f)
+        assertEquals(37f*1.04f,profile[BodyDimension.HIP_FRONT_WIDTH]!!.cm,.01f)
+        assertTrue(profile.notes.any { it.contains("보정") })
+        assertEquals(30f,BodyDimensions.resolve(null,photo)[BodyDimension.WAIST_FRONT_WIDTH]!!.cm)
         assertEquals(MeasurementOrigin.PHOTO_ESTIMATE,profile[BodyDimension.WAIST_FRONT_WIDTH]!!.origin)
         assertNull(BodyDimensions.resolve(null,photo)[BodyDimension.WAIST_CIRCUMFERENCE])
         assertEquals(3,profile.comparisons.size)

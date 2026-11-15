@@ -144,7 +144,7 @@ fun BodyAnalysisScreen(
                 OutlinedTextField(
                     value = heightInput, onValueChange = viewModel::updateHeightInput,
                     label = { Text("키 (cm)") }, singleLine = true,
-                    supportingText = { Text("100~230 cm, 소수점 첫째 자리까지 입력해주세요. 키는 cm 환산에 필요해요.") },
+                    supportingText = { Text("100~230 cm로 입력해주세요.") },
                     isError = heightInput.isNotEmpty() && !validHeight,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); keyboard?.hide() }),
@@ -223,6 +223,9 @@ fun BodyAnalysisScreen(
                     OutlinedButton(onClick = { manualExpanded = !manualExpanded }, modifier = Modifier.fillMaxWidth().testTag("bodyManualExpand")) {
                         Text(if (manualExpanded) "치수 입력 닫기" else "신체 치수 직접 입력")
                     }
+                    Text("치수를 직접 입력하고 사진 분석까지 하면 체형을 더 정확하게 알 수 있어요.",
+                        style = MaterialTheme.typography.bodySmall, color = BrownDark,
+                        modifier = Modifier.testTag("bodyAccuracyHint"))
                     if (manualExpanded) ManualBodyEntryCard(photo = null, onUseHeight = viewModel::updateHeightInput)
                     if (photoExpanded) {
                     Text("1. 키 입력", color = CharcoalBlack,
@@ -340,17 +343,33 @@ fun BodyAnalysisScreen(
                         "다리 길이" to result.legRatio,
                     ).mapNotNull { (label, ratio) -> ratio?.let { label to it } }
 
+                    // 사진 체형을 저장해 코디 · 쇼핑 추천에 반영하고, 직접 입력한 둘레가 있으면 합쳐서 최종 체형을 정한다.
+                    LaunchedEffect(result.bodyTypeKo, s.imageUri) {
+                        com.jeiu.fashionproject.data.BodyTypeStore.save(context, result.bodyTypeKo)
+                    }
+                    val fused = com.jeiu.fashionproject.recommend.BodyShapeFusion.fuse(result.bodyTypeKo, manualMeasurements)
+                    val calibration = result.measurements?.let { BodyDimensions.resolve(manualMeasurements, it) }
+                        ?.notes?.firstOrNull { it.contains("보정") }
+
                     // 분석 결과
                     Card(Modifier.fillMaxWidth(), shape = FashionCardShape,
                         colors = CardDefaults.cardColors(containerColor = CreamDark)) {
                         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("사진 기반 분석", style = MaterialTheme.typography.labelLarge, color = FashionMuted)
-                            Text(result.bodyTypeKo, style = MaterialTheme.typography.headlineMedium,
-                                color = CharcoalBlack, fontWeight = FontWeight.Bold)
+                            Text(fused?.source?.label ?: "사진 기반 분석", style = MaterialTheme.typography.labelLarge, color = FashionMuted)
+                            Text(fused?.type ?: result.bodyTypeKo, style = MaterialTheme.typography.headlineMedium,
+                                color = CharcoalBlack, fontWeight = FontWeight.Bold, modifier = Modifier.testTag("bodyFinalType"))
+                            fused?.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = BrownDark) }
+                            calibration?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FashionMuted) }
+                            Text("이 체형을 코디 · 쇼핑 추천에 반영해요.",
+                                style = MaterialTheme.typography.bodySmall, color = FashionMuted)
+                            if (fused == null || fused.type == result.bodyTypeKo) {
                             result.characteristics.take(2).forEach { Text(it, color = CharcoalBlack) }
                             result.styleAdvice.firstOrNull()?.let {
                                 Text("옷을 고를 때", style = MaterialTheme.typography.titleSmall, color = BrownDark)
                                 Text(it, style = MaterialTheme.typography.bodyMedium, color = FashionMuted)
+                            }
+                            } else com.jeiu.fashionproject.recommend.BodyStyleGuide.guide(fused.type, null)?.let {
+                                Text(it.summary, color = CharcoalBlack)
                             }
                             OutlinedButton(onClick = onStyleSuggestion,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), shape = FashionActionShape) {
@@ -437,7 +456,7 @@ fun BodyAnalysisScreen(
                         com.jeiu.fashionproject.ui.components.BodyMeasurementOverlay(result.measurements?.guides,Modifier.fillMaxSize())
                     }
 
-                    if(result.measurements?.guides!=null) Text("측정 위치: 청록 어깨 · 노랑 허리 · 보라 골반. 선은 대표 위치, cm는 주변 여러 행의 안정적인 중앙값이에요.",
+                    if(result.measurements?.guides!=null) Text("청록 어깨 · 노랑 허리 · 보라 골반",
                         color=FashionMuted,style=MaterialTheme.typography.bodySmall)
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -466,9 +485,9 @@ fun BodyAnalysisScreen(
                                         Text(formatMeasurement(value, 1, " cm"), color = BrownDark)
                                     }
                                 }
-                                Text("정면 사진의 너비를 키로 환산한 추정값이에요. 허리·엉덩이는 실제 둘레가 아니에요.",
+                                Text("정면 너비 추정값이에요 (둘레 아님).",
                                     color = FashionMuted, style = MaterialTheme.typography.bodySmall)
-                                if (detailsExpanded) Text("가슴 둘레·팔 길이·앞뒤 깊이는 측정하지 않았어요. 옷·자세·카메라 각도와 원근 왜곡 때문에 실측과 차이가 있어요.",
+                                if (detailsExpanded) Text("옷 · 자세 · 각도에 따라 실측과 다를 수 있어요.",
                                     color=FashionMuted,style=MaterialTheme.typography.bodySmall)
                             } else {
                                 Text(result.measurementIssue ?: "cm 측정을 완료하지 못했어요. 다시 촬영해주세요.",
@@ -603,7 +622,7 @@ fun BodyAnalysisScreen(
                     s.measurements?.let { cm ->
                         Text("이번 사진의 정면 너비 추정: 어깨 %.1f / 허리 %.1f / 힙 %.1f cm".format(
                             cm.shoulderWidthCm,cm.waistWidthCm,cm.hipWidthCm), color = FashionMuted)
-                        Text("분류가 보류된 측정값은 현재 세션·서버 기록에 저장하지 않아요.", color = FashionMuted)
+                        Text("보류된 결과는 저장하지 않아요.", color = FashionMuted)
                     }
                     Button(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.CAMERA) }) { Text("다시 촬영하기") }
                     OutlinedButton(onClick = { viewModel.reset(); requestPhoto(BodyPhotoSource.GALLERY) }) { Text("사진 다시 선택하기") }

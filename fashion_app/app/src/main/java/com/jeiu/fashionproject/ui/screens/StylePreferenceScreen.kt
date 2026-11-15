@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -118,7 +120,7 @@ private fun cardsFor(gender: Gender?): List<PrefStyleCard> =
     if (gender == Gender.FEMALE) prefStyleCards.map { femaleVariants[it.title] ?: it } else prefStyleCards
 
 @Composable
-fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
+fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null, onProductClick: (String) -> Unit = {}) {
     val context = LocalContext.current
     LaunchedEffect(Unit) { StylePreferenceStore.load(context); TastePreferenceStore.load(context) }
 
@@ -144,7 +146,7 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
             }
             Column {
                 Text("스타일 취향 학습", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                Text("마음에 드는 코디에 ♥ — 평가한 취향을 규칙 기반 코디 추천에 반영해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                Text("♥한 스타일을 코디 · 쇼핑 추천에 반영해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
             }
         }
 
@@ -202,7 +204,7 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
                     Text("학습 완료!", style = MaterialTheme.typography.titleMedium, color = BrownDark, fontWeight = FontWeight.Bold)
                     Text(
                         if (top.isEmpty()) "아직 마음에 든 스타일이 없어요. 한 번 더 평가해 보세요."
-                        else "${top.joinToString(" · ")} 스타일을 좋아하시네요.\n이제 홈과 코디 추천에서 이 스타일에 맞는 옷 조합을 먼저 보여 드려요.",
+                        else "${top.joinToString(" · ")} 스타일을 좋아하시네요. 코디 · 쇼핑 추천에 반영했어요.",
                         style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack
                     )
                 }
@@ -216,6 +218,8 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null) {
 
         Spacer(Modifier.height(16.dp))
         StylePreferenceSummary(scores = scores, ratedCount = ratedCount)
+        Spacer(Modifier.height(16.dp))
+        StyleShoppingSection(scores = scores, gender = gender, onProductClick = onProductClick)
         Spacer(Modifier.height(32.dp))
     }
 }
@@ -326,9 +330,63 @@ internal fun StylePreferenceSummary(scores: Map<String, Int>, ratedCount: Int, m
 
             HorizontalDivider(color = LightGray)
             Text(
-                "점수가 높은 스타일에 맞는 옷이 많은 코디일수록 홈 · 코디 추천에서 위에 나와요.",
+                "점수가 높은 스타일일수록 코디 · 쇼핑 추천에서 먼저 보여요.",
                 style = MaterialTheme.typography.labelSmall, color = MediumGray
             )
+        }
+    }
+}
+
+/** 선호도 상위 스타일(최대 2개)마다 그 스타일에 맞는 판매 상품을 가로로 보여 준다. 체형 분석 결과도 반영. */
+@Composable
+private fun StyleShoppingSection(scores: Map<String, Int>, gender: Gender?, onProductClick: (String) -> Unit) {
+    val context = LocalContext.current
+    val manual by com.jeiu.fashionproject.data.ManualBodyStore.current.collectAsState()
+    val photoType by com.jeiu.fashionproject.data.BodyTypeStore.current.collectAsState()
+    LaunchedEffect(Unit) {
+        com.jeiu.fashionproject.data.ManualBodyStore.load(context); com.jeiu.fashionproject.data.BodyTypeStore.load(context)
+    }
+    val bodyType = com.jeiu.fashionproject.recommend.BodyShapeFusion.fuse(photoType?.type, manual)?.type
+    val top = PreferredStyles.canonicalScores(scores).filter { it.value > 0 }
+        .entries.sortedByDescending { it.value }.take(2).map { it.key }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("내 취향 쇼핑 추천", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.Bold)
+        if (top.isEmpty()) {
+            Text("♥를 누르면 좋아하는 스타일의 옷을 골라 드려요.",
+                style = MaterialTheme.typography.bodySmall, color = MediumGray)
+            return@Column
+        }
+        if (bodyType != null) Text("$bodyType 체형에 맞는 옷을 앞에 보여 드려요.",
+            style = MaterialTheme.typography.labelSmall, color = MediumGray)
+        top.forEach { style ->
+            val picks = remember(style, gender, bodyType) {
+                com.jeiu.fashionproject.recommend.ProductRecommender.forStyle(
+                    com.jeiu.fashionproject.data.ShopCatalog.products, style, gender, bodyType)
+            }
+            if (picks.isEmpty()) return@forEach
+            Text("$style 스타일", style = MaterialTheme.typography.labelLarge, color = colorOf(style), fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                picks.forEach { p -> StyleProductCard(p, onClick = { onProductClick(p.id) }) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StyleProductCard(p: com.jeiu.fashionproject.data.ShopProduct, onClick: () -> Unit) {
+    Card(modifier = Modifier.width(128.dp).clickable(onClick = onClick), shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = White)) {
+        coil.compose.AsyncImage(
+            model = if (p.imageRes != 0) p.imageRes else p.imageUrl, contentDescription = p.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxWidth().height(128.dp).background(Color(p.color))
+        )
+        Column(Modifier.padding(8.dp)) {
+            Text(p.brand, style = MaterialTheme.typography.labelSmall, color = MediumGray, maxLines = 1)
+            Text(p.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            Text(p.price, style = MaterialTheme.typography.labelMedium, color = BrownDark, fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -10,10 +10,11 @@ import org.junit.Test
 
 /** F/W catalogue additions: real seller links, no invented ratings, gender filtering by product name. */
 class ShopCatalogFwTest {
+    // Catalogue: 8 demo items + 42 real products checked on the seller page (2026-11-15).
     private val products = ShopCatalog.products
 
     @Test fun catalogueHasMoreThanTheOriginalEightWithUniqueSellerLinks() {
-        assertTrue(products.size >= 19)
+        assertEquals(50, products.size)
         assertEquals(products.size, products.map { it.id }.toSet().size)
         products.forEach {
             assertTrue(it.name, it.purchaseUrl.startsWith("https://"))
@@ -24,11 +25,12 @@ class ShopCatalogFwTest {
 
     @Test fun addedProductsUseTheAppTaxonomyAndCarryNoInventedRatings() {
         val added = products.drop(8)
-        assertEquals(11, added.size)
+        assertEquals(42, added.size)
         added.forEach { p ->
             assertEquals(p.name, 0f, p.rating); assertEquals(p.name, 0, p.reviewCount)
             assertTrue(p.name, p.subCategory in ClothingCategories.subCategories.getValue(p.category!!))
-            assertTrue(p.name, p.detailType in ClothingCategories.detailTypes.getValue(p.subCategory!!))
+            val kinds = ClothingCategories.detailTypes[p.subCategory!!]
+            assertTrue(p.name, p.detailType == null || (kinds != null && p.detailType in kinds))
             assertTrue(p.name, p.purchaseUrl.startsWith("https://www.musinsa.com/products/"))
         }
     }

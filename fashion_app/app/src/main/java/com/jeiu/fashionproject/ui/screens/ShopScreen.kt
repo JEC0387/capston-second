@@ -177,6 +177,12 @@ private fun ProductGrid(
     val preferred by ProfileStore.styles.collectAsState()
     val learned by StylePreferenceStore.scores.collectAsState()
     val taste by TastePreferenceStore.scores.collectAsState()
+    val manualBody by com.jeiu.fashionproject.data.ManualBodyStore.current.collectAsState()
+    val savedBodyType by com.jeiu.fashionproject.data.BodyTypeStore.current.collectAsState()
+    LaunchedEffect(Unit) {
+        com.jeiu.fashionproject.data.ManualBodyStore.load(context); com.jeiu.fashionproject.data.BodyTypeStore.load(context)
+    }
+    val bodyType = com.jeiu.fashionproject.recommend.BodyShapeFusion.fuse(savedBodyType?.type, manualBody)?.type
     // 옷과 관련 없는 검색어 → 상품 대신 안내
     if (online is ShopUiState.NotFashion) {
         SearchHint(online.message)
@@ -190,8 +196,9 @@ private fun ProductGrid(
             .filter { FashionQuery.matchesProduct(it, query) }
     }
     // 내 옷장 · 선호 스타일 · 취향으로 점수를 매겨 정렬 (하트 누른 상품은 맨 위)
-    val picks = remember(filteredProducts, wardrobe, gender, preferred, learned, taste) {
-        ProductRecommender.rank(filteredProducts, wardrobe, gender, preferred, learned, taste).associateBy { it.product.id }
+    val picks = remember(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType) {
+        ProductRecommender.rank(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType = bodyType)
+            .associateBy { it.product.id }
     }
     val displayProducts = filteredProducts.sortedWith(
         compareBy<ShopProduct> { likedSet.indexOf(it.id).let { i -> if (i >= 0) i else Int.MAX_VALUE } }

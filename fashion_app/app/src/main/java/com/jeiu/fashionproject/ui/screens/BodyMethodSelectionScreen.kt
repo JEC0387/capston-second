@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.AccessibilityNew
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -47,6 +48,11 @@ fun BodyMethodSelectionScreen(
     onSizeComparison: () -> Unit = {},
     onHistory: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val manual by ManualBodyStore.current.collectAsState()
+    val photoType by com.jeiu.fashionproject.data.BodyTypeStore.current.collectAsState()
+    LaunchedEffect(Unit) { ManualBodyStore.load(context); com.jeiu.fashionproject.data.BodyTypeStore.load(context) }
+    val fused = com.jeiu.fashionproject.recommend.BodyShapeFusion.fuse(photoType?.type, manual)
     FashionFeatureTheme {
     Column(Modifier.fillMaxSize().background(Cream)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -62,8 +68,9 @@ fun BodyMethodSelectionScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("체형을 어떻게 확인할까요?", style = MaterialTheme.typography.titleLarge,
             color = CharcoalBlack)
-        Text("사진으로 분석하거나 내 3D 체형을 직접 만들 수 있어요.",
+        Text("사진으로 분석하거나 내 치수로 3D 체형을 만들 수 있어요.",
             style = MaterialTheme.typography.bodyMedium, color = FashionMuted)
+        AccuracyTipCard(fused)
         BodyMethodCard(
             title = "전신 사진으로 분석",
             description = "정면 전신 사진에서 체형과 신체 비율을 확인해요.",
@@ -92,6 +99,25 @@ fun BodyMethodSelectionScreen(
         }
     }
 }
+}
+
+/** 치수 직접 입력 + 사진 분석을 함께 하면 더 정확하다는 안내, 현재 반영 중인 체형 */
+@Composable
+private fun AccuracyTipCard(fused: com.jeiu.fashionproject.recommend.BodyShapeFusion.Result?) {
+    Card(Modifier.fillMaxWidth().testTag("bodyAccuracyTip"), shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = White)) {
+        Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = BrownDark)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("치수 입력 + 사진 분석을 함께 하면 더 정확해요",
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = CharcoalBlack)
+                Text("직접 잰 키 · 둘레로 사진 추정값을 보정하고, 두 결과를 비교해 체형을 정해요.",
+                    style = MaterialTheme.typography.bodySmall, color = FashionMuted)
+                if (fused != null) Text("지금 추천에 반영 중: ${fused.type} (${fused.source.label})",
+                    style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = BrownDark)
+            }
+        }
+    }
 }
 
 @Composable

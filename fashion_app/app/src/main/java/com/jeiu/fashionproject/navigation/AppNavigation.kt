@@ -220,10 +220,12 @@ fun AppNavigation() {
                 )
             }
             composable(Screen.MissingItem.route) {
-                MissingItemScreen(onBack = { navController.popBackStack() })
+                MissingItemScreen(onBack = { navController.popBackStack() }, gender = gender,
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) })
             }
             composable(Screen.StylePreference.route) {
-                StylePreferenceScreen(onBack = { navController.popBackStack() }, gender = gender)
+                StylePreferenceScreen(onBack = { navController.popBackStack() }, gender = gender,
+                    onProductClick = { id -> navController.navigate(Screen.ProductDetail.route(id)) })
             }
             composable(Screen.WeatherOutfit.route) {
                 WeatherOutfitScreen(onBack = { navController.popBackStack() },
