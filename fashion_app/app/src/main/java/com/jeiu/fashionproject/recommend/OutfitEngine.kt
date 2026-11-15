@@ -123,7 +123,9 @@ object OutfitEngine {
         }
 
         // 성별에 더 잘 맞는 코디 (여성: 원피스 · 스커트 · 블라우스) 조금 위로
-        val fitted = if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) }
+        val fitted = (if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) })
+            // 코디 👍👎 기록 — 좋아요한 코디 · 조합은 위로, 싫어요한 코디는 아래로 (OutfitFeedback)
+            .map { OutfitFeedback.adjust(it, taste.outfitVotes) }
 
         // ④ 골고루 고르기
         // 코디마다 제목 · 이유가 반복되지 않게 (OutfitStory)

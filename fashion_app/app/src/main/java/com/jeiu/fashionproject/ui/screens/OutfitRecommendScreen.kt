@@ -176,7 +176,9 @@ fun OutfitRecommendScreen(
         if (tab == 2 && scope == ClothingScope.OWNED) MissingItemFinder.situationNeed(wardrobe, situation, gender = gender) else null
     }
     var searchKeyword by remember { mutableStateOf<String?>(null) }
-    var ratings by remember { mutableStateOf(mapOf<String, Boolean>()) }
+    // 👍👎 상태는 저장된 평가 기록에서 — 화면을 다시 열어도 보이고, 다시 누르면 취소 · 바꾸기
+    val tasteEvents by TastePreferenceStore.events.collectAsState()
+    val ratings = remember(tasteEvents) { com.jeiu.fashionproject.data.outfitRatings(tasteEvents) }
 
     Column(modifier = Modifier.fillMaxSize().background(Cream)) {
         // 상단 바
@@ -323,10 +325,7 @@ fun OutfitRecommendScreen(
                             outfit = outfit,
                             interestedItemIds = interestedItemIds,
                             rated = ratings[outfit.id],
-                            onRate = { like ->
-                                ratings = ratings + (outfit.id to like)
-                                TastePreferenceStore.rateOutfit(context, outfit, like)
-                            },
+                            onRate = { like -> TastePreferenceStore.toggleOutfitRating(context, outfit, like) },
                             modifier = Modifier.fillMaxWidth(),
                             photoHeight = 300.dp,
                             wear = wearToday.takeIf { recommendDate == today },

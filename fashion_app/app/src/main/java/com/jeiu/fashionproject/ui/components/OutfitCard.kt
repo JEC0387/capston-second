@@ -152,22 +152,23 @@ fun OutfitCard(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onRate(true) }, enabled = rated == null) {
+                // 같은 버튼을 다시 누르면 취소, 다른 버튼을 누르면 바꾼다 (onRate 를 받는 쪽에서 toggleOutfitRating)
+                IconButton(onClick = { onRate(true) }) {
                     Icon(
                         if (rated == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = "좋아요", tint = if (rated == true) Camel else MediumGray
+                        contentDescription = if (rated == true) "좋아요 취소" else "좋아요", tint = if (rated == true) Camel else MediumGray
                     )
                 }
-                IconButton(onClick = { onRate(false) }, enabled = rated == null) {
+                IconButton(onClick = { onRate(false) }) {
                     Icon(
                         if (rated == false) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = "별로예요", tint = if (rated == false) Brown else MediumGray
+                        contentDescription = if (rated == false) "별로예요 취소" else "별로예요", tint = if (rated == false) Brown else MediumGray
                     )
                 }
             }
             if (rated != null || uniform) {
                 Text(
-                    when (rated) { true -> "좋아요를 반영했어요"; false -> "다른 스타일을 추천할게요"; null -> "" },
+                    when (rated) { true -> "좋아요를 반영했어요"; false -> "다음 추천에서 덜 보여 드릴게요"; null -> "" },
                     style = MaterialTheme.typography.bodySmall, color = MediumGray,
                     modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis
                 )

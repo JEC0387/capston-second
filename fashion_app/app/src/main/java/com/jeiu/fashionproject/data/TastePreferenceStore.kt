@@ -17,7 +17,9 @@ data class TasteScores(
     val kinds: Map<String, Int> = emptyMap(),     // "슬랙스" → 3
     val patterns: Map<String, Int> = emptyMap(),  // "톤온톤" → 2
     val ratedCount: Int = 0,                      // 👍👎 · 취향 카드 평가 횟수
-    val wornCount: Int = 0                        // 착용 기록으로 배운 횟수
+    val wornCount: Int = 0,                       // 착용 기록으로 배운 횟수
+    // 코디 👍👎 기록 — 옷 번호 묶음 → 좋아요(true) / 싫어요(false). 취소하면 빠진다. 코디 추천 점수에 쓴다 (OutfitFeedback)
+    val outfitVotes: Map<Set<String>, Boolean> = emptyMap()
 ) {
     /** 점수가 0보다 큰 것 중 높은 순 */
     fun top(scores: Map<String, Int>, n: Int): List<String> =
@@ -103,23 +105,13 @@ object TastePreferenceStore {
         _events.value = prefs.getString(KEY_EVENTS, null)?.let { raw ->
             runCatching { JSONArray(raw).let { arr -> List(arr.length()) { eventFromJson(arr.getJSONObject(it)) } } }.getOrNull()
         } ?: emptyList()
-        _scores.value = _events.value.fold(base) { acc, e -> acc.plus(e) }
+        _scores.value = compute(_events.value)
         // 서버 DB(taste_events)에도 같은 기록을 맞춰 둔다 (폰이 기준)
         DbSync.pushTasteEvents(_events.value)
     }
 
-    /** 코디 카드 👍👎 — 스타일(기존 저장소)과 색·종류·조합 방식을 함께 학습한다 */
-    fun rateOutfit(context: Context, outfit: OutfitEngine.Outfit, like: Boolean) {
-        StylePreferenceStore.rate(context, outfit.style, like)
-        record(
-            context,
-            TasteEvent(
-                at = System.currentTimeMillis(), source = TasteEvent.SOURCE_OUTFIT, liked = like,
-                colors = outfit.items.map { it.colorName }, kinds = outfit.items.map { SituationRules.kindOf(it) },
-                pattern = outfit.pattern, style = outfit.style, itemIds = outfit.items.map { it.id }
-            )
-        )
-    }
+    /** 코디 카드 👍👎 — 스타일(기존 저장소)과 색·종류·조합 방식을 함께 학습한다. 같은 코디의 이전 평가는 바꾼다 */
+    fun rateOutfit(context: Context, outfit: OutfitEngine.Outfit, like: Boolean) = setOutfitRating(context, outfit, like)
 
     /** 취향 카드 ❤️ / ✕ — 카드에 붙은 색·종류 정보로 학습 (스타일 점수는 화면에서 따로 반영, 여기엔 기록만 남김) */
     fun rateCard(context: Context, colors: List<String>, kinds: List<String>, pattern: String?, like: Boolean, style: String? = null) {
@@ -136,15 +128,49 @@ object TastePreferenceStore {
         }
         if (date == null) { if (event != null) record(context, event); return }
         _events.value = replaceWornEvents(_events.value, date, event)
-        _scores.value = _events.value.fold(base) { acc, e -> acc.plus(e) }
+        _scores.value = compute(_events.value)
         persist(context)
     }
 
     private fun record(context: Context, event: TasteEvent) {
         load(context)
         _events.value = _events.value + event
-        _scores.value = _scores.value.plus(event)
+        _scores.value = compute(_events.value)
         persist(context)
+    }
+
+    private fun compute(events: List<TasteEvent>): TasteScores =
+        events.fold(base) { acc, e -> acc.plus(e) }.copy(outfitVotes = outfitVotes(events))
+
+    /** 이 코디에 지금 남아 있는 평가 (좋아요 true · 싫어요 false · 없음 null) */
+    fun ratingOf(outfit: OutfitEngine.Outfit): Boolean? = outfitVotes(_events.value)[outfit.items.map { it.id }.toSet()]
+
+    /**
+     * 코디 카드 👍👎 — 같은 버튼을 다시 누르면 취소, 다른 버튼을 누르면 바꾼다.
+     * 이전 평가 기록을 지우고 새 기록으로 바꾸므로 색 · 종류 · 스타일 점수도 정확히 되돌아간다.
+     */
+    fun toggleOutfitRating(context: Context, outfit: OutfitEngine.Outfit, pressedLike: Boolean) {
+        load(context)
+        setOutfitRating(context, outfit, nextVote(ratingOf(outfit), pressedLike))
+    }
+
+    fun setOutfitRating(context: Context, outfit: OutfitEngine.Outfit, like: Boolean?) {
+        load(context)
+        val ids = outfit.items.map { it.id }.toSet()
+        val previous = outfitVotes(_events.value)[ids]
+        if (previous == like) return
+        val event = like?.let {
+            TasteEvent(
+                at = System.currentTimeMillis(), source = TasteEvent.SOURCE_OUTFIT, liked = it,
+                colors = outfit.items.map { item -> item.colorName }, kinds = outfit.items.map { item -> SituationRules.kindOf(item) },
+                pattern = outfit.pattern, style = outfit.style, itemIds = outfit.items.map { item -> item.id }
+            )
+        }
+        _events.value = replaceOutfitVote(_events.value, ids, event)
+        _scores.value = compute(_events.value)
+        persist(context)
+        if (previous == null && like != null) StylePreferenceStore.rate(context, outfit.style, like)
+        else StylePreferenceStore.changeRating(context, outfit.style, previous, like)
     }
 
     private fun JSONObject?.toIntMap(): Map<String, Int> =
