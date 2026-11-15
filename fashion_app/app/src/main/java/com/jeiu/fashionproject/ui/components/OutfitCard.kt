@@ -168,7 +168,7 @@ fun OutfitCard(
             }
             if (rated != null || uniform) {
                 Text(
-                    when (rated) { true -> "좋아요를 반영했어요 · 다시 누르면 취소"; false -> "다음 추천에서 덜 보여 드릴게요 · 다시 누르면 취소"; null -> "" },
+                    when (rated) { true -> "좋아요를 반영했어요"; false -> "다음 추천에서 덜 보여 드릴게요"; null -> "" },
                     style = MaterialTheme.typography.bodySmall, color = MediumGray,
                     modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis
                 )
