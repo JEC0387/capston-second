@@ -169,23 +169,21 @@ fun BodyAvatarSetupScreen(onBack: () -> Unit, onPhotoAnalysis: () -> Unit) {
                 fontWeight = FontWeight.Bold, color = CharcoalBlack)
         }
         key(owner, showResult) {
-        Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                when {
-                    showResult -> AvatarBodyResultCard(
-                        checkNotNull(saved), onEdit = { showAnalysis = false }
-                    )
-                    !loaded -> Unit
-                    owner == null -> Text("계정 연결을 확인한 뒤 3D 치수를 열어주세요.")
-                    else -> {
-                        AvatarAnalysisForm(saved, manual, owner, onAnalyzed = { showAnalysis = true })
-                        TextButton(onClick = onPhotoAnalysis, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("사진으로 체형 분석하기")
-                        }
-                    }
+            if (loaded && owner != null && !showResult) {
+                Box(Modifier.fillMaxSize().imePadding().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                    AvatarAnalysisForm(saved, manual, owner, onAnalyzed = { showAnalysis = true },
+                        onPhotoAnalysis = onPhotoAnalysis)
                 }
-                Spacer(Modifier.height(16.dp))
+            } else {
+                Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    when {
+                        showResult -> AvatarBodyResultCard(checkNotNull(saved), onEdit = { showAnalysis = false })
+                        !loaded -> Unit
+                        else -> Text("계정 연결을 확인한 뒤 3D 치수를 열어주세요.")
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
             }
         }
     }

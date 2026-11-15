@@ -82,10 +82,10 @@ class BodyMethodSelectionUiTest {
         compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { photo++ }) }
         enter("avatarHeight", "170")
         enter("avatarWeight", "65")
-        compose.onNodeWithTag("avatarAnalysisPreview").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
         compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
-        compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
-        compose.onNodeWithTag("avatarAnalyze").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("avatarSave").performClick()
+        compose.onNodeWithTag("avatarAnalyze").assertIsNotEnabled()
         compose.onNodeWithTag("avatarAnalysisMissing").assertExists()
         compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
         compose.onNodeWithTag("avatarAdvancedToggle").assertDoesNotExist()
@@ -107,13 +107,13 @@ class BodyMethodSelectionUiTest {
         }
         enter("avatarHeight", "170")
         enter("avatarWeight", "65")
-        compose.onNodeWithTag("avatarAnalysisPreview").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
         compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
         AvatarPart.entries.filter { it in listOf(AvatarPart.CHEST, AvatarPart.WAIST, AvatarPart.HIP, AvatarPart.SHOULDER) }
             .forEach { compose.onNodeWithTag("avatarMeasure${it.name}").performScrollTo().assertIsDisplayed() }
         compose.onNodeWithTag("avatarOptionalMeasures").performScrollTo().performClick()
         compose.onNodeWithTag("avatarMeasureLEG").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("avatarSave").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarSave").assertIsDisplayed()
     }
 
     @Test fun savedMeasuredAvatarReopensAnalysisWithoutFittingOrPhoto() {
@@ -125,7 +125,7 @@ class BodyMethodSelectionUiTest {
             170f, 65f, centimeters = cm.copy(references = references))))
         try {
             compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") }) }
-            compose.onNodeWithTag("avatarAnalyze").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarAnalyze").performClick()
             compose.onNodeWithText("3D 입력 기반 분석").assertIsDisplayed()
             compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
             compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
@@ -148,20 +148,20 @@ class BodyMethodSelectionUiTest {
             compose.setContent { BodyAvatarSetupScreen(onBack = {}, onPhotoAnalysis = { error("No photo needed") }) }
             enter("avatarHeight", "170")
             enter("avatarWeight", "65")
-            compose.onNodeWithTag("avatarAnalysisPreview").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
             compose.onNodeWithTag("avatarDirectTab").performScrollTo().performClick()
             enter("avatarMeasureCHEST", "96")
             enter("avatarMeasureWAIST", "20")
             enter("avatarMeasureHIP", "99")
-            compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarSave").performClick()
             compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
             compose.onNodeWithTag("avatarAnalysisInputError").assertExists()
             compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
             enter("avatarMeasureWAIST", "70.2")
             enter("avatarMeasureSHOULDER", "41")
-            compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarSave").performClick()
             compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
-            compose.onNodeWithTag("avatarAnalyze").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarAnalyze").performClick()
             compose.onNodeWithText("허리 차이가 뚜렷한 체형").assertIsDisplayed()
             compose.runOnIdle {
                 val cm = checkNotNull(AvatarProfileStore.current.value?.centimeters)
@@ -175,8 +175,8 @@ class BodyMethodSelectionUiTest {
             compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
             enter("avatarMeasureSHOULDER", "44")
             enter("avatarMeasureHIP", "110")
-            compose.onNodeWithTag("avatarSave").performScrollTo().performClick()
-            compose.onNodeWithTag("avatarAnalyze").performScrollTo().performClick()
+            compose.onNodeWithTag("avatarSave").performClick()
+            compose.onNodeWithTag("avatarAnalyze").performClick()
             compose.onNodeWithText("엉덩이 둘레가 더 큰 체형").assertIsDisplayed()
             compose.onNodeWithTag("avatarBodyDetails").performScrollTo().performClick()
             compose.onNodeWithText("어깨 너비 44.0 cm · 직접 잰 값").performScrollTo().assertIsDisplayed()

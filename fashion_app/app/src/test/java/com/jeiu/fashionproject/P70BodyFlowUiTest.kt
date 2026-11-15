@@ -2,6 +2,8 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -30,11 +32,15 @@ class P70BodyFlowUiTest {
         ManualBodyStore.clear(app)
     }
     @After fun cleanup() { AvatarProfileStore.clear(app); ManualBodyStore.clear(app) }
-    private fun click(tag:String) = compose.onNodeWithTag(tag).performScrollTo().performClick()
+    private fun click(tag:String) {
+        val node = compose.onNodeWithTag(tag)
+        if (tag !in setOf("avatarSave", "avatarAnalyze")) node.performScrollTo()
+        node.performClick()
+    }
     private fun enter(tag:String,value:String) = compose.onNodeWithTag(tag).performScrollTo().performTextReplacement(value)
     private fun createMeasuredBody() {
         enter("avatarHeight","160");enter("avatarWeight","55")
-        compose.onNodeWithTag("avatarAnalysisPreview").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
         click("avatarDirectTab")
         for((part,cm) in listOf("CHEST" to "88","WAIST" to "71","HIP" to "95","SHOULDER" to "39"))
             enter("avatarMeasure"+part,cm)
@@ -88,7 +94,7 @@ class P70BodyFlowUiTest {
         click("avatarSave")
         compose.onNodeWithTag("avatarSavedStatus").assertExists()
         compose.runOnIdle { AvatarProfileStore.load(app);screen++ }
-        compose.onNodeWithTag("avatarAnalyze").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("avatarAnalyze").assertIsEnabled()
         click("avatarDirectTab");enter("avatarMeasureWAIST","72.3")
         compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
         restoration.emulateSavedInstanceStateRestore()
@@ -105,17 +111,43 @@ class P70BodyFlowUiTest {
         }
     }
 
+    @Test @Config(qualifiers="w320dp-h568dp")
+    fun wholePreviewStaysPinnedWhileRulerAndLargeTextControlsScroll() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f, 1.3f)) {
+                BodyAvatarSetupScreen({}, {})
+            }
+        }
+        createMeasuredBody()
+        click("avatarRulerTab")
+        val preview = compose.onNodeWithTag("avatarAnalysisPreview")
+        val before = preview.fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("avatarCmRuler").performScrollTo().assertIsDisplayed()
+        preview.assertIsDisplayed()
+        val ruler = compose.onNodeWithTag("avatarCmRuler").fetchSemanticsNode().boundsInRoot
+        assertTrue("model and ruler cannot overlap", before.bottom <= ruler.top)
+        assertEquals(before, preview.fetchSemanticsNode().boundsInRoot)
+        click("rulerPlus"); assertEquals(71.5f, rulerValue(), 0f)
+        click("rulerMinus"); assertEquals(71f, rulerValue(), 0f)
+        click("avatarOptionalMeasures")
+        preview.assertIsDisplayed()
+        assertEquals(before, preview.fetchSemanticsNode().boundsInRoot)
+        compose.onNodeWithTag("avatarSave").assertIsDisplayed()
+        click("avatarSave")
+        compose.onNodeWithTag("avatarAnalyze").assertIsDisplayed()
+    }
+
     @Test fun guessedRulerValuesRequireExplicitMeasuredConfirmationBeforeAnalysis() {
         compose.setContent { BodyAvatarSetupScreen({}, {}) }
         enter("avatarHeight","160");enter("avatarWeight","55")
         click("rulerPlus");click("avatarSave")
-        compose.onNodeWithTag("avatarAnalyze").performScrollTo().assertIsNotEnabled()
+        compose.onNodeWithTag("avatarAnalyze").assertIsNotEnabled()
         compose.runOnIdle { assertTrue(AvatarAnalysisInput.recorded(checkNotNull(AvatarProfileStore.current.value)).isEmpty()) }
         for(part in listOf("CHEST","WAIST","HIP")) {
             click("analysisPart-"+part);click("analysisConfirmMeasured")
         }
         compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
         click("avatarSave")
-        compose.onNodeWithTag("avatarAnalyze").performScrollTo().assertIsEnabled()
+        compose.onNodeWithTag("avatarAnalyze").assertIsEnabled()
     }
 }

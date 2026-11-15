@@ -1,6 +1,7 @@
 package com.jeiu.fashionproject.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,7 +21,8 @@ import java.util.Locale
 
 @Composable
 internal fun AvatarAnalysisForm(
-    saved: AvatarProfile?, manual: ManualBodyMeasurements?, owner: String, onAnalyzed: () -> Unit
+    saved: AvatarProfile?, manual: ManualBodyMeasurements?, owner: String, onAnalyzed: () -> Unit,
+    onPhotoAnalysis: () -> Unit
 ) {
     val context = LocalContext.current
     val focus = LocalFocusManager.current
@@ -63,6 +65,7 @@ internal fun AvatarAnalysisForm(
         mutableStateOf(initial != null && original.isNotEmpty() && AvatarAnalysisInput.recorded(initial).isEmpty())
     }
     var savedSnapshot by rememberSaveable(owner) { mutableStateOf(initial?.let(AvatarProfileStore::encode)) }
+    var basicsExpanded by rememberSaveable(owner) { mutableStateOf(initial == null) }
     var expanded by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val preferredTimestamp = rememberSaveable(owner) { System.currentTimeMillis() }
@@ -110,11 +113,29 @@ internal fun AvatarAnalysisForm(
             references = ArrayList(references).apply { set(index, raw) }
         changed()
     }
+    val missing = AvatarAnalysisInput.coreParts.filter { it != AvatarPart.SHOULDER && it !in measured }
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("치수 입력 도움말") },
         text = { Text("키·몸무게로 만든 모습은 추정이에요.\n줄자는 미리보기를 조절하며, 직접 잰 값으로 확인해야 분석에 사용해요.\n실측과 사진 분석 기록은 별도로 보존해요.") },
         confirmButton = { TextButton({ help = false }) { Text("확인") } })
 
-    Text("1. 내 체형 만들기", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack)
+    // Keep the live GL surface outside the controls' scroll container.
+    // The same measured/adjusted draft still drives the existing renderer.
+    BoxWithConstraints(Modifier.fillMaxSize().testTag("avatarEditorBounds")) {
+    val previewHeight = (maxHeight * .36f).coerceIn(80.dp, 300.dp)
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Card(Modifier.fillMaxWidth().height(previewHeight).testTag("avatarPinnedPreview"),
+            shape = FashionCardShape, colors = CardDefaults.cardColors(containerColor = CreamDark)) {
+            if (shown == null) Box(Modifier.fillMaxSize().padding(12.dp)) {
+                Text("키와 몸무게를 입력하면 아바타가 보여요.", color = FashionMuted)
+            } else {
+                val parameters = remember(shown) { shown.parameters() }
+                BodyAvatarViewport(parameters, shown.thigh,
+                    Modifier.fillMaxSize().testTag("avatarAnalysisPreview"), fitModel = true)
+            }
+        }
+        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())
+            .testTag("avatarAdjustmentControls"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (basicsExpanded) {
     val heightField: @Composable (Modifier) -> Unit = { modifier ->
         BodyNumberField(height, { height = it; changed() }, "키 (cm)", "avatarHeight",
             height.isNotBlank() && heightCm == null, modifier)
@@ -133,23 +154,11 @@ internal fun AvatarAnalysisForm(
     if (height.isNotBlank() && heightCm == null || weight.isNotBlank() && weightKg == null) {
         Text("키는 100~230 cm, 몸무게는 25~300 kg로 입력해 주세요.", color = MaterialTheme.colorScheme.error)
     }
-    Card(Modifier.fillMaxWidth(), shape = FashionCardShape, colors = CardDefaults.cardColors(containerColor = CreamDark)) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("3D 미리보기", style = MaterialTheme.typography.titleMedium)
-            if (shown == null) Text("키와 몸무게를 입력하면 아바타가 보여요.", color = FashionMuted)
-            else {
-                val parameters = remember(shown) { shown.parameters() }
-                BodyAvatarViewport(parameters, shown.thigh,
-                    Modifier.fillMaxWidth().height(224.dp).testTag("avatarAnalysisPreview"), fitModel = true)
-                Text("화면을 밀어 아바타를 돌려보세요.", color = FashionMuted, style = MaterialTheme.typography.bodySmall)
-            }
         }
-    }
-    Text("2. 내 치수 조절", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        FilterChip(!direct, { focus.clearFocus(); direct = false }, label = { Text("줄자로 조절") },
+        FilterChip(!direct, { focus.clearFocus(); direct = false; if (shown != null) basicsExpanded = false }, label = { Text("줄자로 조절") },
             modifier = Modifier.weight(1f).testTag("avatarRulerTab"))
-        FilterChip(direct, { direct = true }, label = { Text("직접 입력") },
+        FilterChip(direct, { direct = true; if (shown != null) basicsExpanded = false }, label = { Text("직접 입력") },
             modifier = Modifier.weight(1f).testTag("avatarDirectTab"))
     }
     val visibleParts = AvatarAnalysisInput.coreParts + if (expanded) AvatarAnalysisInput.extraParts else emptyList()
@@ -191,6 +200,9 @@ internal fun AvatarAnalysisForm(
                     Modifier.heightIn(min = 48.dp).testTag("analysisConfirmMeasured")) { Text("직접 잰 값으로 사용") }
         }
     }
+    TextButton({ basicsExpanded = !basicsExpanded }, Modifier.testTag("avatarBasicsToggle")) {
+        Text(if (basicsExpanded) "키·몸무게 접기" else "키·몸무게 수정")
+    }
     TextButton(onClick = {
         expanded = !expanded
         if (!expanded && selected in AvatarAnalysisInput.extraParts) selectedName = AvatarPart.WAIST.name
@@ -198,9 +210,12 @@ internal fun AvatarAnalysisForm(
         Text(if (expanded) "추가 치수 접기" else "추가 치수")
     }
     TextButton({ help = true }, Modifier.heightIn(min = 48.dp).testTag("avatarAnalysisHelp")) { Text("ⓘ 도움말") }
-    val missing = AvatarAnalysisInput.coreParts.filter { it != AvatarPart.SHOULDER && it !in measured }
     if (missing.isNotEmpty()) Text("분석하려면 가슴·허리·엉덩이 실측이 필요해요.",
         color = FashionMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("avatarAnalysisMissing"))
+    TextButton(onPhotoAnalysis, Modifier.heightIn(min = 48.dp)) { Text("사진으로 체형 분석하기") }
+        }
+        // Saving and analysis remain reachable independently of scroll and keyboard.
+        Column(Modifier.fillMaxWidth().testTag("avatarEditorActions"), verticalArrangement = Arrangement.spacedBy(4.dp)) {
     message?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("avatarAnalysisInputError")) }
     if (!isSaved) Button(
         onClick = {
@@ -229,6 +244,9 @@ internal fun AvatarAnalysisForm(
         }, shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("avatarAnalyze")) {
             Text("내 체형 분석하기")
         }
+    }
+        }
+    }
     }
 }
 
