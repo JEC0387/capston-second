@@ -287,16 +287,16 @@ private fun ProductGrid(
                         }
                     }
                     Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text(product.brand, style = MaterialTheme.typography.labelSmall, color = MediumGray)
-                        Text(product.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium, maxLines = 2)
-                        if (product.originalPrice != product.price) {
-                            Text(product.originalPrice, style = MaterialTheme.typography.labelSmall, color = MediumGray, textDecoration = TextDecoration.LineThrough)
-                        }
+                        Text(product.brand, style = MaterialTheme.typography.labelSmall, color = MediumGray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(product.name, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack, fontWeight = FontWeight.Medium,
+                            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        // 할인 전 가격이 없어도 같은 자리를 잡아 카드 높이를 맞춘다
+                        Text(if (product.originalPrice != product.price) product.originalPrice else "", style = MaterialTheme.typography.labelSmall,
+                            color = MediumGray, textDecoration = TextDecoration.LineThrough, maxLines = 1)
                         Text(product.price, style = MaterialTheme.typography.bodySmall, color = BrownDark, fontWeight = FontWeight.Bold)
-                        picks[product.id]?.reasons?.firstOrNull()?.let {
-                            Text(it, style = MaterialTheme.typography.labelSmall, color = FashionMuted,
-                                maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        }
+                        // 추천 이유는 뒤에서 계산돼 늦게 들어오므로 자리를 미리 잡아 카드 높이가 바뀌지 않게 한다
+                        Text(picks[product.id]?.reasons?.firstOrNull() ?: "", style = MaterialTheme.typography.labelSmall,
+                            color = FashionMuted, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
