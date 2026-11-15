@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -265,14 +266,27 @@ fun MyPageScreen(
 
             // 취향 태그
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 로그인 후에도 [변경]으로 다시 고를 수 있다 (폰 + 서버에 저장)
+                var editStyles by remember { mutableStateOf(false) }
+                val savedStyles by ProfileStore.styles.collectAsState()
+                LaunchedEffect(Unit) { ProfileStore.load(context) }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
-                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack,
+                        modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = { editStyles = true },
+                        modifier = Modifier.testTag("myPreferredStyleEdit")) { Text("변경", color = Camel) }
                 }
                 // 폰에 저장된 선택 우선, 없으면 서버 프로필
-                val styles = if (ProfileStore.hasSelection(context)) ProfileStore.preferredStyles(context) else profile?.preferredStyles.orEmpty()
+                val styles = if (ProfileStore.hasSelection(context)) savedStyles.ifEmpty { ProfileStore.preferredStyles(context) }
+                    else profile?.preferredStyles.orEmpty()
+                if (editStyles) PreferredStyleEditDialog(
+                    initial = styles,
+                    onDismiss = { editStyles = false },
+                    onSave = { chosen -> ProfileStore.savePreferredStyles(context, chosen); editStyles = false }
+                )
                 if (styles.isEmpty()) {
-                    Text("아직 고르지 않았어요 (첫 화면에서 선택)", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                    Text("아직 고르지 않았어요. [변경]을 눌러 골라 주세요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -594,4 +608,28 @@ private fun MyMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
     }
+}
+
+/** 선호 스타일 다시 고르기 — 온보딩과 같은 칩, 여러 개 선택 */
+@Composable
+private fun PreferredStyleEditDialog(initial: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    var selected by remember { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("선호 스타일 변경") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("여러 개 고를 수 있어요. 코디 · 쇼핑 추천에 바로 반영돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                com.jeiu.fashionproject.ui.components.PreferredStyleChips(selected, perRow = 3) { style ->
+                    selected = com.jeiu.fashionproject.recommend.PreferredStyles.toggleSelection(selected, style)
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onSave(selected) },
+                modifier = Modifier.testTag("myPreferredStyleSave")) { Text("저장", color = Camel) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("취소", color = MediumGray) } }
+    )
 }

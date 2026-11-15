@@ -314,7 +314,8 @@ fun HomeScreen(
                             wear = wearToday,
                             saved = book.isSaved(savedOutfits, outfit),
                             onToggleSave = { book.toggleSave(outfit) },
-                            onPlan = { book.requestPlan(outfit.items) }
+                            onPlan = { book.requestPlan(outfit.items) },
+                            uniform = true
                         )
                     }
                 }
