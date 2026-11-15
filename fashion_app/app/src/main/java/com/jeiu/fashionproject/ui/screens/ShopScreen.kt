@@ -196,9 +196,13 @@ private fun ProductGrid(
             .filter { FashionQuery.matchesProduct(it, query) }
     }
     // 내 옷장 · 선호 스타일 · 취향으로 점수를 매겨 정렬 (하트 누른 상품은 맨 위)
-    val picks = remember(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType) {
-        ProductRecommender.rank(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType = bodyType)
-            .associateBy { it.product.id }
+    // 상품 100개마다 코디를 맞춰 보느라 시간이 걸려 화면이 멈추지 않게 따로 계산한다 (끝나면 순서 · 이유가 바뀜)
+    var picks by remember { mutableStateOf<Map<String, ProductRecommender.Pick>>(emptyMap()) }
+    LaunchedEffect(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType) {
+        picks = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            ProductRecommender.rank(filteredProducts, wardrobe, gender, preferred, learned, taste, bodyType = bodyType)
+                .associateBy { it.product.id }
+        }
     }
     val displayProducts = filteredProducts.sortedWith(
         compareBy<ShopProduct> { likedSet.indexOf(it.id).let { i -> if (i >= 0) i else Int.MAX_VALUE } }

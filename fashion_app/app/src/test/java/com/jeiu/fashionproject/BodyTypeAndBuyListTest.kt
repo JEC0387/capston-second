@@ -98,4 +98,29 @@ class BodyTypeAndBuyListTest {
         assertTrue(BasicItems.catalogItems.isNotEmpty())
         assertTrue(BasicItems.catalogItems.all { it.productId != null && it.item.colorName.isNotBlank() })
     }
+
+    @Test fun fourOutfitsGetDifferentTitlesAndNonRepeatingReasons() {
+        val wardrobe = listOf(
+            item("t1", "상의", "긴팔 상의", "니트", "베이지", 0xFFD8C3A5, "베이지 니트"),
+            item("t2", "상의", "긴팔 상의", "셔츠", "화이트", 0xFFF5F5F5, "화이트 셔츠"),
+            item("t3", "상의", "긴팔 상의", "맨투맨", "그레이", 0xFF808080, "그레이 맨투맨"),
+            item("t4", "상의", "긴팔 상의", "긴팔티", "블랙", 0xFF000000, "블랙 긴팔티"),
+            item("b1", "하의", "긴바지", "슬랙스", "블랙", 0xFF000000, "블랙 슬랙스"),
+            item("b2", "하의", "긴바지", "청바지", "블루", 0xFF6A88B0, "연청 청바지"),
+            item("b3", "하의", "긴바지", "면바지", "베이지", 0xFFD8C3A5, "베이지 면바지"),
+            item("s1", "신발", "운동화", "스니커즈", "화이트", 0xFFF5F5F5, "화이트 스니커즈"),
+            item("s2", "신발", "구두", "로퍼", "블랙", 0xFF000000, "블랙 로퍼"),
+            item("o1", "아우터", "긴팔 아우터", "자켓", "베이지", 0xFFD8C3A5, "베이지 블레이저")
+        ).map { it.copy(season = "사계절") }
+        val r = OutfitEngine.recommend(wardrobe, WeatherInfo("맑음", 11, 50, 800), emptyList(), emptyMap(),
+            today = day, preferred = listOf("포멀")) as OutfitEngine.Result.Ok
+        assertEquals(4, r.outfits.size)
+        assertEquals(4, r.outfits.map { it.title }.toSet().size)
+        assertTrue(r.outfits.none { it.title.isBlank() })
+        val all = r.outfits.flatMap { it.reasons }
+        assertEquals(all.size, all.toSet().size)
+        assertTrue(r.outfits.all { it.reasons.isNotEmpty() && it.reasons.size <= 3 })
+        // 선호 스타일 문장은 한 번만
+        assertTrue(all.count { it.startsWith("선호하는") } <= 1)
+    }
 }

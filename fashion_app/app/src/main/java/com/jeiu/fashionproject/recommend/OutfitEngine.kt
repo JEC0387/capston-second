@@ -46,7 +46,8 @@ object OutfitEngine {
         val score: Double,
         val reasons: List<String>,
         val style: String,
-        val pattern: String? = null   // 색 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러) — 취향 학습에 사용
+        val pattern: String? = null,  // 색 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러) — 취향 학습에 사용
+        val title: String = ""        // 카드 제목 (OutfitStory) — 비어 있으면 "${style} 코디"
     ) {
         val id: String get() = items.joinToString("+") { it.id }
     }
@@ -125,7 +126,9 @@ object OutfitEngine {
         val fitted = if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) }
 
         // ④ 골고루 고르기
-        return Result.Ok(pickDiverse(fitted.sortedByDescending { it.score }, count), notice)
+        // 코디마다 제목 · 이유가 반복되지 않게 (OutfitStory)
+        val picked = pickDiverse(fitted.sortedByDescending { it.score }, count)
+        return Result.Ok(OutfitStory.diversify(picked, OutfitStory.Weather(conditions, weather?.humidity)), notice)
     }
 
     // ── "이것만 사면" 계산용 (5단계) ─────────────────────────────────────
