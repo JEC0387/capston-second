@@ -62,7 +62,8 @@ object ProductRecommender {
                 val item = candidate ?: probe(p)
                 // ① 새로 생기는 좋은 코디 (상의 · 하의 짝 기준, 원래 있던 짝은 세지 않음)
                 val outfits = candidate?.let { c ->
-                    OutfitEngine.scoreAll(owned + c, conditions, null, today)
+                    // c 가 들어간 조합만 세면 되므로 같은 대분류의 내 옷은 빼고 계산한다 (결과는 같고 상품이 많아도 빠름)
+                    OutfitEngine.scoreAll(owned.filter { it.category != c.category } + c, conditions, null, today)
                         .filter { o -> o.score >= MissingItemFinder.GOOD_SCORE && o.items.any { it.id == c.id } }
                         .map { look(it) }.filter { it !in baseLooks }.distinct().size
                 } ?: 0
