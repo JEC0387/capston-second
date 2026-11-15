@@ -384,6 +384,24 @@ object DataAuth {
         if (::context.isInitialized) BodyMeasurementScope.refresh(context)
     }
 
+    /**
+     * 로그아웃: 이 기기를 지금 계정에서 떼어 낸다 (서버의 계정 기록은 그대로).
+     * 다음 실행 때 빈 새 기기 계정이 만들어지고, 같은 구글 · 카카오로 다시 로그인하면 원래 계정 기록을 받아 온다.
+     * @return 실패했을 때 되돌리는 함수 (저장 실패면 null)
+     */
+    @Synchronized fun detachForLogout(): (() -> Boolean)? {
+        if (!::context.isInitialized || storageLocked) return null
+        val previous = binding ?: return null
+        val previousRecovery = recovery
+        val previousEnabled = enabled
+        if (!persist(null, null, false, false, false, requestedRecovery = null)) return null
+        _state.value = "waiting"
+        return {
+            persist(previous.token, previousRecovery, previousEnabled, false, false, previous.server,
+                requestedRecovery = null, accountId = previous.accountId)
+        }
+    }
+
     fun clearAfterServerDelete() {
         if (::context.isInitialized) persist(null, null, false, false, false, requestedRecovery = null)
     }

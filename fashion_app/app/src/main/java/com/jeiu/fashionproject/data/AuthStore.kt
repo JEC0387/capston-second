@@ -102,7 +102,11 @@ object AuthStore {
     }
 
     /** Changes only chooser state; no sync, restore or account adoption. */
-    fun continueAsGuest(context: Context): Boolean = saveLocalMode(context, Mode.GUEST)
+    fun continueAsGuest(context: Context): Boolean {
+        // 로그아웃 뒤 게스트로 쓰기 시작하면 그 기록을 나중에 빈 계정으로 옮기지 않도록 표시를 지운다
+        AccountLogout.clearMark(context)
+        return saveLocalMode(context, Mode.GUEST)
+    }
     /** Records, pending sync and DataAuth credentials remain intact. The return
      * value means local persistence, NOT successful server synchronization. */
     suspend fun signOut(context: Context): Boolean = saveLocalMode(context, Mode.NONE)
@@ -195,13 +199,23 @@ object AuthStore {
         val isNew = json.optBoolean("isNewAccount")
         if (!json.optBoolean("switched")) {
             saveSignedIn(appContext, account)
+            AccountLogout.clearMark(appContext)
             return Result.Success(account, restart = false, isNewAccount = isNew)
         }
         // The token now belongs to the identity's account and sync is paused until restore completes.
         saveSignedIn(appContext, account)
-        return when (BackupRestore.restoreClaimed(appContext)) {
-            is BackupRestore.Result.Done, BackupRestore.Result.RestartRequired ->
+        val restored = BackupRestore.restoreClaimed(appContext)
+        // 로그아웃으로 이 기기를 비운 뒤라면 옮겨질 기록이 없으므로, 기록이 없는 계정도 그대로 이어서 쓴다
+        if (restored == BackupRestore.Result.NotFound && AccountLogout.wasClearedAfterLogout(appContext) &&
+            DataAuth.completeRestore()) {
+            AccountLogout.clearMark(appContext)
+            return Result.Success(account, restart = false, isNewAccount = false)
+        }
+        return when (restored) {
+            is BackupRestore.Result.Done, BackupRestore.Result.RestartRequired -> {
+                AccountLogout.clearMark(appContext)
                 Result.Success(account, restart = true, isNewAccount = false)
+            }
             BackupRestore.Result.NotFound -> {
                 // The old local records and pending uploads still belong to the previous
                 // account. An empty new account is not consent to transfer them. Keep the
