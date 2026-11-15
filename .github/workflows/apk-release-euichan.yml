@@ -16,11 +16,22 @@ jobs:
       - uses: actions/setup-java@v4
         with: {distribution: temurin, java-version: '21', cache: gradle}
       # 매번 새 디버그 서명 키가 생기면 SHA-1이 바뀌어 구글 로그인 등록이 깨지므로 같은 키를 다시 쓴다
-      - name: Reuse demo debug keystore
-        uses: actions/cache@v4
+      - name: Restore demo debug keystore
+        id: keyrestore
+        uses: actions/cache/restore@v4
         with:
-          path: ${{ github.workspace }}/../android-user/debug.keystore
-          key: fashionfit-demo-debug-keystore-v1
+          path: ~/fashionfit-demo-key/debug.keystore
+          key: fashionfit-demo-debug-keystore-v2
+      - name: Use restored keystore
+        working-directory: .
+        run: |
+          mkdir -p "$ANDROID_USER_HOME"
+          if [ -f ~/fashionfit-demo-key/debug.keystore ]; then
+            cp ~/fashionfit-demo-key/debug.keystore "$ANDROID_USER_HOME/debug.keystore"
+            echo "::notice::keystore restored from cache"
+          else
+            echo "::notice::keystore NOT in cache (new one will be created and saved)"
+          fi
       - name: Android SDK
         run: |
           mkdir -p "$ANDROID_USER_HOME"
@@ -33,6 +44,17 @@ jobs:
           bash gradlew :app:assembleDebug --console=plain --max-workers=2 2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "^e: |FAIL|BUILD" || true
           grep -E "^e: " "$RUNNER_TEMP/build.log" | head -20 | sed 's/^/::error::/' || true
           grep -q "BUILD SUCCESSFUL" "$RUNNER_TEMP/build.log"
+      - name: Keep keystore for next builds
+        working-directory: .
+        run: |
+          mkdir -p ~/fashionfit-demo-key
+          cp "$ANDROID_USER_HOME/debug.keystore" ~/fashionfit-demo-key/debug.keystore
+      - name: Save demo debug keystore
+        if: steps.keyrestore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/fashionfit-demo-key/debug.keystore
+          key: fashionfit-demo-debug-keystore-v2
       - name: Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
