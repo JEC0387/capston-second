@@ -65,6 +65,29 @@ object StylePreferenceStore {
         }
     }
 
+    /**
+     * 이미 반영한 코디 평가를 바꾸거나 취소할 때 스타일 점수를 정확히 되돌린다 (좋아요 +2 · 싫어요 −1 · 없음 0).
+     * 서버는 +2 / −1 평가만 받으므로 합이 같아지도록 나눠 보낸다 (응답 순서에 따라 화면 값이 흔들리지 않게 응답은 쓰지 않음).
+     */
+    fun changeRating(context: Context, rawStyle: String, from: Boolean?, to: Boolean?) {
+        val style = PreferredStyles.normalize(listOf(rawStyle)).firstOrNull() ?: return
+        fun value(v: Boolean?) = when (v) { true -> 2; false -> -1; null -> 0 }
+        val delta = value(to) - value(from)
+        if (delta == 0) return
+        _scores.value = _scores.value.mapValues { (k, v) -> if (k == style) v + delta else v }
+        _ratedCount.value = (_ratedCount.value + when { from == null -> 1; to == null -> -1; else -> 0 }).coerceAtLeast(0)
+        persist(context)
+        val (likes, dislikes) = serverSteps(delta)
+        ioScope.launch {
+            repeat(likes) { BackendApi.rateStylePreference(style, true) }
+            repeat(dislikes) { BackendApi.rateStylePreference(style, false) }
+        }
+    }
+
+    /** delta 를 +2 · −1 평가 횟수로 — 예: −3 → (0, 3), +1 → (1, 1), +3 → (2, 1) */
+    internal fun serverSteps(delta: Int): Pair<Int, Int> =
+        if (delta <= 0) 0 to -delta else ((delta + 1) / 2).let { likes -> likes to (2 * likes - delta) }
+
     private fun persist(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
         _scores.value.forEach { (k, v) -> p.putInt("score_$k", v) }

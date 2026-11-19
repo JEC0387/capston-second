@@ -611,7 +611,7 @@ private fun BuyThisCard(report: MissingItemFinder.Report, onClick: () -> Unit, m
                 if (top == null) Text("부족한 아이템 살펴보기", color = BrownDark)
                 top?.let {
                     Text(
-                        "${it.item.name} 하나만 사면 코디 ${it.gain}개가 더 생겨요",
+                        "${com.jeiu.fashionproject.recommend.MissingItemFinder.labelOf(it.item)} 하나만 사면 코디 ${it.gain}개가 더 생겨요",
                         style = MaterialTheme.typography.bodyMedium, color = BrownDark, fontWeight = FontWeight.SemiBold,
                         maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                     )

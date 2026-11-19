@@ -12,12 +12,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.collectAsState
 import com.jeiu.fashionproject.data.StylePreferenceStore
@@ -132,6 +134,33 @@ fun MyPageScreen(
         profile = com.jeiu.fashionproject.data.BackendApi.getProfile()
     }
     val signedIn by com.jeiu.fashionproject.data.AuthStore.account.collectAsState()
+    var showLogoutDialog by remember { mutableStateOf(false) }
+    var loggingOut by remember { mutableStateOf(false) }
+    if (showLogoutDialog) AlertDialog(
+        onDismissRequest = { showLogoutDialog = false },
+        title = { Text("로그아웃할까요?") },
+        text = {
+            Text("내 기록을 서버에 저장한 뒤 이 기기에서 지워요. 같은 계정으로 다시 로그인하면 옷장 · 체형 · 취향 기록을 그대로 불러와요.",
+                style = MaterialTheme.typography.bodyMedium)
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                showLogoutDialog = false
+                loggingOut = true
+                scope.launch {
+                    when (val r = com.jeiu.fashionproject.data.AccountLogout.logout(context)) {
+                        com.jeiu.fashionproject.data.AccountLogout.Result.Done ->
+                            com.jeiu.fashionproject.data.BackupRestore.restartApp(context)
+                        is com.jeiu.fashionproject.data.AccountLogout.Result.Blocked -> {
+                            loggingOut = false
+                            Toast.makeText(context, r.message, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }, modifier = Modifier.testTag("myLogoutConfirm")) { Text("로그아웃", color = Camel) }
+        },
+        dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text("취소", color = MediumGray) } }
+    )
     val nickname = profile?.nickname ?: signedIn?.name?.takeIf { it.isNotBlank() } ?: "나의 스타일"
     val email = signedIn?.let { a -> "${a.provider.label} 로그인" + (a.email.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "") }
         ?: profile?.email?.takeIf { it.isNotBlank() } ?: "로그인 안 함 · 로컬 게스트"
@@ -265,14 +294,27 @@ fun MyPageScreen(
 
             // 취향 태그
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 로그인 후에도 [변경]으로 다시 고를 수 있다 (폰 + 서버에 저장)
+                var editStyles by remember { mutableStateOf(false) }
+                val savedStyles by ProfileStore.styles.collectAsState()
+                LaunchedEffect(Unit) { ProfileStore.load(context) }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = Camel, modifier = Modifier.size(20.dp))
-                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+                    Text("선호 스타일", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack,
+                        modifier = Modifier.weight(1f))
+                    androidx.compose.material3.TextButton(onClick = { editStyles = true },
+                        modifier = Modifier.testTag("myPreferredStyleEdit")) { Text("변경", color = Camel) }
                 }
                 // 폰에 저장된 선택 우선, 없으면 서버 프로필
-                val styles = if (ProfileStore.hasSelection(context)) ProfileStore.preferredStyles(context) else profile?.preferredStyles.orEmpty()
+                val styles = if (ProfileStore.hasSelection(context)) savedStyles.ifEmpty { ProfileStore.preferredStyles(context) }
+                    else profile?.preferredStyles.orEmpty()
+                if (editStyles) PreferredStyleEditDialog(
+                    initial = styles,
+                    onDismiss = { editStyles = false },
+                    onSave = { chosen -> ProfileStore.savePreferredStyles(context, chosen); editStyles = false }
+                )
                 if (styles.isEmpty()) {
-                    Text("아직 고르지 않았어요 (첫 화면에서 선택)", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                    Text("아직 고르지 않았어요. [변경]을 눌러 골라 주세요.", style = MaterialTheme.typography.bodySmall, color = MediumGray)
                 }
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -397,7 +439,16 @@ fun MyPageScreen(
             MyMenuItem(icon = Icons.Filled.Info, label = "앱 버전 ${buildInfo.versionName} · ${buildInfo.versionCode} · ${buildInfo.shortSha}", onClick = { showVersionDialog = true })
             HorizontalDivider(color = LightGray)
             MyMenuItem(icon = Icons.Filled.AccountCircle, label = "계정 · 게스트 이용", onClick = { showAccountDialog = true })
-            MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
+            if (signedIn == null) MyMenuItem(icon = Icons.Filled.AccountCircle, label = "구글 · 카카오 로그인", onClick = onLogin)
+            else Row(
+                modifier = Modifier.fillMaxWidth().clickable(enabled = !loggingOut) { showLogoutDialog = true }
+                    .padding(vertical = 14.dp).testTag("myLogout"),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = CharcoalBlack, modifier = Modifier.size(20.dp))
+                Text(if (loggingOut) "기록을 저장하고 로그아웃하는 중…" else "로그아웃", style = MaterialTheme.typography.bodyMedium, color = CharcoalBlack)
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -594,4 +645,28 @@ private fun MyMenuItem(icon: ImageVector, label: String, onClick: () -> Unit) {
         }
         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MediumGray, modifier = Modifier.size(18.dp))
     }
+}
+
+/** 선호 스타일 다시 고르기 — 온보딩과 같은 칩, 여러 개 선택 */
+@Composable
+private fun PreferredStyleEditDialog(initial: List<String>, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
+    var selected by remember { mutableStateOf(initial) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("선호 스타일 변경") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("여러 개 고를 수 있어요. 코디 · 쇼핑 추천에 바로 반영돼요.",
+                    style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                com.jeiu.fashionproject.ui.components.PreferredStyleChips(selected, perRow = 3) { style ->
+                    selected = com.jeiu.fashionproject.recommend.PreferredStyles.toggleSelection(selected, style)
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onSave(selected) },
+                modifier = Modifier.testTag("myPreferredStyleSave")) { Text("저장", color = Camel) }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("취소", color = MediumGray) } }
+    )
 }

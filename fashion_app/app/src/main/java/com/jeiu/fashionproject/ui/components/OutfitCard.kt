@@ -55,7 +55,8 @@ fun OutfitCard(
     wear: WearToday? = null,
     saved: Boolean? = null,                  // null 이면 🔖 버튼 숨김
     onToggleSave: () -> Unit = {},
-    onPlan: (() -> Unit)? = null             // null 이면 📅 (코디 일정에 넣기) 버튼 숨김
+    onPlan: (() -> Unit)? = null,            // null 이면 📅 (코디 일정에 넣기) 버튼 숨김
+    uniform: Boolean = false                 // 여러 장을 나란히 보여 줄 때 글 길이와 상관없이 카드 크기를 같게
 ) {
     Card(
         modifier = modifier,
@@ -79,7 +80,8 @@ fun OutfitCard(
             }
         }
 
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(modifier = Modifier.padding(12.dp).then(if (uniform) Modifier.weight(1f) else Modifier),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(
                     modifier = Modifier
@@ -89,12 +91,13 @@ fun OutfitCard(
                 ) {
                     Text(outfit.style, style = MaterialTheme.typography.labelMedium, color = Brown, fontWeight = FontWeight.SemiBold)
                 }
-                Text("${outfit.style} 코디", style = MaterialTheme.typography.titleMedium, color = CharcoalBlack, fontWeight = FontWeight.SemiBold)
+                Text(outfit.title.ifBlank { "${outfit.style} 코디" }, style = MaterialTheme.typography.titleMedium,
+                    color = CharcoalBlack, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(
                 outfit.items.joinToString(" · ") { if (it.id in interestedItemIds) "♥ ${it.name} (관심 옷)" else it.name },
                 style = MaterialTheme.typography.bodySmall, color = MediumGray,
-                maxLines = 2, overflow = TextOverflow.Ellipsis
+                maxLines = 2, minLines = if (uniform) 2 else 1, overflow = TextOverflow.Ellipsis
             )
             val interestedCount = outfit.items.count { it.id in interestedItemIds }
             if (interestedCount > 0) {
@@ -102,12 +105,24 @@ fun OutfitCard(
                     color = HeartPink, style = MaterialTheme.typography.labelSmall)
             }
             // 추천 이유
-            outfit.reasons.forEach { reason ->
+            if (uniform) {
+                // 이유는 항상 4칸(줄마다 최대 2줄)을 차지해 카드 높이를 맞춘다
+                val shown = outfit.reasons.take(4)
+                (0 until 4).forEach { i ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(if (i < shown.size) "•" else " ", style = MaterialTheme.typography.bodySmall, color = Camel)
+                        Text(shown.getOrNull(i) ?: "", style = MaterialTheme.typography.bodySmall, color = CharcoalBlack,
+                            minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            } else outfit.reasons.forEach { reason ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("•", style = MaterialTheme.typography.bodySmall, color = Camel)
                     Text(reason, style = MaterialTheme.typography.bodySmall, color = CharcoalBlack)
                 }
             }
+            // 나란히 놓인 카드끼리 버튼 줄을 맨 아래에 맞춘다
+            if (uniform) Spacer(Modifier.weight(1f))
             // 오늘 이거 입었어요 — 내 옷으로만 만든 코디일 때만 (관심 옷은 아직 갖고 있지 않으므로 착용 기록에 넣지 않음)
             if (wear != null && outfit.items.none { it.id in interestedItemIds || !it.isOwned }) {
                 val worn = wear.isWorn(outfit)
@@ -140,22 +155,23 @@ fun OutfitCard(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { onRate(true) }, enabled = rated == null) {
+                // 같은 버튼을 다시 누르면 취소, 다른 버튼을 누르면 바꾼다 (onRate 를 받는 쪽에서 toggleOutfitRating)
+                IconButton(onClick = { onRate(true) }) {
                     Icon(
                         if (rated == true) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = "좋아요", tint = if (rated == true) Camel else MediumGray
+                        contentDescription = if (rated == true) "좋아요 취소" else "좋아요", tint = if (rated == true) Camel else MediumGray
                     )
                 }
-                IconButton(onClick = { onRate(false) }, enabled = rated == null) {
+                IconButton(onClick = { onRate(false) }) {
                     Icon(
                         if (rated == false) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = "별로예요", tint = if (rated == false) Brown else MediumGray
+                        contentDescription = if (rated == false) "별로예요 취소" else "별로예요", tint = if (rated == false) Brown else MediumGray
                     )
                 }
             }
-            if (rated != null) {
+            if (rated != null || uniform) {
                 Text(
-                    if (rated) "좋아요를 반영했어요" else "다른 스타일을 추천할게요",
+                    when (rated) { true -> "좋아요를 반영했어요"; false -> "다음 추천에서 덜 보여 드릴게요"; null -> "" },
                     style = MaterialTheme.typography.bodySmall, color = MediumGray,
                     modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis
                 )

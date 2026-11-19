@@ -8,6 +8,8 @@ import com.jeiu.fashionproject.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.runtime.key
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -299,23 +301,28 @@ fun HomeScreen(
                         modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp)
                     )
                 }
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
+                // 4장을 모두 가장 긴 카드 높이에 맞춘다 (IntrinsicSize.Max + fillMaxHeight)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                        .height(IntrinsicSize.Max).padding(horizontal = 20.dp).testTag("homeOutfitRow"),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(r.outfits, key = { it.id }) { outfit ->
+                    r.outfits.forEach { outfit ->
+                        key(outfit.id) {
                         OutfitCard(
                             outfit = outfit,
                             rated = ratings[outfit.id],
-                            modifier = Modifier.width(260.dp),
+                            modifier = Modifier.width(260.dp).fillMaxHeight(),
                             onRate = { like ->
-                                TastePreferenceStore.rateOutfit(context, outfit, like)
+                                TastePreferenceStore.toggleOutfitRating(context, outfit, like)
                             },
                             wear = wearToday,
                             saved = book.isSaved(savedOutfits, outfit),
                             onToggleSave = { book.toggleSave(outfit) },
-                            onPlan = { book.requestPlan(outfit.items) }
+                            onPlan = { book.requestPlan(outfit.items) },
+                            uniform = true
                         )
+                        }
                     }
                 }
             }
@@ -328,7 +335,7 @@ fun HomeScreen(
                 plan = plan,
                 rated = ratings,
                 onRate = { outfit, like ->
-                    TastePreferenceStore.rateOutfit(context, outfit, like)
+                    TastePreferenceStore.toggleOutfitRating(context, outfit, like)
                 },
                 onMore = onForecastClick
             )

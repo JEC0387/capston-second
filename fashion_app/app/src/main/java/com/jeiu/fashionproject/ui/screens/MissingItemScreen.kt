@@ -4,8 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.jeiu.fashionproject.data.BasicItems
 import com.jeiu.fashionproject.data.Gender
-import com.jeiu.fashionproject.data.ShopProduct
 import androidx.compose.ui.text.style.TextOverflow
 import com.jeiu.fashionproject.data.WardrobeItem
 import com.jeiu.fashionproject.data.WardrobeStore
@@ -266,27 +263,7 @@ private fun SituationPlanCard(
                     TextButton(onClick = { onSearch(need.items.first().name) }) { Text("찾기", color = Camel) }
                 }
             }
-            if (plan.products.isNotEmpty()) {
-                Text("추천 상품", style = MaterialTheme.typography.labelMedium, color = MediumGray)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    plan.products.forEach { p -> MiniProduct(p, onClick = { onProductClick(p.id) }) }
-                }
-            }
         }
-    }
-}
-
-@Composable
-private fun MiniProduct(p: ShopProduct, onClick: () -> Unit) {
-    Column(Modifier.width(96.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick)) {
-        AsyncImage(
-            model = if (p.imageRes != 0) p.imageRes else p.imageUrl, contentDescription = p.name,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(Color(p.color))
-        )
-        Text(p.name, style = MaterialTheme.typography.labelSmall, color = CharcoalBlack, maxLines = 2,
-            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
-        Text(p.price, style = MaterialTheme.typography.labelSmall, color = BrownDark, fontWeight = FontWeight.Bold)
     }
 }
 

@@ -46,7 +46,8 @@ object OutfitEngine {
         val score: Double,
         val reasons: List<String>,
         val style: String,
-        val pattern: String? = null   // 색 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러) — 취향 학습에 사용
+        val pattern: String? = null,  // 색 조합 방식 (무채색 조합 / 톤온톤 / 포인트 컬러) — 취향 학습에 사용
+        val title: String = ""        // 카드 제목 (OutfitStory) — 비어 있으면 "${style} 코디"
     ) {
         val id: String get() = items.joinToString("+") { it.id }
     }
@@ -122,10 +123,14 @@ object OutfitEngine {
         }
 
         // 성별에 더 잘 맞는 코디 (여성: 원피스 · 스커트 · 블라우스) 조금 위로
-        val fitted = if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) }
+        val fitted = (if (gender == null) candidates else candidates.map { it.copy(score = it.score + GenderFit.fitBonus(it.items, gender)) })
+            // 코디 👍👎 기록 — 좋아요한 코디 · 조합은 위로, 싫어요한 코디는 아래로 (OutfitFeedback)
+            .map { OutfitFeedback.adjust(it, taste.outfitVotes) }
 
         // ④ 골고루 고르기
-        return Result.Ok(pickDiverse(fitted.sortedByDescending { it.score }, count), notice)
+        // 코디마다 제목 · 이유가 반복되지 않게 (OutfitStory)
+        val picked = pickDiverse(fitted.sortedByDescending { it.score }, count)
+        return Result.Ok(OutfitStory.diversify(picked, OutfitStory.Weather(conditions, weather?.humidity)), notice)
     }
 
     // ── "이것만 사면" 계산용 (5단계) ─────────────────────────────────────

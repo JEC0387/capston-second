@@ -146,7 +146,7 @@ fun StylePreferenceScreen(onBack: () -> Unit, gender: Gender? = null, onProductC
             }
             Column {
                 Text("스타일 취향 학습", style = MaterialTheme.typography.titleLarge, color = CharcoalBlack, fontWeight = FontWeight.Bold)
-                Text("♥한 스타일을 코디 · 쇼핑 추천에 반영해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
+                Text("좋아요한 스타일을 코디 · 쇼핑 추천에 반영해요", style = MaterialTheme.typography.bodySmall, color = MediumGray)
             }
         }
 

@@ -240,6 +240,11 @@ object DbSync {
         if (!::prefs.isInitialized) init(appContext)
         prefs.edit().putBoolean(KEY_ENABLED, true).apply()
         ServerConnection.retry()
+        pushAll(appContext)
+    }
+
+    /** 폰의 지금 기록을 전부 대기열에 다시 올린다 (로그아웃 전에 서버를 최신으로 맞출 때도 쓴다) */
+    fun pushAll(appContext: Context) {
         WardrobeStore.load(appContext); WearLogStore.load(appContext)
         TastePreferenceStore.load(appContext); ProductInterestStore.load(appContext); RecommendationLog.load(appContext)
         SavedOutfitStore.load(appContext); OutfitPlanStore.load(appContext)
@@ -252,6 +257,13 @@ object DbSync {
         pushRecommendations(RecommendationLog.entries.value)
         pushSavedOutfits(SavedOutfitStore.items.value)
         pushOutfitPlans(OutfitPlanStore.plans.value)
+    }
+
+    /** 대기열을 지금 바로 보내 보고, 남은 것이 없으면 true (서버 백업이 꺼져 있거나 연결이 안 되면 false) */
+    suspend fun flushNow(): Boolean {
+        if (!::prefs.isInitialized || !isEnabled) return false
+        flush()
+        return synchronized(queueLock) { pending.isEmpty() }
     }
 
     /** Serialize account changes/restore against an entire upload batch. */
