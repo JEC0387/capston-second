@@ -258,7 +258,7 @@ fun AppNavigation() {
                 BodyMethodSelectionScreen(
                     onBack = { navController.popBackStack() },
                     onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) },
-                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) },
+                    onAvatarSetup = { navController.openBodyAvatar() },
                     onSizeComparison = { navController.navigate(Screen.BodySizeComparison.route) },
                     onHistory = { navController.navigate(Screen.BodyHistory.route) }
                 )
@@ -271,7 +271,7 @@ fun AppNavigation() {
             }
             composable(Screen.BodyAnalysisAvatar.route) {
                 BodyAvatarSetupScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.closeBodyAvatar() },
                     onPhotoAnalysis = { navController.navigate(Screen.BodyAnalysisPhoto.route) }
                 )
             }
@@ -283,7 +283,7 @@ fun AppNavigation() {
                     viewModel = bodyAnalysisViewModel,
                     onHistory = { navController.navigate(Screen.BodyHistory.route) },
                     onFitting = { navController.navigate(Screen.VirtualFitting.route + "?avatar=true") },
-                    onAvatarSetup = { navController.navigate(Screen.BodyAnalysisAvatar.route) }
+                    onAvatarSetup = { navController.openBodyAvatar() }
                 )
             }
             composable(Screen.Camera.route) {

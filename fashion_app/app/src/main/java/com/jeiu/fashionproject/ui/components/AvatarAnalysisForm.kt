@@ -16,6 +16,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.jeiu.fashionproject.data.*
+import com.jeiu.fashionproject.recommend.AvatarAnalysisPath
+import com.jeiu.fashionproject.recommend.AvatarModelAnalysis
 import com.jeiu.fashionproject.ui.theme.*
 import java.util.Locale
 
@@ -113,9 +115,9 @@ internal fun AvatarAnalysisForm(
             references = ArrayList(references).apply { set(index, raw) }
         changed()
     }
-    val missing = AvatarAnalysisInput.coreParts.filter { it != AvatarPart.SHOULDER && it !in measured }
+    val analysisPath = remember(preview) { AvatarModelAnalysis.path(preview) }
     if (help) AlertDialog(onDismissRequest = { help = false }, title = { Text("치수 입력 도움말") },
-        text = { Text("키·몸무게로 만든 모습은 추정이에요.\n줄자는 미리보기를 조절하며, 직접 잰 값으로 확인해야 분석에 사용해요.\n실측과 사진 분석 기록은 별도로 보존해요.") },
+        text = { Text("줄자로 조절한 모델은 비율을 바탕으로 추정 분석해요.\n가슴·허리·엉덩이 실측을 입력하면 실측으로 분석해요.\n모델 조절값과 실측·사진 기록은 별도로 보존해요.") },
         confirmButton = { TextButton({ help = false }) { Text("확인") } })
 
     // Keep the live GL surface outside the controls' scroll container.
@@ -210,8 +212,12 @@ internal fun AvatarAnalysisForm(
         Text(if (expanded) "추가 치수 접기" else "추가 치수")
     }
     TextButton({ help = true }, Modifier.heightIn(min = 48.dp).testTag("avatarAnalysisHelp")) { Text("ⓘ 도움말") }
-    if (missing.isNotEmpty()) Text("분석하려면 가슴·허리·엉덩이 실측이 필요해요.",
-        color = FashionMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("avatarAnalysisMissing"))
+    Text(when (analysisPath) {
+        AvatarAnalysisPath.MODEL_ESTIMATE -> "저장한 모델로 추정 분석해요. 실제 치수와 다를 수 있어요."
+        AvatarAnalysisPath.MEASURED -> "직접 입력한 실측값으로 분석해요."
+        null -> "키와 몸무게를 입력해 주세요."
+    }, color = FashionMuted, style = MaterialTheme.typography.bodySmall,
+        modifier = Modifier.testTag("avatarAnalysisSource"))
     TextButton(onPhotoAnalysis, Modifier.heightIn(min = 48.dp)) { Text("사진으로 체형 분석하기") }
         }
         // Saving and analysis remain reachable independently of scroll and keyboard.
@@ -237,9 +243,10 @@ internal fun AvatarAnalysisForm(
     ) { Text("이 체형으로 저장") }
     else {
         Text("체형을 저장했어요.", color = FashionMuted, modifier = Modifier.testTag("avatarSavedStatus"))
-        Button(enabled = missing.isEmpty(), onClick = {
+        Button(enabled = analysisPath != null, onClick = {
             if (BodyMeasurementScope.current() == owner && !dirty &&
-                AvatarProfileStore.current.value?.let(AvatarProfileStore::encode) == savedSnapshot) onAnalyzed()
+                AvatarProfileStore.current.value?.let(AvatarProfileStore::encode) == savedSnapshot &&
+                AvatarModelAnalysis.path(AvatarProfileStore.current.value) != null) onAnalyzed()
             else message = "저장한 체형을 다시 확인해 주세요."
         }, shape = FashionActionShape, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp).testTag("avatarAnalyze")) {
             Text("내 체형 분석하기")

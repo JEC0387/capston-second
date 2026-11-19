@@ -2,6 +2,8 @@ package com.jeiu.fashionproject
 
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -75,7 +77,7 @@ class BodyMethodSelectionUiTest {
         compose.runOnIdle { assertEquals(1, photo) }
     }
 
-    @Test fun estimatedBodyCanBeSavedButDoesNotUnlockMeasuredAnalysis() {
+    @Test fun estimatedBodyUnlocksModelAnalysisWithoutCreatingMeasuredInputs() {
         val app = ApplicationProvider.getApplicationContext<Application>()
         AvatarProfileStore.clear(app)
         var photo = 0
@@ -85,8 +87,10 @@ class BodyMethodSelectionUiTest {
         compose.onNodeWithTag("avatarAnalysisPreview").assertIsDisplayed()
         compose.onNodeWithTag("avatarAnalyze").assertDoesNotExist()
         compose.onNodeWithTag("avatarSave").performClick()
-        compose.onNodeWithTag("avatarAnalyze").assertIsNotEnabled()
-        compose.onNodeWithTag("avatarAnalysisMissing").assertExists()
+        compose.onNodeWithTag("avatarAnalyze").assertIsEnabled().performClick()
+        compose.onNodeWithTag("avatarModelSource").assertTextEquals("3D 모델 기반 추정")
+        compose.onNodeWithTag("avatarBodyEdit").performScrollTo().performClick()
+        compose.onNodeWithTag("avatarAnalysisSource").assertExists()
         compose.onNodeWithTag("avatarBodyResult").assertDoesNotExist()
         compose.onNodeWithTag("avatarAdvancedToggle").assertDoesNotExist()
         compose.onNodeWithText("사진으로 체형 분석하기").performScrollTo().performClick()

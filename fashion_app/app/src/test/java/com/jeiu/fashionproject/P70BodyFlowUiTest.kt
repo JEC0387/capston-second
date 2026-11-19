@@ -137,12 +137,14 @@ class P70BodyFlowUiTest {
         compose.onNodeWithTag("avatarAnalyze").assertIsDisplayed()
     }
 
-    @Test fun guessedRulerValuesRequireExplicitMeasuredConfirmationBeforeAnalysis() {
+    @Test fun guessedRulerValuesCanBeAnalyzedAsModelButRemainUnmeasuredUntilConfirmed() {
         compose.setContent { BodyAvatarSetupScreen({}, {}) }
         enter("avatarHeight","160");enter("avatarWeight","55")
         click("rulerPlus");click("avatarSave")
-        compose.onNodeWithTag("avatarAnalyze").assertIsNotEnabled()
+        compose.onNodeWithTag("avatarAnalyze").assertIsEnabled().performClick()
+        compose.onNodeWithTag("avatarModelSource").assertExists()
         compose.runOnIdle { assertTrue(AvatarAnalysisInput.recorded(checkNotNull(AvatarProfileStore.current.value)).isEmpty()) }
+        click("avatarBodyEdit")
         for(part in listOf("CHEST","WAIST","HIP")) {
             click("analysisPart-"+part);click("analysisConfirmMeasured")
         }
