@@ -17,4 +17,10 @@ jobs:
           T=$(python3 -c 'import json;print(json.load(open("r.json")).get("accessToken",""))' 2>/dev/null)
           echo "::add-mask::$T"
           code=$(curl -s -m 40 -o c.json -w "%{http_code}" -H "Authorization: Bearer $T" "$B/api/outfit-vton/config")
-          echo "::warning::config $code $(head -c 600 c.json | tr '\n' ' ')"
+          echo "::warning::config $code"
+          python3 - <<'PY'
+          import json
+          d=json.load(open('c.json'))
+          for k,v in d.items():
+              print('::warning::cfg', k, '=', json.dumps(v, ensure_ascii=False)[:900])
+          PY
