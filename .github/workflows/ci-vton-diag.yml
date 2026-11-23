@@ -21,6 +21,7 @@ jobs:
           python3 - <<'PY'
           import json
           d=json.load(open('c.json'))
-          for k,v in d.items():
-              print('::warning::cfg', k, '=', json.dumps(v, ensure_ascii=False)[:900])
+          skip={'policy_version','model_sha256','model_revision','model_id','reason','ready','engine'}
+          rest={k:v for k,v in d.items() if k not in skip}
+          print('::warning::REST ' + json.dumps(rest, ensure_ascii=True))
           PY
