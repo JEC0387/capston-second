@@ -1,0 +1,20 @@
+name: AI fitting server diagnostic (not for merge)
+on:
+  push:
+    branches: [ci/vton-diag]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Probe outfit-vton config
+        run: |
+          B=https://fashion-backend-production-aba0.up.railway.app
+          code=$(curl -s -m 40 -o h.txt -w "%{http_code}" "$B/health"); echo "::warning::health $code $(head -c 300 h.txt | tr '\n' ' ')"
+          code=$(curl -s -m 40 -o r.json -w "%{http_code}" -H 'Content-Type: application/json' -d '{"legacyPending":false}' "$B/api/auth/register")
+          echo "::warning::register $code keys=$(python3 -c 'import json;print(sorted(json.load(open("r.json")).keys()))' 2>/dev/null) dataEnabled=$(python3 -c 'import json;print(json.load(open("r.json")).get("dataEnabled"))' 2>/dev/null)"
+          T=$(python3 -c 'import json;print(json.load(open("r.json")).get("accessToken",""))' 2>/dev/null)
+          echo "::add-mask::$T"
+          code=$(curl -s -m 40 -o c.json -w "%{http_code}" -H "Authorization: Bearer $T" "$B/api/outfit-vton/config")
+          echo "::warning::config $code $(head -c 600 c.json | tr '\n' ' ')"
